@@ -103,6 +103,33 @@ struct Sim<'a> {
     count: u16,
     ch: [Channel; CHANNELS],
     queue: Vec<u16>,
+    /// Frames run so far, and what the programs did (`track_effects`).
+    frame: u32,
+    events: Vec<Event>,
+}
+
+/// One program instruction that acts on the board, for `track_effects`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Event {
+    pub frame: u32,
+    /// The channel whose program ran it.
+    pub by: u8,
+    pub what: EventKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EventKind {
+    /// A type 1 track started on this channel (the command itself, or queued).
+    Start { track: u16, channel: u8 },
+    /// Opcode 01: a stream loaded on this channel, played `loops` times (0: forever).
+    Stream { channel: u8, loops: u8 },
+    /// Opcode 02: this channel stopped (program and stream).
+    Stop { channel: u8 },
+    /// Opcode 03 (queue a track) or 05 (start the deferred one).
+    Queue { track: u16 },
+    /// Opcodes 07-0C on a channel: `mode` 0 set, 1 increase, 2 decrease; `param` in level
+    /// units (the INT8 operand); `frames` > 0 for a fade.
+    Mix { channel: u8, mode: u8, param: i8, frames: u16 },
 }
 
 impl<'a> Sim<'a> {
@@ -118,6 +145,8 @@ impl<'a> Sim<'a> {
             count: u16be(rom, catalog + 0x46).ok_or("catalog out of range")?,
             ch: Default::default(),
             queue: Vec::new(),
+            frame: 0,
+            events: Vec::new(),
         })
     }
 
@@ -159,8 +188,18 @@ impl<'a> Sim<'a> {
             }
             match kind {
                 1 => {
+                    self.events.push(Event {
+                        frame: self.frame,
+                        by: c as u8,
+                        what: EventKind::Start {
+                            track: cmd,
+                            channel: c as u8,
+                        },
+                    });
                     let ch = &mut self.ch[c];
                     ch.pc = Some(p + 2);
+                    // LoadTrack also clears the channel's stream.
+                    ch.stream = None;
                     ch.counter = 0;
                     ch.loop_stack.clear();
                     self.reset_mixing(c);
@@ -200,6 +239,10 @@ impl<'a> Sim<'a> {
                     if target >= CHANNELS {
                         return Err(format!("stream on channel {target}"));
                     }
+                    self.log(c, EventKind::Stream {
+                        channel: target as u8,
+                        loops,
+                    });
                     if frames != 0 {
                         let old = self.ch[target].source;
                         if let Some(old) = old.filter(|&o| o != c) {
@@ -221,6 +264,9 @@ impl<'a> Sim<'a> {
                     if target >= CHANNELS {
                         return Err(format!("stop on channel {target}"));
                     }
+                    self.log(c, EventKind::Stop {
+                        channel: target as u8,
+                    });
                     if self.ch[target].stream.take().is_some() {
                         self.reset_mixing(target);
                     }
@@ -230,7 +276,9 @@ impl<'a> Sim<'a> {
                     }
                 }
                 0x03 => {
-                    self.queue.push(self.u16(p)?);
+                    let track = self.u16(p)?;
+                    self.log(c, EventKind::Queue { track });
+                    self.queue.push(track);
                     p += 2;
                 }
                 // Data port write to the game CPU (halted here).
@@ -239,6 +287,7 @@ impl<'a> Sim<'a> {
                     let target = self.u8(p)? as usize;
                     p += 1;
                     if let Some(cmd) = self.ch.get_mut(target).and_then(|t| t.deferred.take()) {
+                        self.log(c, EventKind::Queue { track: cmd });
                         self.queue.push(cmd);
                     }
                 }
@@ -250,6 +299,12 @@ impl<'a> Sim<'a> {
                     let param = i32::from(self.u8(p + 1)? as i8) << 6;
                     let steps = if fade { self.u16(p + 2)? } else { 0 };
                     p += if fade { 4 } else { 2 };
+                    self.log(c, EventKind::Mix {
+                        channel: target as u8,
+                        mode: (op - 0x07) % 3,
+                        param: self.u8(p - if fade { 3 } else { 1 })? as i8,
+                        frames: steps,
+                    });
                     let m = self
                         .ch
                         .get_mut(target)
@@ -296,7 +351,16 @@ impl<'a> Sim<'a> {
         Ok(())
     }
 
+    fn log(&mut self, by: usize, what: EventKind) {
+        self.events.push(Event {
+            frame: self.frame,
+            by: by as u8,
+            what,
+        });
+    }
+
     fn end_frame(&mut self) {
+        self.frame += 1;
         for c in &mut self.ch {
             for m in &mut c.mixer {
                 if m.steps == 1 {
@@ -375,6 +439,86 @@ impl<'a> Sim<'a> {
             "no repeat within {max_frames} frames"
         )))
     }
+}
+
+/// What one command does to the board, played alone from a silent board: what its programs
+/// did (`events`) and, frame by frame, each channel's mixing level (the sum of every
+/// program's contribution, in 1/64 level units: one unit of the INT8 operand is 64, about
+/// -0.235 dB, `pow(0.9733, n)`).
+#[derive(Clone, Debug)]
+pub struct Effects {
+    /// The command's type (1 track, 2 deferred) and channel, from its header.
+    pub kind: u8,
+    pub channel: u8,
+    pub events: Vec<Event>,
+    pub levels: Vec<[i32; CHANNELS]>,
+    /// Frames run: until every channel was idle, or `max_frames`.
+    pub frames: u32,
+    pub ended: bool,
+    pub error: Option<String>,
+}
+
+/// dB per level unit of the mixing operands: -20 log10(0.9733) (a level is
+/// `pow(0.9733, 127 - units)`).
+pub const DB_PER_LEVEL: f64 = 0.235_2;
+
+impl Effects {
+    /// Channels this command loads a stream on (it plays there).
+    pub fn stream_channels(&self) -> u8 {
+        self.events.iter().fold(0, |m, e| match e.what {
+            EventKind::Stream { channel, .. } => m | 1 << channel,
+            _ => m,
+        })
+    }
+}
+
+/// Runs `track` from a silent board for at most `max_frames` and records what it does.
+pub fn track_effects(region: &[u8], track: u16, max_frames: u32) -> Option<Effects> {
+    let mut s = Sim::new(region).ok()?;
+    let a = u24(region, s.index + 3 * track as usize)?;
+    if track >= s.count || a & 0xFF_0000 == 0xFF_0000 {
+        return None;
+    }
+    let p = rom_pointer(a);
+    let (kind, channel) = (*region.get(p)?, *region.get(p + 1)?);
+    let mut e = Effects {
+        kind,
+        channel,
+        events: Vec::new(),
+        levels: Vec::new(),
+        frames: 0,
+        ended: false,
+        error: None,
+    };
+    s.queue.push(track);
+    let step = |s: &mut Sim| -> Result<bool, String> {
+        s.start_commands()?;
+        for c in 0..CHANNELS {
+            s.exec(c)?;
+        }
+        s.end_frame();
+        Ok(s.ch.iter().all(|c| c.pc.is_none() && c.stream.is_none()) && s.queue.is_empty())
+    };
+    for _ in 0..max_frames {
+        let r = step(&mut s);
+        e.levels.push(std::array::from_fn(|t| {
+            s.ch[t].mixer.iter().map(|m| m.level).sum::<i32>().clamp(-8191, 8191)
+        }));
+        e.frames += 1;
+        match r {
+            Ok(true) => {
+                e.ended = true;
+                break;
+            }
+            Ok(false) => {}
+            Err(err) => {
+                e.error = Some(err);
+                break;
+            }
+        }
+    }
+    e.events = s.events;
+    Some(e)
 }
 
 /// A 24-bit ROM pointer to an offset in PinMAME's DCS region: chip select in bits 21-23

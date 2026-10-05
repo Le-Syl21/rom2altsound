@@ -4,6 +4,7 @@
 mod altsound;
 mod batch;
 mod dcsrom;
+mod ducking;
 mod extract;
 mod ffi;
 mod looping;
@@ -230,6 +231,12 @@ fn main() {
     if std::env::args().nth(1).as_deref() == Some("loop-scan") {
         loop_scan(std::env::args().skip(2).collect());
         return;
+    }
+    // Ducking study diagnostics (prototype).
+    match std::env::args().nth(1).as_deref() {
+        Some("dcs-effects") => return ducking::dcs_effects(std::env::args().skip(2).collect()),
+        Some("duck-fit") => return ducking::duck_fit(std::env::args().skip(2).collect()),
+        _ => {}
     }
     let cli = Cli::parse();
     if cli.in_process {

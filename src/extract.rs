@@ -200,6 +200,9 @@ enum Send {
     Data(c_int, c_int),
     /// Reset every sound board (control-port reset or audio CPU reset line).
     Reset,
+    /// Scenario (`--only 0x000C+2.5+0x0390`): wait this many seconds (in milliseconds)
+    /// before the next send, keeping the recording open.
+    Wait(u32),
 }
 
 /// What the commands being played are for.
@@ -629,6 +632,8 @@ pub struct Extractor {
     pass: Pass,
     sender: VecDeque<Send>,
     cooldown: u32,
+    /// The end of the `Send::Wait` at the front of `sender`.
+    wait_until: Option<u64>,
     queue: VecDeque<Cmd>,
     /// The main pass's commands, by result index.
     main_cmds: Vec<Cmd>,
@@ -705,6 +710,7 @@ impl Extractor {
             pass: Pass::Main,
             sender: VecDeque::new(),
             cooldown: 0,
+            wait_until: None,
             queue: VecDeque::new(),
             main_cmds: Vec::new(),
             mask: 0,
@@ -1012,8 +1018,19 @@ impl Extractor {
             self.cooldown -= 1;
             return;
         }
+        if let Some(&Send::Wait(ms)) = self.sender.front() {
+            let until = *self
+                .wait_until
+                .get_or_insert(self.t + self.secs(f64::from(ms) / 1000.0));
+            if self.t >= until {
+                self.sender.pop_front();
+                self.wait_until = None;
+            }
+            return;
+        }
         if let Some(s) = self.sender.pop_front() {
             let board = match s {
+                Send::Wait(_) => unreachable!(),
                 Send::Byte(board, byte) => {
                     unsafe { ffi::sndbrd_manCmd(board, byte) };
                     Some(board)
@@ -1418,6 +1435,12 @@ impl Extractor {
             self.phase = Phase::Done;
             self.done = true;
             return;
+        }
+        // Ducking study: dump the DCS sound region for `dcs-effects`.
+        if let (Ok(path), Some(region)) = (std::env::var("R2A_DUMP_REGION"), ffi::sound_region()) {
+            if let Err(e) = std::fs::write(&path, region) {
+                eprintln!("cannot dump the sound region to {path}: {e}");
+            }
         }
         let halted = unsafe { ffi::shim_halt_game_cpus(1) };
         eprintln!("halted {halted} game CPU(s)");
@@ -1971,6 +1994,9 @@ impl Extractor {
             cmds = only
                 .iter()
                 .map(|want| {
+                    if want.contains('+') {
+                        return self.scenario_cmd(want);
+                    }
                     let bytes = parse_id(want);
                     let id = format!("0x{}", hex(&bytes));
                     cmds.iter()
@@ -1990,6 +2016,35 @@ impl Extractor {
             cmds.truncate(n);
         }
         cmds
+    }
+
+    /// A scenario for the ducking study: `0x000C+2.5+0x0390` sends 000C, waits 2.5 s, then
+    /// sends 0390, all in one recording.
+    fn scenario_cmd(&self, want: &str) -> Cmd {
+        let mut sends = Vec::new();
+        let mut board = 0;
+        for part in want.split('+') {
+            if part.starts_with("0x") || part.starts_with("0X") {
+                let c = self.game_cmd(&Entry {
+                    bytes: parse_id(part),
+                    name: String::new(),
+                });
+                board = c.board_no;
+                sends.extend(c.sends);
+            } else {
+                let secs: f64 = part.parse().unwrap_or(0.0);
+                sends.push(Send::Wait((secs * 1000.0).round() as u32));
+            }
+        }
+        Cmd {
+            id: want.to_string(),
+            name: "(scenario)".into(),
+            board: board_typestr(board).unwrap_or_default(),
+            board_no: board,
+            sends,
+            slot: None,
+            alt: None,
+        }
     }
 
     /// A game-section command: plain bytes on one-board machines, (board, byte) pairs on
@@ -2340,6 +2395,7 @@ impl Extractor {
                 Send::Byte(b, v) => format!("manCmd({b},{v:02X})"),
                 Send::Data(b, v) => format!("data_w({b},{v:02X})"),
                 Send::Reset => "board reset".into(),
+                Send::Wait(ms) => format!("wait {ms} ms"),
             })
             .collect();
         let vol = self.volume_report();
