@@ -71,6 +71,10 @@ fn main() {
         .define("ARCH", arch)
         .define("BUILD_SHARED", "OFF")
         .define("BUILD_STATIC", "ON")
+        // The asmjit JIT only speeds up ARM7 CPUs (Stern SAM, whose sound cannot be driven
+        // anyway); without it there is no executable memory to allocate, which a hardened
+        // (notarized) macOS binary would need an entitlement for.
+        .define("PINMAME_JIT_ASMJIT", "OFF")
         .define("CMAKE_ARCHIVE_OUTPUT_DIRECTORY", &lib_dir_cmake)
         .define("CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE", &lib_dir_cmake)
         .build_target("pinmame_static")
