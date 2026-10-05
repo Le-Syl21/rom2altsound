@@ -216,8 +216,15 @@ unsafe extern "C" fn on_audio_updated(buf: *mut c_void, samples: c_int, _: *mut 
 }
 
 unsafe extern "C" fn on_sound_command(board: c_int, cmd: c_int, _: *mut c_void) {
-    with_state(|x| x.on_game_command(board, cmd));
-}
+    // Our own `sndbrd_data_w` (one-byte WPCS commands) reports the byte here too, from
+    // inside `on_audio`, which holds the state: a blocking lock would deadlock. The game's
+    // bytes never arrive while the state is held, so a busy state is always our own send.
+    if let Ok(mut s) = STATE.try_lock()
+        && let Some(x) = s.as_mut()
+    {
+        x.on_game_command(board, cmd);
+    }
+
 
 unsafe extern "C" fn on_game(game: *mut ffi::Game, user: *mut c_void) {
     let game = unsafe { &*game };
