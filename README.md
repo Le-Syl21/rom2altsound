@@ -138,11 +138,13 @@ How it all works, measured ROM by ROM: [docs/how-it-works.md](docs/how-it-works.
 
 ### License
 
-GPL-3.0-or-later (see [LICENSE](LICENSE)). rom2altsound includes PinMAME
+BSD-3-Clause (see [LICENSE](LICENSE)), the license PinMAME is moving to. rom2altsound includes PinMAME
 (<https://github.com/vpinball/pinmame>), under its own license (see
 [vendor/pinmame/LICENSE](https://github.com/vpinball/pinmame/blob/master/LICENSE): BSD-3-Clause
 for new code, the former MAME license for the rest). You need your own ROM files; none are
 included.
+
+The release binaries embed PinMAME, so they are distributed under PinMAME's terms as well: free of charge, with the source available here.
 
 ---
 
@@ -289,8 +291,10 @@ Le fonctionnement détaillé, mesuré ROM par ROM (en anglais) :
 
 ### Licence
 
-GPL-3.0 ou ultérieure (voir [LICENSE](LICENSE)). rom2altsound contient PinMAME
+BSD-3-Clause (voir [LICENSE](LICENSE)), la licence vers laquelle PinMAME migre. rom2altsound contient PinMAME
 (<https://github.com/vpinball/pinmame>), sous sa propre licence (voir
 [vendor/pinmame/LICENSE](https://github.com/vpinball/pinmame/blob/master/LICENSE) :
 BSD-3-Clause pour le code récent, l'ancienne licence MAME pour le reste). Il vous faut vos
 propres fichiers de ROM ; aucun n'est fourni.
+
+Les binaires publiés embarquent PinMAME : ils sont donc aussi distribués selon ses conditions, gratuitement et avec les sources disponibles ici.
