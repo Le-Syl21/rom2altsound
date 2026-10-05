@@ -1,6 +1,7 @@
 //! rom2altsound: extract a pinball ROM's sounds by running PinMAME in-process and
 //! driving its sound board directly (no keyboard, no patch to PinMAME).
 
+mod altsound;
 mod dcsrom;
 mod extract;
 mod ffi;
@@ -105,6 +106,15 @@ struct Cli {
     /// Show libpinmame info messages
     #[arg(long)]
     verbose: bool,
+    /// Do not write the AltSound pack (altsound.csv, g-sound.csv, altsound.ini, the loop
+    /// points in the WAV files): only the WAV files and manifest.json
+    #[arg(long)]
+    no_altsound: bool,
+    /// Commands that play the same audio (twins, listed as `twin_of` in manifest.json) share
+    /// the first one's file in the CSVs, and the twins' own WAV files are not kept. Off by
+    /// default: every command keeps its own file
+    #[arg(long, conflicts_with = "no_altsound")]
+    merge_twins: bool,
 }
 
 static STATE: Mutex<Option<Extractor>> = Mutex::new(None);
@@ -301,6 +311,21 @@ fn run(cli: Cli) -> Result<(), String> {
     }
     x.write_manifest();
     summary(&cli.rom, &x, wall.elapsed().as_secs_f64());
+    if !cli.no_altsound {
+        let r = altsound::write_pack(&cli.out, &x.results, cli.merge_twins)?;
+        println!(
+            "  altsound: {} row(s), {} loop(s) with loop points, {} twin(s){}, {} file(s) referenced",
+            r.rows,
+            r.loops_with_smpl,
+            r.twins,
+            if r.merged_twins {
+                " merged"
+            } else {
+                " kept separate"
+            },
+            r.files_referenced
+        );
+    }
     Ok(())
 }
 
