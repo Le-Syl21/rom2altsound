@@ -236,6 +236,7 @@ fn main() {
     match std::env::args().nth(1).as_deref() {
         Some("dcs-effects") => return ducking::dcs_effects(std::env::args().skip(2).collect()),
         Some("duck-fit") => return ducking::duck_fit(std::env::args().skip(2).collect()),
+        Some("drift-check") => return ducking::drift_check(std::env::args().skip(2).collect()),
         _ => {}
     }
     let cli = Cli::parse();

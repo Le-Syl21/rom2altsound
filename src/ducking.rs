@@ -330,3 +330,48 @@ pub fn duck_fit(args: Vec<String>) {
         i += w;
     }
 }
+
+/// `drift-check <A.wav> <B.wav> [--win S] [--max-lag N]`: two recordings of the same
+/// command(s); per window, the lag of B that matches A best and the normalized correlation
+/// there. Tells whether a board replays a command sample-exactly (DCS) or drifts.
+pub fn drift_check(args: Vec<String>) {
+    let (mut win_s, mut max_lag) = (0.25, 3000isize);
+    let mut pos = Vec::new();
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--win" => win_s = it.next().and_then(|s| s.parse().ok()).unwrap_or(win_s),
+            "--max-lag" => max_lag = it.next().and_then(|s| s.parse().ok()).unwrap_or(max_lag),
+            _ => pos.push(a),
+        }
+    }
+    let [a, b] = pos.as_slice() else {
+        eprintln!("usage: rom2altsound drift-check <A.wav> <B.wav> [--win S] [--max-lag N]");
+        return;
+    };
+    let (a, rate) = read_mono(a);
+    let (b, _) = read_mono(b);
+    let w = (win_s * rate as f64) as usize;
+    println!("t_s\tlag\tcorr");
+    let mut i = 0;
+    while i + w <= a.len().min(b.len()) {
+        let x = &a[i..i + w];
+        let xx: f64 = x.iter().map(|v| v * v).sum();
+        let mut best = (f64::MIN, 0);
+        for lag in -max_lag..=max_lag {
+            let s = i as isize + lag;
+            if s < 0 || s as usize + w > b.len() {
+                continue;
+            }
+            let y = &b[s as usize..s as usize + w];
+            let xy: f64 = x.iter().zip(y).map(|(p, q)| p * q).sum();
+            let yy: f64 = y.iter().map(|v| v * v).sum();
+            let c = xy / (xx * yy).sqrt().max(1e-9);
+            if c > best.0 {
+                best = (c, lag);
+            }
+        }
+        println!("{:.2}\t{}\t{:.4}", i as f64 / rate as f64, best.1, best.0);
+        i += w;
+    }
+}
