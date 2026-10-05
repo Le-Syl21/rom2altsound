@@ -57,7 +57,8 @@ fn main() {
     let root_cmake = cmake_path(&root);
     let src_dir = out.join("libpinmame-cmake");
     fs::create_dir_all(&src_dir).unwrap();
-    let text = fs::read_to_string(&upstream).unwrap();
+    // A Windows checkout has CRLF line endings; the patches match LF.
+    let text = fs::read_to_string(&upstream).unwrap().replace("\r\n", "\n");
     fs::write(src_dir.join("CMakeLists.txt"), patch_cmakelists(&text)).unwrap();
 
     let lib_dir = out.join("lib");
@@ -83,7 +84,8 @@ fn main() {
     // Compile definitions + include directories of pinmame_static, as CMake resolved them.
     let flags_file = dst.join("build/rom2altsound_shim_flags_Release.txt");
     let flags = fs::read_to_string(&flags_file)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", flags_file.display()));
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", flags_file.display()))
+        .replace("\r\n", "\n");
     let mut shim = cc::Build::new();
     shim.file("shim/shim.c").warnings(false);
     if !msvc {
