@@ -1,0 +1,384 @@
+name: CI
+
+# Nothing builds on a push: work lands directly on main, and the builds run at
+# a tag (before anything is signed or published) or on demand. A manual run
+# (workflow_dispatch) builds and tests every target but signs and publishes
+# nothing: those jobs only run for a v* tag.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      # The tag must name the crate version exactly, pre-release included
+      # (v0.1.0-beta.1 <-> 0.1.0-beta.1).
+      - name: Check that the tag matches the crate version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          crate=$(cargo pkgid -p rom2altsound)
+          crate="${crate##*[@#]}"
+          if [ "$tag" != "$crate" ]; then
+            echo "::error::tag $GITHUB_REF_NAME but Cargo.toml says $crate: update Cargo.toml, then re-tag"
+            exit 1
+          fi
+          echo "tag $GITHUB_REF_NAME <-> Cargo.toml $crate: OK"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --release --all-targets -- -D warnings
+
+  build:
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            label: linux-x86_64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            label: linux-aarch64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            label: macos-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            label: macos-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: windows-x86_64
+
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.label }}
+    env:
+      # libpinmame's CMakeLists builds for macOS 14; the Rust side matches it
+      # (ignored on the other systems).
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        with:
+          toolchain: stable
+          # Without this line, `--target` would fail on the macOS x86_64
+          # cross-build (the macos-latest runner is arm64).
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        with:
+          key: ${{ matrix.target }}
+
+      # PinMAME (vendor/pinmame) is compiled by build.rs through CMake.
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      # Same --target as the build, so that PinMAME is not compiled a second
+      # time into target/release. The x86_64 macOS binary is cross-built on an
+      # arm64 runner: not run here.
+      - name: Run tests
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: cargo test --release --target ${{ matrix.target }}
+
+      - name: Smoke test (--version)
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: target/${{ matrix.target }}/release/rom2altsound --version
+
+      # --- Packaging (unsigned; signing happens in jobs of their own, behind
+      # the `signing` environment). ---
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir pkg
+          cp target/${{ matrix.target }}/release/rom2altsound README.md LICENSE pkg/
+          tar czf rom2altsound-${{ matrix.label }}.tar.gz -C pkg rom2altsound README.md LICENSE
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path target/${{ matrix.target }}/release/rom2altsound.exe, README.md, LICENSE -DestinationPath rom2altsound-${{ matrix.label }}.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: rom2altsound-${{ matrix.label }}
+          path: rom2altsound-${{ matrix.label }}.*
+
+  # Apple signing + notarization. Behind `signing`: the Apple secrets are
+  # environment secrets, and a Developer ID signature commits the owner's
+  # identity, so it never goes out without explicit approval.
+  sign-apple:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    environment: signing
+    steps:
+      - name: Download the macOS artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: rom2altsound-macos-*
+          path: dl
+
+      - name: Import Apple Developer ID certificate
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+      - name: Sign & notarize the macOS binaries
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Submit and poll with timeout + retry (3 attempts, 5/15/45 min backoff)
+          notarize_once() {
+            local zip="$1" label="$2" timeout="$3"
+
+            local output
+            output=$(xcrun notarytool submit "$zip" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_ID_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --verbose 2>&1)
+            echo "$output"
+            local sub_id
+            sub_id=$(echo "$output" | awk '/id:/{print $2; exit}')
+            [ -n "$sub_id" ] || { echo "$label: failed to get submission ID"; return 1; }
+            echo "$label: submitted (id: $sub_id)"
+
+            local deadline=$((SECONDS + timeout))
+            while [ $SECONDS -lt $deadline ]; do
+              sleep 30
+              local info
+              info=$(xcrun notarytool info "$sub_id" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_ID_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" 2>&1) || { echo "$label: network error, retrying poll..."; continue; }
+
+              local status
+              status=$(echo "$info" | awk '/status:/{print $2; exit}')
+              echo "$label: $status"
+
+              case "$status" in
+                Accepted) return 0 ;;
+                Invalid|Rejected)
+                  xcrun notarytool log "$sub_id" \
+                    --apple-id "$APPLE_ID" \
+                    --password "$APPLE_ID_PASSWORD" \
+                    --team-id "$APPLE_TEAM_ID" 2>&1 || true
+                  return 1 ;;
+              esac
+            done
+            echo "$label: timed out after $((timeout / 60)) minutes"
+            return 2  # timeout, retryable
+          }
+
+          notarize() {
+            local zip="$1" label="$2"
+            local backoffs=(300 900 2700)  # 5 / 15 / 45 minutes
+            for i in 0 1 2; do
+              echo "$label: attempt $((i + 1))/3"
+              notarize_once "$zip" "$label" "${backoffs[$i]}" && return 0
+              local rc=$?
+              [ $rc -eq 2 ] || return $rc  # only retry on timeout (rc=2)
+              [ $i -lt 2 ] && echo "$label: retrying after timeout..."
+            done
+            return 1
+          }
+
+          SIGN_ID="Developer ID Application: Sylvain Gargasson ($APPLE_TEAM_ID)"
+          artifacts=(rom2altsound-macos-arm64 rom2altsound-macos-x86_64)
+
+          # 1) Sign and verify, then zip for notarization.
+          for art in "${artifacts[@]}"; do
+            echo "::group::sign $art"
+            work="$RUNNER_TEMP/$art"
+            mkdir -p "$work"
+            tar xzf "dl/$art/$art.tar.gz" -C "$work"
+            codesign --force --options runtime \
+              --sign "$SIGN_ID" \
+              --timestamp "$work/rom2altsound"
+            codesign --verify --strict --verbose=2 "$work/rom2altsound"
+            ditto -c -k --keepParent "$work/rom2altsound" "$RUNNER_TEMP/$art.zip"
+            echo "::endgroup::"
+          done
+
+          # 2) Notarize in parallel, then collect the exit codes one by one.
+          pids=()
+          for art in "${artifacts[@]}"; do
+            notarize "$RUNNER_TEMP/$art.zip" "$art" &
+            pids+=("$!")
+          done
+          failed=0
+          for i in "${!pids[@]}"; do
+            wait "${pids[$i]}" || { echo "::error::${artifacts[$i]}: notarization failed"; failed=1; }
+          done
+          [ $failed -eq 0 ] || exit 1
+
+          # 3) Repackage the signed binaries under their original names.
+          for art in "${artifacts[@]}"; do
+            tar czf "$art.tar.gz" -C "$RUNNER_TEMP/$art" rom2altsound README.md LICENSE
+          done
+
+      - name: Re-upload the signed arm64 artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: rom2altsound-macos-arm64
+          path: rom2altsound-macos-arm64.tar.gz
+          overwrite: true
+
+      - name: Re-upload the signed x86_64 artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: rom2altsound-macos-x86_64
+          path: rom2altsound-macos-x86_64.tar.gz
+          overwrite: true
+
+  # Authenticode-sign the Windows binary with ssign: the Linux runner signs it
+  # via Certum (no Windows, no vendor stack). Gated by the `signing`
+  # environment (owner approval); the release below needs it.
+  sign-windows:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: signing
+    steps:
+      - name: Install ssign (prebuilt binary from the latest release)
+        run: |
+          curl -fsSL https://github.com/Le-Syl21/ssign/releases/latest/download/ssign-linux-x86_64.tar.gz | tar xz
+          sudo install -m755 ssign /usr/local/bin/ssign
+
+      - name: Download the Windows artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: rom2altsound-windows-x86_64
+          path: dl
+
+      - name: Sign with ssign (via Certum)
+        env:
+          CERTUM_EMAIL: ${{ secrets.CERTUM_EMAIL }}
+          CERTUM_OTP: ${{ secrets.CERTUM_OTP }}
+        run: |
+          cd dl
+          unzip -o rom2altsound-windows-x86_64.zip
+          ssign --verbose \
+            -n "rom2altsound" -u "https://github.com/${{ github.repository }}" \
+            rom2altsound.exe
+          sudo apt-get update -qq && sudo apt-get install -y osslsigncode
+          # Check the facts, not the presence of a sentence: "Calculated message
+          # digest" also appears when the digest does NOT match, and says nothing
+          # about timestamping.
+          out=$(osslsigncode verify rom2altsound.exe 2>&1) || true
+          echo "$out"
+          if echo "$out" | grep -q "MISMATCH"; then
+            echo "::error::invalid Authenticode digest (Windows would see it as tampered with)"
+            exit 1
+          fi
+          if echo "$out" | grep -q "Timestamp is not available"; then
+            echo "::error::signature is not timestamped (invalid as soon as the certificate expires)"
+            exit 1
+          fi
+          if ! echo "$out" | grep -q "Signature verification: ok"; then
+            echo "::error::signature verification failed"
+            exit 1
+          fi
+          rm -f rom2altsound-windows-x86_64.zip
+          zip -j rom2altsound-windows-x86_64.zip rom2altsound.exe README.md LICENSE
+
+      - name: Re-upload the signed artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: rom2altsound-windows-x86_64
+          path: dl/rom2altsound-windows-x86_64.zip
+          overwrite: true
+
+  release:
+    needs: [build, sign-windows, sign-apple]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/artifacts
+
+      # A tag with a '-' (v0.1.0-beta.1) is published as a pre-release.
+      # The notes always go through --notes-file (never `--notes -`, which
+      # publishes a body made of a single "-").
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          notes="$RUNNER_TEMP/notes.md"
+          cat > "$notes" <<'EOF'
+          Turn a pinball ROM's sound board into an AltSound pack.
+
+          | system | file |
+          |---|---|
+          | Linux x86_64 | `rom2altsound-linux-x86_64.tar.gz` |
+          | Linux aarch64 | `rom2altsound-linux-aarch64.tar.gz` |
+          | Windows x86_64 (signed) | `rom2altsound-windows-x86_64.zip` |
+          | macOS Apple Silicon (signed, notarized) | `rom2altsound-macos-arm64.tar.gz` |
+          | macOS Intel (signed, notarized) | `rom2altsound-macos-x86_64.tar.gz` |
+
+          Usage, supported boards and limits: see the README.
+          Help and feedback: https://discord.gg/T37DYHmt2j (channel #rom2altsound)
+          EOF
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "rom2altsound ${GITHUB_REF_NAME#v}" \
+            --notes-file "$notes" \
+            --generate-notes \
+            $prerelease \
+            "$RUNNER_TEMP"/artifacts/*/*
+          body=$(gh release view "$GITHUB_REF_NAME" --json body --jq '.body')
+          if [ ${#body} -lt 100 ]; then
+            echo "::error::release body is only ${#body} characters"
+            exit 1
+          fi
