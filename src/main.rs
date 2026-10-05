@@ -2,6 +2,7 @@
 //! driving its sound board directly (no keyboard, no patch to PinMAME).
 
 mod altsound;
+mod batch;
 mod dcsrom;
 mod extract;
 mod ffi;
@@ -20,44 +21,84 @@ use clap::Parser;
 
 use extract::{Extractor, Options, VolumeInit};
 
+const ABOUT: &str = "Turn a pinball ROM's sound board into an AltSound pack";
+
+const LONG_ABOUT: &str = "\
+Turn a pinball ROM's sound board into an AltSound pack.
+
+rom2altsound runs PinMAME in-process, plays every sound command of the ROM on the
+emulated sound board, and records each one to its own WAV file at one reference
+volume. Music loops are cut to their intro plus one exact cycle. Each ROM gets a
+folder that VPinball's AltSound plugin reads as is: drop it as
+<table folder>/altsound/<rom>/.
+
+Supported boards: Williams/Bally DCS, WPC (WPC89/WPCS), System 11, Data East
+(BSMT) and Sega/Stern Whitestar. Not supported: Stern SAM, Bally Cheap Squeak/TCS.";
+
+const AFTER_HELP: &str = "\
+Examples:
+  rom2altsound afm_113b                 afm_113b.zip from . or ./roms, pack in ./afm_113b/
+  rom2altsound ~/roms/mm_109c.zip       ROM given by its zip, pack in ./mm_109c/
+  rom2altsound afm_113b cv_20h rs_l6 --roms ~/vpinball/roms --out ~/packs
+                                        three ROMs, 2 at a time, packs in ~/packs/<rom>/
+
+Each ROM folder holds the WAV files, altsound.csv, g-sound.csv, altsound.ini,
+manifest.json, cold-boot.json and factory-nvram/.
+
+The pack is a starting point: every sound plays at the same level, nothing is
+ducked or stopped. Do the artistic pass (ducking, stops, gains) in an AltSound
+editor such as VPin Studio. AltSound loops whole files only, so a loop plays its
+body without the intro (https://github.com/vpinball/libaltsound/issues/14); the
+full intro + loop file, with its loop points, is kept next to it.
+
+Project: https://github.com/Le-Syl21/rom2altsound
+Discord: https://discord.gg/T37DYHmt2j (channel #rom2altsound)";
+
 #[derive(Parser)]
-#[command(about = "Extract a pinball ROM's sounds by driving PinMAME's sound board in-process")]
+#[command(version, about = ABOUT, long_about = LONG_ABOUT, after_help = AFTER_HELP)]
 struct Cli {
-    /// ROM set name, e.g. afm_113b
-    rom: String,
-    /// Directory holding the ROM zip files
-    #[arg(long)]
-    roms: PathBuf,
-    /// Output directory for the WAV files and manifest.json
-    #[arg(long)]
-    out: PathBuf,
+    /// ROMs to extract: a path to a ROM zip (e.g. ./afm_113b.zip), or a ROM set name
+    /// (e.g. afm_113b) looked up in --roms
+    #[arg(value_name = "ROM", required = true)]
+    rom_args: Vec<String>,
+    /// Where ROM set names are looked up [default: the current directory, then ./roms]
+    #[arg(long, value_name = "DIR")]
+    roms: Option<PathBuf>,
+    /// Output directory: each ROM goes in <DIR>/<rom>/ [default: the current directory]
+    #[arg(long, value_name = "DIR")]
+    out: Option<PathBuf>,
+    /// How many ROMs are extracted at the same time (one process each)
+    #[arg(long, short, default_value_t = 2, value_parser = clap::value_parser!(u32).range(1..))]
+    jobs: u32,
     /// Only these command ids, e.g. 0x0186,0x0002
     #[arg(long, value_delimiter = ',')]
     only: Option<Vec<String>>,
     /// Stop after N commands
     #[arg(long)]
     limit: Option<usize>,
-    /// Factory settings: boot the ROM cold in a fresh private vpm (no nvram) so that the
-    /// game runs its factory reset and writes its nvram, then boot it warm from that nvram,
-    /// note the volume the game sets (its factory volume), and record every sound at the
-    /// reference volume (the loudest master volume that does not clip: DCS 55 AA EF 10,
-    /// Whitestar FE 11 FD). The dB offset to the factory volume goes in the manifest
-    #[arg(long, conflicts_with_all = ["no_volume_init", "cold_boot_only"])]
-    factory: bool,
-    /// With --factory: record at the game's own factory volume instead of the reference
-    /// volume (the old behavior; apollo13's files then peak around -43 dBFS)
-    #[arg(long, requires = "factory", conflicts_with = "dcs_volume")]
+    /// Skip the factory settings. By default each ROM is booted cold in a fresh private
+    /// PinMAME directory (no nvram) so that the game runs its factory reset and writes its
+    /// nvram, then warm from that nvram; the volume the game sets (its factory volume) is
+    /// noted and every sound is recorded at the reference volume (the loudest master volume
+    /// that does not clip: DCS 55 AA EF 10, Whitestar FE 11 FD). The dB offset to the
+    /// factory volume goes in the manifest
+    #[arg(long)]
+    no_factory: bool,
+    /// Record at the game's own factory volume instead of the reference volume
+    /// (apollo13's files then peak around -43 dBFS)
+    #[arg(long, conflicts_with_all = ["dcs_volume", "no_factory", "no_volume_init", "cold_boot_only"])]
     factory_volume: bool,
-    /// Do not set the DCS master volume (keep what the game or the board's reset set)
+    /// Do not set the DCS master volume (keep what the game or the board's reset set);
+    /// implies --no-factory
     #[arg(long)]
     no_volume_init: bool,
     /// DCS master volume byte sent as `55 AA vv ~vv` (FF = 0 dB, one step = 08); with
-    /// --factory, the DCS reference volume [default: FF, or EF with --factory]
+    /// the factory settings, the DCS reference volume [default: EF, or FF with --no-factory]
     #[arg(long, value_parser = parse_hex_byte)]
     dcs_volume: Option<u8>,
-    /// With --factory: the Whitestar reference volume byte, sent as `FE xx FD` (10 = level
-    /// 31, the loudest; 2F = silent) [default: 11]
-    #[arg(long, requires = "factory", conflicts_with = "factory_volume", value_parser = parse_whitestar)]
+    /// The Whitestar reference volume byte, sent as `FE xx FD` (10 = level 31, the
+    /// loudest; 2F = silent) [default: 11]
+    #[arg(long, conflicts_with_all = ["factory_volume", "no_factory", "no_volume_init", "cold_boot_only"], value_parser = parse_whitestar)]
     whitestar_volume: Option<u8>,
     /// Minimum emulated boot time before halting the game CPUs; the boot then lasts until
     /// no game sound byte has arrived for 3 s (and, on DCS, until the game's volume)
@@ -80,12 +121,12 @@ struct Cli {
     #[arg(long, default_value_t = 1.5)]
     no_sound_secs: f64,
     /// Private PinMAME directory (roms are linked or copied in, nvram/cfg are written there)
-    /// [default: the user cache directory, then rom2altsound/vpm, or
-    /// rom2altsound/vpm-factory/<rom> with --factory]
+    /// [default: the user cache directory, then rom2altsound/vpm-factory/<rom>, or
+    /// rom2altsound/vpm with --no-factory]
     #[arg(long)]
     vpm: Option<PathBuf>,
-    /// Only boot the ROM and stop, which writes its nvram (the cold boot of --factory);
-    /// the boot report goes to <out>/cold-boot.json
+    /// Only boot the ROM and stop, which writes its nvram (the cold boot of the factory
+    /// settings); the boot report goes to cold-boot.json
     #[arg(long)]
     cold_boot_only: bool,
     /// A sounds.dat to name the commands with [default: the one of the PinMAME version
@@ -115,6 +156,25 @@ struct Cli {
     /// default: every command keeps its own file
     #[arg(long, conflicts_with = "no_altsound")]
     merge_twins: bool,
+    /// Internal: extract the single ROM given in this process; --roms is its directory and
+    /// --out its own folder (libpinmame runs one machine per process)
+    #[arg(long, hide = true)]
+    in_process: bool,
+}
+
+impl Cli {
+    /// The factory settings are on unless turned off, directly or by an option that
+    /// cannot go with them.
+    fn factory(&self) -> bool {
+        !(self.no_factory || self.no_volume_init || self.cold_boot_only)
+    }
+}
+
+/// One ROM to extract: its set name, the directory holding its zip, its output folder.
+struct Job {
+    rom: String,
+    roms: PathBuf,
+    out: PathBuf,
 }
 
 static STATE: Mutex<Option<Extractor>> = Mutex::new(None);
@@ -172,29 +232,42 @@ fn main() {
         return;
     }
     let cli = Cli::parse();
-    if let Err(e) = run(cli) {
-        eprintln!("error: {e}");
-        std::process::exit(1);
+    if cli.in_process {
+        let [rom] = cli.rom_args.as_slice() else {
+            eprintln!("error: --in-process takes exactly one ROM");
+            std::process::exit(2);
+        };
+        let job = Job {
+            rom: rom.clone(),
+            roms: cli.roms.clone().unwrap_or_else(|| PathBuf::from(".")),
+            out: cli.out.clone().unwrap_or_else(|| PathBuf::from(rom)),
+        };
+        if let Err(e) = run(&cli, &job) {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+        return;
     }
+    std::process::exit(batch::run(&cli));
 }
 
-fn run(cli: Cli) -> Result<(), String> {
+fn run(cli: &Cli, job: &Job) -> Result<(), String> {
     let wall = Instant::now();
     let dat = soundsdat::SoundsDat::parse(&match &cli.sounds_dat {
         Some(p) => std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?,
         None => soundsdat::BUILT_IN.to_owned(),
     });
-    std::fs::create_dir_all(&cli.out).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&job.out).map_err(|e| e.to_string())?;
     let vpm = match &cli.vpm {
         Some(v) => std::path::absolute(v).map_err(|e| e.to_string())?,
-        None if cli.factory => work_dir()?.join("vpm-factory").join(&cli.rom),
+        None if cli.factory() => work_dir()?.join("vpm-factory").join(&job.rom),
         None => work_dir()?.join("vpm"),
     };
     for d in ["roms", "nvram", "cfg"] {
         std::fs::create_dir_all(vpm.join(d)).map_err(|e| e.to_string())?;
     }
-    let factory = if cli.factory {
-        Some(cold_boot(&cli, &vpm)?)
+    let factory = if cli.factory() {
+        Some(cold_boot(cli, job, &vpm)?)
     } else {
         None
     };
@@ -228,28 +301,28 @@ fn run(cli: Cli) -> Result<(), String> {
     unsafe { ffi::PinmameSetConfig(&config) };
 
     // Parent set (sounds.dat sections are often under the parent name) and private ROM links.
-    let rom_c = CString::new(cli.rom.clone()).unwrap();
+    let rom_c = CString::new(job.rom.clone()).unwrap();
     let mut game: (Option<String>, bool) = (None, false);
     let st =
         unsafe { ffi::PinmameGetGame(rom_c.as_ptr(), on_game, &mut game as *mut _ as *mut c_void) };
     if st != ffi::STATUS_OK {
-        return Err(format!("unknown game {} (status {st})", cli.rom));
+        return Err(format!("unknown game {} (status {st})", job.rom));
     }
     let parent = game.0.filter(|p| !p.is_empty()); // parents point at the nameless root driver
-    for set in std::iter::once(&cli.rom).chain(parent.as_ref()) {
-        link_rom(&cli.roms, &vpm, set)?;
+    for set in std::iter::once(&job.rom).chain(parent.as_ref()) {
+        link_rom(&job.roms, &vpm, set)?;
     }
 
     *STATE.lock().unwrap() = Some(Extractor::new(
         Options {
-            out_dir: cli.out.clone(),
-            rom: cli.rom.clone(),
+            out_dir: job.out.clone(),
+            rom: job.rom.clone(),
             parent: parent.clone(),
-            only: cli.only,
+            only: cli.only.clone(),
             limit: cli.limit,
             volume: if cli.factory_volume || cli.no_volume_init {
                 VolumeInit::Game
-            } else if cli.factory {
+            } else if cli.factory() {
                 VolumeInit::Reference {
                     dcs: cli.dcs_volume.unwrap_or(DCS_REFERENCE),
                     whitestar: cli.whitestar_volume.unwrap_or(WHITESTAR_REFERENCE),
@@ -264,7 +337,7 @@ fn run(cli: Cli) -> Result<(), String> {
             no_sound_secs: cli.no_sound_secs,
             cold_boot_only: cli.cold_boot_only,
             factory,
-            stop: cli.stop,
+            stop: cli.stop.clone(),
             dc_block: cli.dc_block,
             verbose: cli.verbose,
         },
@@ -277,7 +350,7 @@ fn run(cli: Cli) -> Result<(), String> {
     }
     eprintln!(
         "running {} (parent {:?}) from {}",
-        cli.rom,
+        job.rom,
         parent,
         vpm.display()
     );
@@ -304,15 +377,15 @@ fn run(cli: Cli) -> Result<(), String> {
             "boot": x.boot_report(),
             "volume": x.volume_report(),
         });
-        let path = cli.out.join(COLD_BOOT_REPORT);
+        let path = job.out.join(COLD_BOOT_REPORT);
         std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap())
             .map_err(|e| format!("{}: {e}", path.display()))?;
         return Ok(());
     }
     x.write_manifest();
-    summary(&cli.rom, &x, wall.elapsed().as_secs_f64());
+    summary(&job.rom, &x, wall.elapsed().as_secs_f64());
     if !cli.no_altsound {
-        let r = altsound::write_pack(&cli.out, &x.results, cli.merge_twins)?;
+        let r = altsound::write_pack(&job.out, &x.results, cli.merge_twins)?;
         println!(
             "  altsound: {} row(s), {} loop(s) with loop points, {} twin(s){}, {} file(s) referenced",
             r.rows,
@@ -345,8 +418,8 @@ const WHITESTAR_REFERENCE: u8 = 0x11;
 /// gone quiet, and stop it, which writes the nvram the game initialized with its factory
 /// settings. That nvram is copied to `<out>/factory-nvram/<rom>.nv` before the warm boot,
 /// which rewrites the vpm's copy when it stops. Returns the report stored in the manifest.
-fn cold_boot(cli: &Cli, vpm: &Path) -> Result<serde_json::Value, String> {
-    let rom = &cli.rom;
+fn cold_boot(cli: &Cli, job: &Job, vpm: &Path) -> Result<serde_json::Value, String> {
+    let rom = &job.rom;
     let nvram = vpm.join("nvram").join(format!("{rom}.nv"));
     let cfg = vpm.join("cfg").join(format!("{rom}.cfg"));
     for f in [&nvram, &cfg] {
@@ -366,16 +439,17 @@ fn cold_boot(cli: &Cli, vpm: &Path) -> Result<serde_json::Value, String> {
     child
         .arg(rom)
         .arg("--roms")
-        .arg(&cli.roms)
+        .arg(&job.roms)
         .arg("--out")
-        .arg(&cli.out)
+        .arg(&job.out)
         .arg("--vpm")
         .arg(vpm)
         .arg("--boot-secs")
         .arg(cli.boot_secs.to_string())
         .arg("--boot-max-secs")
         .arg(cli.boot_max_secs.to_string())
-        .arg("--cold-boot-only");
+        .arg("--cold-boot-only")
+        .arg("--in-process");
     if let Some(dat) = &cli.sounds_dat {
         child.arg("--sounds-dat").arg(dat);
     }
@@ -392,11 +466,11 @@ fn cold_boot(cli: &Cli, vpm: &Path) -> Result<serde_json::Value, String> {
             nvram.display()
         )
     })?;
-    let saved = cli.out.join("factory-nvram").join(format!("{rom}.nv"));
-    std::fs::create_dir_all(saved.parent().unwrap_or(&cli.out))
+    let saved = job.out.join("factory-nvram").join(format!("{rom}.nv"));
+    std::fs::create_dir_all(saved.parent().unwrap_or(&job.out))
         .and_then(|()| std::fs::copy(&nvram, &saved))
         .map_err(|e| format!("{}: {e}", saved.display()))?;
-    let report_path = cli.out.join(COLD_BOOT_REPORT);
+    let report_path = job.out.join(COLD_BOOT_REPORT);
     let report: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(&report_path)
             .map_err(|e| format!("{}: {e}", report_path.display()))?,
