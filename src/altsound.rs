@@ -71,6 +71,9 @@ pub struct Row {
     pub id: u32,
     pub kind: Kind,
     pub looped: bool,
+    /// Kept playing until the recording cap without an exact loop found: music cut at
+    /// `--max-secs` (not looped in altsound.csv; "music", which loops, in g-sound.csv).
+    pub continuous: bool,
     pub name: String,
     pub fname: String,
 }
@@ -82,8 +85,9 @@ pub enum Kind {
     Sfx,
 }
 
-/// Classifies a sound from its sounds.dat name and its loop: loops are music; "Music:"
-/// names are music too; voice lines (quoted text or "VOX:") are callouts; the rest is SFX.
+/// Classifies a sound from its sounds.dat name and whether it keeps playing: loops and
+/// sounds that never end are music; "Music:" names are music too; voice lines (quoted
+/// text or "VOX:") are callouts; the rest is SFX.
 pub fn classify(name: &str, looped: bool) -> Kind {
     let n = name.trim_start();
     let lower = n.to_ascii_lowercase();
@@ -133,7 +137,7 @@ pub fn gsound_csv(rows: &[Row]) -> String {
     let mut s = String::from("ID,TYPE,GAIN,DUCKING_PROFILE,FNAME\r\n");
     for r in rows {
         let ty = match r.kind {
-            Kind::Music if r.looped => "music",
+            Kind::Music if r.looped || r.continuous => "music",
             Kind::Callout => "callout",
             _ => "sfx",
         };
@@ -452,6 +456,7 @@ pub fn write_pack(
             _ => s,
         };
         let looped = src.loop_info.is_some();
+        let continuous = !looped && src.loop_unresolved.is_some();
         let fname = match &src.loop_info {
             Some(l) => l.loop_file.clone().unwrap_or_else(|| file.clone()),
             None => src.file.clone().unwrap_or_else(|| file.clone()),
@@ -459,8 +464,9 @@ pub fn write_pack(
         referenced.insert(fname.clone());
         rows.push(Row {
             id,
-            kind: classify(&s.name, looped),
+            kind: classify(&s.name, looped || continuous),
             looped,
+            continuous,
             name: csv_name(&s.name, &s.id),
             fname,
         });
@@ -581,6 +587,7 @@ mod tests {
                 id: 1,
                 kind: Kind::Music,
                 looped: true,
+                continuous: false,
                 name: "Music: Prelaunch Loop".into(),
                 fname: "0x0001-afm_113b-loop.wav".into(),
             },
@@ -588,10 +595,20 @@ mod tests {
                 id: 0x392,
                 kind: Kind::Callout,
                 looped: false,
+                continuous: false,
                 name: "Hey".into(),
                 fname: "0x0392-afm_113b.wav".into(),
             },
         ];
+        let mut rows = rows.to_vec();
+        rows.push(Row {
+            id: 0x24,
+            kind: Kind::Music,
+            looped: false,
+            continuous: true,
+            name: "sound 0x24".into(),
+            fname: "0x24-xfiles.wav".into(),
+        });
         let a = altsound_csv(&rows);
         assert!(a.starts_with("ID,CHANNEL,DUCK,GAIN,LOOP,STOP,NAME,FNAME\r\n"));
         assert!(
@@ -601,6 +618,8 @@ mod tests {
         let g = gsound_csv(&rows);
         assert!(g.contains("0x0001,music,100,0,0x0001-afm_113b-loop.wav\r\n"));
         assert!(g.contains("0x0392,callout,100,0,0x0392-afm_113b.wav\r\n"));
+        assert!(a.contains("0x0024,0,100,100,0,0,sound 0x24,0x24-xfiles.wav\r\n"));
+        assert!(g.contains("0x0024,music,100,0,0x24-xfiles.wav\r\n"));
     }
 
     #[test]
