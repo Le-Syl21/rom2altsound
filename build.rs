@@ -153,6 +153,15 @@ fn patch_cmakelists(text: &str) -> String {
         "      \"$<$<CONFIG:RELEASE>:$<$<COMPILE_LANGUAGE:C,CXX>:/GL>>\"\n",
         "",
     );
+    // PinMAME compiles its own zlib (ext/zlib) on every platform, but only adds its headers
+    // to the include path on Windows: elsewhere the build picked the system's zlib.h, and
+    // failed on a Linux host without the zlib development package. The vendored headers
+    // go on every platform, so that they always match the vendored sources.
+    replace_once(
+        &mut t,
+        "   src/unix/sysdep\n)\n",
+        "   src/unix/sysdep\n   ext/zlib\n)\n",
+    );
     replace_all(
         &mut t,
         "include(${CMAKE_SOURCE_DIR}/cmake/",
