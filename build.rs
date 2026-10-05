@@ -117,6 +117,8 @@ fn main() {
     if platform.starts_with("win") {
         println!("cargo:rustc-link-lib=static=pinmame_static");
         println!("cargo:rustc-link-lib=dylib=winmm");
+        // MsgWaitForMultipleObjects, used by cpuexec.c on Windows.
+        println!("cargo:rustc-link-lib=dylib=user32");
     } else {
         println!("cargo:rustc-link-lib=static=pinmame");
     }
