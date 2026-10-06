@@ -85,8 +85,22 @@ unsafe extern "C" {
     pub fn shim_sound_region(len: *mut c_uint) -> *const u8;
     pub fn shim_game_gen() -> u64;
     pub fn shim_has_bsmt2000() -> c_int;
+    pub fn shim_sam_hook_dac() -> c_int;
+    pub fn shim_sam_dac_count() -> c_int;
+    pub fn shim_sam_dac_get(i: c_int, at: *mut f64, reg: *mut u8, val: *mut u8) -> c_int;
     pub static mut shim_log_min_level: c_int;
     pub fn shim_log(level: c_int, format: *const c_char, args: *mut c_void, user: *mut c_void);
+}
+
+/// `PinmameConfig::vpm_path`: the directory with a trailing separator (libpinmame
+/// appends "roms", "nvram"... as is).
+pub fn vpm_path(vpm: &std::path::Path) -> [c_char; PINMAME_MAX_PATH] {
+    let mut out = [0 as c_char; PINMAME_MAX_PATH];
+    let p = format!("{}/", vpm.display());
+    for (d, s) in out.iter_mut().zip(p.bytes().take(PINMAME_MAX_PATH - 1)) {
+        *d = s as c_char;
+    }
+    out
 }
 
 /// PinMAME's first sound ROM region (DCS: U2 at offset 0), if the machine has one.

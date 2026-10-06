@@ -3369,7 +3369,7 @@ fn hex(bytes: &[u8]) -> String {
 /// One-pole DC blocker (`y = x - x[-1] + r * y[-1]`, corner `DC_BLOCK_HZ`) per channel,
 /// starting from the idle level the output had before the command, so that a DC step
 /// caused by the sound itself is kept as the transient it would be on AC-coupled hardware.
-fn dc_block(s: &[i16], ch: usize, start: &[i32], rate: u32) -> Vec<f64> {
+pub(crate) fn dc_block(s: &[i16], ch: usize, start: &[i32], rate: u32) -> Vec<f64> {
     let r = (-2.0 * std::f64::consts::PI * DC_BLOCK_HZ / rate as f64).exp();
     let mut prev_x: Vec<f64> = (0..ch)
         .map(|c| start.get(c).copied().unwrap_or(0) as f64)
@@ -3389,7 +3389,7 @@ fn dc_block(s: &[i16], ch: usize, start: &[i32], rate: u32) -> Vec<f64> {
 }
 
 /// Peak and rms of a (DC-blocked) signal, in dBFS.
-fn levels(s: &[f64]) -> (Option<f64>, Option<f64>) {
+pub(crate) fn levels(s: &[f64]) -> (Option<f64>, Option<f64>) {
     if s.is_empty() {
         return (None, None);
     }
@@ -3421,7 +3421,7 @@ fn round3(x: f64) -> f64 {
     (x * 1000.0).round() / 1000.0
 }
 
-fn write_wav(
+pub(crate) fn write_wav(
     path: &std::path::Path,
     samples: &[i16],
     channels: u16,

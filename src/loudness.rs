@@ -49,8 +49,20 @@ pub struct Aggregate {
 
 /// Measures one file: `samples` interleaved, `ch` channels, DC-blocked, in LSB.
 pub fn measure(samples: &[f64], ch: usize, rate: u32) -> FileLoudness {
+    measure_with(samples, ch, rate, false)
+}
+
+/// `measure` with the true peak from `true_peak_interpolated` instead of the R128 meter's
+/// own (whose precise resampler costs about 0.13 s per second of audio: hours of Stern SAM
+/// music would take tens of CPU minutes). Within 0.1 dB of the meter (tests).
+pub fn measure_fast(samples: &[f64], ch: usize, rate: u32) -> FileLoudness {
+    measure_with(samples, ch, rate, true)
+}
+
+fn measure_with(samples: &[f64], ch: usize, rate: u32, fast_peak: bool) -> FileLoudness {
     let ch = ch.max(1);
-    let mut meter = EbuR128::new(2, rate, MODE).expect("valid R128 meter parameters");
+    let mode = if fast_peak { Mode::I } else { MODE };
+    let mut meter = EbuR128::new(2, rate, mode).expect("valid R128 meter parameters");
     let frames = samples.len() / ch;
     let step = (rate as usize).div_ceil(10).max(1); // libebur128's 100 ms
     let mut blocks = Vec::new();
@@ -64,9 +76,22 @@ pub fn measure(samples: &[f64], ch: usize, rate: u32) -> FileLoudness {
             blocks.push(energy(m));
         }
     }
-    let peak = (0..2)
-        .filter_map(|c| meter.true_peak(c).ok())
-        .fold(0.0f64, f64::max);
+    let peak = if fast_peak {
+        if ch == 1 {
+            true_peak_interpolated(samples, rate) / 32768.0
+        } else {
+            (0..ch)
+                .map(|c| {
+                    let x: Vec<f64> = samples.iter().skip(c).step_by(ch).copied().collect();
+                    true_peak_interpolated(&x, rate) / 32768.0
+                })
+                .fold(0.0f64, f64::max)
+        }
+    } else {
+        (0..2)
+            .filter_map(|c| meter.true_peak(c).ok())
+            .fold(0.0f64, f64::max)
+    };
     let lufs = finite(meter.loudness_global().ok());
     let level_lufs = lufs.or_else(|| {
         // Pad to one gating block.
@@ -87,6 +112,56 @@ pub fn measure(samples: &[f64], ch: usize, rate: u32) -> FileLoudness {
         blocks,
         frames: frames as u64,
     }
+}
+
+/// Half-length of the interpolator, in input samples.
+const TP_HALF: usize = 8;
+
+/// The true peak of one channel (same unit as `x`): the largest magnitude of the signal
+/// oversampled to at least 192 kHz (x8 at 24 kHz, as BS.1770 asks for x4 at 48 kHz), with
+/// a Lanczos-windowed sinc interpolator of 16 input samples.
+pub fn true_peak_interpolated(x: &[f64], rate: u32) -> f64 {
+    let os = (192_000usize.div_ceil(rate.max(1) as usize)).clamp(4, 16);
+    // taps[p][j]: weight of x[n + j - TP_HALF + 1] for the point n + p / os.
+    let taps: Vec<[f64; 2 * TP_HALF]> = (1..os)
+        .map(|p| {
+            let f = p as f64 / os as f64;
+            let mut t = [0.0; 2 * TP_HALF];
+            for (j, w) in t.iter_mut().enumerate() {
+                let d = f - (j as f64 - TP_HALF as f64 + 1.0);
+                let sinc = |v: f64| {
+                    if v.abs() < 1e-12 {
+                        1.0
+                    } else {
+                        (std::f64::consts::PI * v).sin() / (std::f64::consts::PI * v)
+                    }
+                };
+                *w = sinc(d) * sinc(d / TP_HALF as f64);
+            }
+            t
+        })
+        .collect();
+    let mut peak = x.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+    let n = x.len();
+    let at = |i: isize| {
+        if i >= 0 && (i as usize) < n {
+            x[i as usize]
+        } else {
+            0.0
+        }
+    };
+    let mut win = [0.0f64; 2 * TP_HALF];
+    for i in 0..n {
+        // The os - 1 points between x[i] and x[i + 1].
+        for (j, w) in win.iter_mut().enumerate() {
+            *w = at(i as isize + j as isize - TP_HALF as isize + 1);
+        }
+        for t in &taps {
+            let y: f64 = t.iter().zip(&win).map(|(a, b)| a * b).sum();
+            peak = peak.max(y.abs());
+        }
+    }
+    peak
 }
 
 /// The ROM total of a set of files.
@@ -224,6 +299,34 @@ mod tests {
         let level = l.level_lufs.unwrap();
         assert!((level + 6.02).abs() < 0.2, "{level}");
         assert!((gated(&l.blocks).unwrap() - level).abs() < 0.01);
+    }
+
+    #[test]
+    fn interpolated_true_peak_matches_the_meter() {
+        // Tones near a quarter of the rate (sample peaks well below the true peak), a
+        // two-tone mix and a click.
+        for (f, rate) in [
+            (5997.0, 24000),
+            (11000.0, 24000),
+            (3001.0, 12000),
+            (997.0, 48000),
+        ] {
+            let mut s = sine(0.5, 1.0, rate);
+            let fs = rate as f64;
+            for (i, v) in s.iter_mut().enumerate() {
+                let t = i as f64 / fs;
+                *v = 0.5 * 32767.0 * (2.0 * std::f64::consts::PI * f * t + 0.3).sin()
+                    + 0.3 * 32767.0 * (2.0 * std::f64::consts::PI * (f * 0.61) * t).sin();
+            }
+            s[rate as usize / 2] += 9000.0;
+            let a = measure(&s, 1, rate).true_peak_dbtp.unwrap();
+            let b = measure_fast(&s, 1, rate).true_peak_dbtp.unwrap();
+            assert!(
+                (a - b).abs() < 0.1,
+                "{f} Hz at {rate}: meter {a} vs ours {b}"
+            );
+            assert_eq!(measure(&s, 1, rate).lufs, measure_fast(&s, 1, rate).lufs);
+        }
     }
 
     #[test]

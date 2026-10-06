@@ -97,3 +97,78 @@ int shim_has_bsmt2000(void) {
       return 1;
   return 0;
 }
+
+// ---------------------------------------------------------------------------------------
+// Stern SAM: the PCM1755 DAC's register writes (master volume).
+//
+// The SAM CPU bit-bangs 16-bit words to its PCM1755 DAC on PIO lines P3-P5, which PinMAME
+// sees as writes to the CPU's only I/O port (sam.c, sam_port_w): registers 0x10/0x11 are
+// the left/right attenuation, 0x12 the soft mute, 0x13 the DAC off. sam.c keeps the
+// result in a private struct, so the hook below sits in front of its port handler: it
+// decodes the same serial words the same way, logs them with the emulated time, then calls
+// sam.c's own handler, which still does all the work. Nothing in PinMAME is changed.
+
+#define SHIM_SAM_DAC_LOG 1024
+static port_write32_handler shim_sam_port_w_orig;
+static int shim_sam_pass = 16;
+static unsigned shim_sam_value;
+static volatile int shim_sam_dac_n;
+static struct { double at; unsigned char reg, val; } shim_sam_dac_log[SHIM_SAM_DAC_LOG];
+
+static WRITE32_HANDLER(shim_sam_port_w) {
+  // Same decoding as sam.c's sam_port_w: bit 4 clocks bit 5 in, MSB first; bit 3 ends.
+  if ((data & 0x10) && shim_sam_pass >= 0)
+    shim_sam_value |= ((data & 0x20) >> 5) << shim_sam_pass--;
+  if (data & 0x08) {
+    if (shim_sam_dac_n < SHIM_SAM_DAC_LOG) {
+      shim_sam_dac_log[shim_sam_dac_n].at = timer_get_time();
+      shim_sam_dac_log[shim_sam_dac_n].reg = (unsigned char)(shim_sam_value >> 8);
+      shim_sam_dac_log[shim_sam_dac_n].val = (unsigned char)shim_sam_value;
+      shim_sam_dac_n++;
+    }
+    shim_sam_pass = 16;
+    shim_sam_value = 0;
+  }
+  shim_sam_port_w_orig(offset, data, mem_mask);
+}
+
+// Puts the hook in front of a SAM machine's port handler. Call it from the emulation
+// thread once the machine exists and before its CPU runs (the audio-available callback).
+// Returns 1 when hooked, 0 when the machine is not a SAM or its port map is not the one
+// sam.c declares (one handler for ports 0x00-0xFF).
+int shim_sam_hook_dac(void) {
+  const struct IO_WritePort32 *p;
+  if (!core_gameData || !(core_gameData->gen & GEN_SAM))
+    return 0;
+  p = (const struct IO_WritePort32 *)Machine->drv->cpu[0].port_write;
+  if (!p)
+    return 0;
+  for (; !IS_MEMPORT_END(p); p++) {
+    if (IS_MEMPORT_MARKER(p))
+      continue;
+    if (p->start == 0x00 && p->end == 0xFF && p->handler) {
+      shim_sam_port_w_orig = p->handler;
+      shim_sam_pass = 16;
+      shim_sam_value = 0;
+      shim_sam_dac_n = 0;
+      install_port_write32_handler(0, 0x00, 0xFF, shim_sam_port_w);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+// How many DAC writes were logged (at most SHIM_SAM_DAC_LOG).
+int shim_sam_dac_count(void) {
+  return shim_sam_dac_n;
+}
+
+// The i-th logged write: emulated time (s), register, value. Returns 0 when out of range.
+int shim_sam_dac_get(int i, double *at, unsigned char *reg, unsigned char *val) {
+  if (i < 0 || i >= shim_sam_dac_n)
+    return 0;
+  *at = shim_sam_dac_log[i].at;
+  *reg = shim_sam_dac_log[i].reg;
+  *val = shim_sam_dac_log[i].val;
+  return 1;
+}

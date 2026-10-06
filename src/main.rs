@@ -10,10 +10,13 @@ mod extract;
 mod ffi;
 mod looping;
 mod loudness;
+mod sam;
+mod sampack;
 mod soundsdat;
 mod volume;
+mod zipread;
 
-use std::ffi::{CString, c_char, c_int, c_void};
+use std::ffi::{CString, c_int, c_void};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,8 +38,10 @@ folder that VPinball's AltSound plugin reads as is: drop it as
 <table folder>/altsound/<rom>/.
 
 Supported boards: Williams/Bally DCS, WPC (WPC89/WPCS), System 11, Data East
-(BSMT), Sega/Stern Whitestar and Bally Cheap Squeak / Turbo Cheap Squeak. Not
-supported: Stern SAM.
+(BSMT), Sega/Stern Whitestar and Bally Cheap Squeak / Turbo Cheap Squeak. Stern
+SAM has no sound board: its sounds are read from the ROM image (every sound, every
+song as one file, at full scale); its AltSound files, keyed by the game's sound
+calls, do not play in PinMAME today (SAM sends no sound command).
 
 BSMT boards (Data East, Sega, Whitestar): with the chip's own program,
 bsmt2000.zip (bsmt2000.bin, CRC c2a265af, not distributed), next to the ROM zip,
@@ -319,6 +324,10 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
     for d in ["roms", "nvram", "cfg"] {
         std::fs::create_dir_all(vpm.join(d)).map_err(|e| e.to_string())?;
     }
+    // Stern SAM: no sound board to drive; the sounds are read from the flash image.
+    if sam::sam_set(&job.rom).is_some() {
+        return sampack::run(cli, job, &vpm);
+    }
     let factory = if cli.factory() {
         Some(cold_boot(cli, job, &vpm)?)
     } else {
@@ -329,11 +338,7 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
     unsafe {
         ffi::shim_log_min_level = if cli.verbose { 1 } else { 2 };
     }
-    let mut vpm_path = [0 as c_char; ffi::PINMAME_MAX_PATH];
-    let p = format!("{}/", vpm.display()); // libpinmame appends "roms", "nvram"... as is
-    for (d, s) in vpm_path.iter_mut().zip(p.bytes()) {
-        *d = s as c_char;
-    }
+    let vpm_path = ffi::vpm_path(&vpm);
     let config = ffi::Config {
         audio_format: ffi::AUDIO_FORMAT_INT16,
         sample_rate: 44100,
