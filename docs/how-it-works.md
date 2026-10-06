@@ -12,7 +12,7 @@ rom2altsound <rom>... [--roms <dir>] [--out <dir>] [--jobs N] [--no-factory | --
              | --whitestar-volume HH | --no-volume-init] [--dcs-volume HH] [--only 0x0186,0x0002,...]
              [--limit N] [--boot-secs S] [--boot-max-secs S] [--max-secs S] [--loop-max-secs S]
              [--no-sound-secs S] [--stop 0xHHHH] [--dc-block] [--vpm <dir>] [--no-altsound]
-             [--merge-twins] [--check-ducking]
+             [--merge-twins] [--intro-loop-secs S] [--check-ducking]
 rom2altsound loop-scan [--hint SECS | --hint-frames F] <wav>...    # the loop detector alone
 rom2altsound dcs-effects <region.bin> <rom> [--json F]   # DCS track programs (diagnostic)
 rom2altsound duck-fit <M.wav> <C.wav> <MC.wav> <at_secs> [--win S]  # music gain under a sound
@@ -127,9 +127,37 @@ AltSound folder).
 - **Loop points.** `<id>-<rom>.wav` of a loop (intro + one exact cycle) gets a `smpl`
   chunk with one forward loop: start = `intro_samples`, end = `intro_samples +
   period_samples - 1` (the chunk's end is inclusive), sample frames. libaltsound loops
-  whole files only, so both CSVs reference the body alone, `<id>-<rom>-loop.wav`, with
-  `LOOP` = 100: the intro is not played (libaltsound issue
-  [#14](https://github.com/vpinball/libaltsound/issues/14)).
+  whole files only, from their first sample (its decoder seeks back to frame 0 at the end;
+  the `smpl` chunk is not read: libaltsound issue
+  [#14](https://github.com/vpinball/libaltsound/issues/14)). So what the CSVs reference
+  depends on the intro (`pack.file_kind` in the manifest, with `pack.file_reason`):
+  - **`intro_loop_extended`**: a loop with an **intro of its own**, at least
+    `OWN_INTRO_MIN_SECS` (50 ms) before the repetition starts (`repeats_from_samples`, see
+    Loops) and louder than `OWN_INTRO_MIN_PEAK` (32 LSB) there. The row plays
+    `<id>-<rom>-extended.wav`: the intro, then the body copied back to back until the file
+    is `--intro-loop-secs` long (300 s by default; whole cycles, so a little longer), with
+    the same `smpl` loop points. Each joint is the body's own end-to-start joint, the one a
+    player looping `-loop.wav` plays, so it is as seamless. `LOOP` = 0: played once, the
+    game's next music replaces it. In `g-sound.csv` its `TYPE` stays `music` (the type is
+    what makes it the music, which other types duck and the next music replaces), and
+    libaltsound loops every music sample: past the file's length it starts again from the
+    intro. Attack from Mars reported by deadmanworking: `0009` (Martian attack: a fanfare,
+    then the loop) and `000A` (the same loop, played on) had the same `-loop.wav`, and the
+    fanfare was lost.
+  - **`body_loop`**: a loop without an intro of its own (or `--intro-loop-secs 0`): the
+    body alone, `<id>-<rom>-loop.wav` (or the file itself for a loop that holds from the
+    first sample), `LOOP` = 100.
+  - **`one_shot`**: a sound that ends, or one cut at `--max-secs` without a loop:
+    `<id>-<rom>.wav`, `LOOP` = 0.
+
+  On afm_113b, 11 of the 20 loops have an intro of their own (`0002`, `0004`-`0006`,
+  `0009`-`000E`, `0013`), exactly those whose DCS track program has more than one intro
+  frame, with the same length (`0009`: 3.749 s, 489 frames = 3.756 s); the 9 others start
+  repeating within 9 ms. Size: an extended file of 300 s is 26 MB (mono, 16-bit,
+  44.1 kHz); the afm_113b pack goes from 143 MB to 429 MB. libaltsound decodes
+  through miniaudio's `ma_decoder_init_file`, which also reads FLAC, MP3 and Ogg Vorbis
+  (`stb_vorbis` is built in), so an editor can recompress the pack (FLAC is lossless and
+  smaller); the tool writes WAV only.
 - **`altsound.csv`** (`ID,CHANNEL,DUCK,GAIN,LOOP,STOP,NAME,FNAME`, libaltsound's
   `altsound_csv_parser`). Boards other than DCS: `CHANNEL` 0 (music: one at a time, a new
   one replaces it) for loops, for sounds that never ended (`loop_unresolved`, not looped)
@@ -222,8 +250,8 @@ How the programs map onto the pack (libaltsound's `altsound_processor.cpp` and
 | `CHANNEL` | 0 for a track on channel 0 that plays a stream (the music); 1 (jingle: one at a time) for the **voice channel**, the channel with the most voice lines (quoted names, most of its rows) that has no twin channel (more than half of its sounds also on another channel); -1 otherwise | AFM: channel 3, so a General line cuts the previous one, as on the board. The other channels cut their own previous sound on the board, but AltSound has one music and one jingle channel only: they play polyphonic |
 | `DUCK` | `round(100 * 0.9733^units)` of the deepest contribution to channel 0; 100 when none (and on music rows, which the parser forces to 100 anyway) | The depth is exact. AltSound keeps it while the file plays and gives the level back **at once** when it ends, where the board fades it back (0.15 s mostly; 17 AFM effects give it back 0.2 to 2 s before their end). Overlapping ducks **add up** on the board (-2.35 and -3.53 give -5.9 dB) but AltSound uses **only the deepest** ([libaltsound issue #15](https://github.com/vpinball/libaltsound/issues/15)). Only the music is ducked: a duck of another channel (3 AFM commands) is in the manifest only |
 | `STOP` | 1 when the row is on the jingle channel and its program stops channel 0 | AltSound can only stop the music, and only from a jingle; such a stop on another row is listed in `altsound.dcs.limits`. AFM: none. The stop commands play nothing, so they have no row: libaltsound stops the music on `0x03E3` itself; `0x0000` (all channels) and the per-channel stops (`0x03E1`, `0x03E2`, `0x03E4`...) are lost |
-| `LOOP` | as before, from the loop found | The intro is not played ([issue #14](https://github.com/vpinball/libaltsound/issues/14)) |
-| `TYPE` | `music` for channel 0 loops, `callout` for the voice channel, `sfx` for the rest (a one-shot channel 0 track too) | Same limits as `CHANNEL`: callouts cut each other, sfx are polyphonic |
+| `LOOP` | as before: 100 for a loop played from its body, 0 for a loop with an intro of its own, played from its extended file (see AltSound pack) | The intro is played once, then `--intro-loop-secs` of cycles; past that the music stops ([issue #14](https://github.com/vpinball/libaltsound/issues/14)) |
+| `TYPE` | `music` for channel 0 loops (an extended file too, which G-Sound then loops whole, intro included), `callout` for the voice channel, `sfx` for the rest (a one-shot channel 0 track too) | Same limits as `CHANNEL`: callouts cut each other, sfx are polyphonic |
 | `DUCKING_PROFILE` | per type, one profile per distinct DUCK value, lightest first: `ducking_profileN = music:<DUCK>` in `[callout_ducking_profiles]` / `[sfx_ducking_profiles]`, with `ducks = music` in `[callout]` / `[sfx]` (left empty for a type without profile: libaltsound refuses `ducks` without one) | Same limits as `DUCK`. AFM: callout `76, 67, 58`, sfx `76, 67, 58, 44, 15, 11, 7` |
 
 The deferred tracks (a music change on the beat) cannot be expressed in either format: they
@@ -449,6 +477,8 @@ A sound that keeps playing is written as **one exact cycle**, for a seamless loo
 AltSound pack's LOOP column): the file is the intro (if any) followed by exactly one loop
 body, cut at the sample where the body's end joins its start; when there is an intro, the
 body alone also goes to `<id>-<rom>-loop.wav`. The manifest's `loop` says how it was found.
+The pack then plays the body alone, or for a loop with an intro of its own, an extended
+file (see AltSound pack).
 
 - **Audio** (`method: "audio"`, every board, `src/looping.rs`). The emulation is
   deterministic, so after an intro `x[n] = x[n + period]`, up to PinMAME's +/-1 LSB TPDF
@@ -495,7 +525,10 @@ body alone also goes to `<id>-<rom>-loop.wav`. The manifest's `loop` says how it
   is cut at `--max-secs` as before (`ended_by: "max"`), with `loop_unresolved` saying why.
 
 `loop` in the manifest: `intro_samples`, `period_samples` (both in sample frames; the
-body's length), `period_exact_samples` (with the fraction), `period_secs`, `cycles`, `method`, `confidence` (1 minus
+body's length), `repeats_from_samples` (where the repetition starts: the intro's own audio;
+the body starts one verification window after it at least, then at the quietest joint
+within a second, so `intro_samples` is never 0 when this is not, and a loop without an
+intro of its own has it near 0), `period_exact_samples` (with the fraction), `period_secs`, `cycles`, `method`, `confidence` (1 minus
 the worst window's residual-to-signal ratio: 0.999 at -60 dB, 0.968 at -30 dB, lower only
 for a near-silent loop judged within the dither), `residual_db`, `verified_secs`,
 `loop_file`, `seam` (`joint_step`: the step played at the joint, last frame of the body to
@@ -573,8 +606,9 @@ DCS: `dcs` (see "Ducking, stops and channels").
 With the AltSound pack: `twin_of` (the original's id), on DCS `twin_reason` (the two
 channels), and `twin` (`residual_db`,
 `lag_samples`, `length_diff_samples`, `lufs_diff`) on twins, `pack` on every row
-(`channel`, `duck`, `stop`, `gsound_type`, `ducking_profile`: what it became in the CSVs),
-and at the top level `altsound` (`files`, `rows`, `loops_with_smpl`, `twins`,
+(`file`, `file_kind`, `file_reason`, `loop`, `channel`, `duck`, `stop`, `gsound_type`,
+`ducking_profile`: what it became in the CSVs), and at the top level `altsound` (`files`,
+`rows`, `loops_with_smpl`, `intro_loops_extended`, `intro_loop_secs`, `twins`,
 `merged_twins`, `files_referenced`, `dcs`: `voice_channel`, row counts, `duck_values`,
 `callout_profiles`, `sfx_profiles`, `limits`; `twin_test`).
 

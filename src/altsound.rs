@@ -3,8 +3,12 @@
 //!
 //! - Loops: `<id>-<rom>.wav` (intro + one exact cycle) gets a WAV `smpl` chunk carrying the
 //!   loop's start and end, sample-accurate, for editors and players that honour it.
-//!   libaltsound only loops a whole file, so the CSVs point at `<id>-<rom>-loop.wav` (the
-//!   body alone) and the intro is not played (libaltsound issue #14).
+//!   libaltsound only loops a whole file (libaltsound issue #14), so the CSVs point at:
+//!   - for a loop with an intro of its own (a fanfare before the loop: AFM `0009` against
+//!     `000A`, which share the loop), `<id>-<rom>-extended.wav`: the intro then whole
+//!     cycles, sample-exact, `--intro-loop-secs` long (5 minutes by default), played once
+//!     (LOOP 0) and carrying the same `smpl` loop points;
+//!   - for the others, `<id>-<rom>-loop.wav` (the body alone), looped (LOOP 100).
 //! - Twins: some ROMs hold commands that play the same audio (AFM lists every sound effect
 //!   twice). They are detected with a strict test and recorded in `manifest.json`
 //!   (`twin_of`); each command keeps its own file unless `--merge-twins` is given.
@@ -44,6 +48,37 @@ pub const TWIN_MAX_RESIDUAL_DB: f64 = -60.0;
 /// -64 to -80 dB once aligned; different sounds of nearly the same length are above 0 dB.
 const TWIN_MAX_LAG: isize = 3;
 
+/// A loop is played from an extended file (intro + cycles) when its intro holds at least
+/// this much audio of its own, before the repetition starts. Shorter, the "intro" is only
+/// where the loop detector chose to start the body (it keeps one window clear of the
+/// first cycle's edge, then looks for the quietest joint within a second).
+pub const OWN_INTRO_MIN_SECS: f64 = 0.05;
+/// ...and when that part carries sound: a peak above this (LSB, about -60 dBFS).
+pub const OWN_INTRO_MIN_PEAK: i32 = 32;
+/// Default length of an extended file (`--intro-loop-secs`): long enough for a game mode.
+pub const DEFAULT_INTRO_LOOP_SECS: f64 = 300.0;
+
+/// Which file a row plays, and why (`manifest.json`, `pack.file_kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileKind {
+    /// A loop with an intro of its own: intro + whole cycles, played once.
+    IntroLoopExtended,
+    /// A loop without an intro (or with `--intro-loop-secs 0`): the body alone, looped.
+    BodyLoop,
+    /// A sound that ends, or one cut at `--max-secs`: played once.
+    OneShot,
+}
+
+impl FileKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FileKind::IntroLoopExtended => "intro_loop_extended",
+            FileKind::BodyLoop => "body_loop",
+            FileKind::OneShot => "one_shot",
+        }
+    }
+}
+
 /// A sound found to be the same audio as an earlier one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Twin {
@@ -66,6 +101,9 @@ pub struct Twin {
 pub struct PackReport {
     pub rows: usize,
     pub loops_with_smpl: usize,
+    /// Loops with an intro of their own, played from an extended file.
+    pub intro_loops_extended: usize,
+    pub intro_loop_secs: f64,
     pub twins: usize,
     pub merged_twins: bool,
     pub files_referenced: usize,
@@ -98,8 +136,9 @@ pub struct Row {
     pub id: u32,
     pub kind: Kind,
     pub looped: bool,
-    /// Kept playing until the recording cap without an exact loop found: music cut at
-    /// `--max-secs` (not looped in altsound.csv; "music", which loops, in g-sound.csv).
+    /// Keeps playing, but its file is not looped in altsound.csv: music cut at
+    /// `--max-secs` without an exact loop found, or a loop with an intro played from its
+    /// extended file. "music" in g-sound.csv all the same (where every music file loops).
     pub continuous: bool,
     pub name: String,
     pub fname: String,
@@ -464,6 +503,97 @@ pub fn smpl_chunk(rate: u32, start: u32, end: u32) -> Vec<u8> {
     c
 }
 
+/// How many cycles of `period` frames follow an intro of `intro` frames in an extended
+/// file of at least `total` frames (at least one).
+pub fn extended_cycles(intro: usize, period: usize, total: usize) -> usize {
+    total.saturating_sub(intro).div_ceil(period.max(1)).max(1)
+}
+
+/// The extended file of a loop: `samples` (interleaved, `ch` channels) holds the intro
+/// (`intro` frames) then one body (`period` frames); the result is the intro then `cycles`
+/// copies of the body, back to back. Each joint is the body's own end-to-start joint, the
+/// one a player looping the body file plays.
+pub fn extend_loop(
+    samples: &[i16],
+    ch: usize,
+    intro: usize,
+    period: usize,
+    cycles: usize,
+) -> Vec<i16> {
+    let ch = ch.max(1);
+    let (a, b) = (intro * ch, (intro + period) * ch);
+    let body = &samples[a..b];
+    let mut out = Vec::with_capacity(a + body.len() * cycles);
+    out.extend_from_slice(&samples[..a]);
+    for _ in 0..cycles {
+        out.extend_from_slice(body);
+    }
+    out
+}
+
+/// Writes interleaved 16-bit samples as a WAV.
+fn write_wav(path: &Path, samples: &[i16], channels: u16, rate: u32) -> io::Result<()> {
+    let spec = hound::WavSpec {
+        channels,
+        sample_rate: rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let to_io = |e: hound::Error| io::Error::other(e.to_string());
+    let mut w = hound::WavWriter::create(path, spec).map_err(to_io)?;
+    let mut w16 = w.get_i16_writer(samples.len() as u32);
+    for &v in samples {
+        w16.write_sample(v);
+    }
+    w16.flush().map_err(to_io)?;
+    w.finalize().map_err(to_io)
+}
+
+/// The extended file of a loop that has an intro of its own: `Ok(Some(name))` when
+/// written, `Ok(None)` when the loop has no intro of its own (`OWN_INTRO_*`).
+fn write_extended(
+    out_dir: &Path,
+    file: &str,
+    l: &crate::extract::LoopInfo,
+    secs: f64,
+) -> io::Result<Option<(String, usize)>> {
+    let path = out_dir.join(file);
+    let mut r = hound::WavReader::open(&path).map_err(|e| io::Error::other(e.to_string()))?;
+    let spec = r.spec();
+    let (ch, rate) = (spec.channels as usize, spec.sample_rate);
+    if (l.repeats_from_samples as f64) < OWN_INTRO_MIN_SECS * rate as f64 {
+        return Ok(None);
+    }
+    let samples: Vec<i16> = r.samples::<i16>().filter_map(Result::ok).collect();
+    let own = (l.repeats_from_samples * ch).min(samples.len());
+    let peak = samples[..own]
+        .iter()
+        .map(|&v| (v as i32).abs())
+        .max()
+        .unwrap_or(0);
+    if peak <= OWN_INTRO_MIN_PEAK || (l.intro_samples + l.period_samples) * ch > samples.len() {
+        return Ok(None);
+    }
+    let total = (secs * rate as f64).round() as usize;
+    let cycles = extended_cycles(l.intro_samples, l.period_samples, total);
+    let out = extend_loop(&samples, ch, l.intro_samples, l.period_samples, cycles);
+    let name = extended_name(file);
+    let p = out_dir.join(&name);
+    write_wav(&p, &out, ch as u16, rate)?;
+    let start = l.intro_samples as u32;
+    let end = (l.intro_samples + l.period_samples).saturating_sub(1) as u32;
+    write_smpl(&p, start, end)?;
+    Ok(Some((name, cycles)))
+}
+
+/// `0x0009-afm_113b.wav` -> `0x0009-afm_113b-extended.wav`.
+pub fn extended_name(file: &str) -> String {
+    match file.strip_suffix(".wav") {
+        Some(stem) => format!("{stem}-extended.wav"),
+        None => format!("{file}-extended.wav"),
+    }
+}
+
 /// Reads a WAV as interleaved 16-bit samples.
 fn read_wav(path: &Path) -> Option<(Vec<i16>, usize)> {
     let mut r = hound::WavReader::open(path).ok()?;
@@ -620,14 +750,19 @@ pub fn find_twins(out_dir: &Path, sounds: &[SoundInfo]) -> Vec<Twin> {
 /// Writes the pack into `out_dir` (where the WAVs already are) and annotates
 /// `manifest.json`. With `merge_twins`, a twin's rows point at its original's file and the
 /// twin's own WAV files are removed.
+///
+/// A loop with an intro of its own gets an extended file of `intro_loop_secs` (intro + whole
+/// cycles, played once); 0 keeps the body alone, looped, for every loop.
 pub fn write_pack(
     out_dir: &Path,
     sounds: &[SoundInfo],
     merge_twins: bool,
+    intro_loop_secs: f64,
 ) -> Result<PackReport, String> {
     let err = |p: &Path, e: io::Error| format!("{}: {e}", p.display());
     let mut report = PackReport {
         merged_twins: merge_twins,
+        intro_loop_secs,
         ..Default::default()
     };
 
@@ -642,27 +777,84 @@ pub fn write_pack(
         report.loops_with_smpl += 1;
     }
 
+    // The extended files: (sound index) -> (file, cycles).
+    let mut extended = std::collections::BTreeMap::new();
+    if intro_loop_secs > 0.0 {
+        for (i, s) in sounds.iter().enumerate() {
+            let (Some(file), Some(l)) = (&s.file, &s.loop_info) else {
+                continue;
+            };
+            if let Some(x) = write_extended(out_dir, file, l, intro_loop_secs)
+                .map_err(|e| err(&out_dir.join(file), e))?
+            {
+                extended.insert(i, x);
+            }
+        }
+    }
+    report.intro_loops_extended = extended.len();
+
     let twins = find_twins(out_dir, sounds);
     report.twins = twins.len();
     let twin_of = |i: usize| twins.iter().find(|t| t.index == i);
 
     let mut rows = Vec::new();
-    // The sound (index in `sounds`) of each row.
+    // The sound (index in `sounds`) of each row, and the file it plays with the reason.
     let mut row_sound = Vec::new();
+    let mut row_file: Vec<(FileKind, String)> = Vec::new();
     let mut referenced = std::collections::BTreeSet::new();
     for (i, s) in sounds.iter().enumerate() {
         let Some(file) = &s.file else { continue };
         let Some(id) = parse_id(&s.id) else { continue };
-        let src = match twin_of(i) {
-            Some(t) if merge_twins => &sounds[t.of],
-            _ => s,
+        let src_i = match twin_of(i) {
+            Some(t) if merge_twins => t.of,
+            _ => i,
         };
-        let looped = src.loop_info.is_some();
-        let continuous = !looped && src.loop_unresolved.is_some();
-        let fname = match &src.loop_info {
-            Some(l) => l.loop_file.clone().unwrap_or_else(|| file.clone()),
-            None => src.file.clone().unwrap_or_else(|| file.clone()),
+        let src = &sounds[src_i];
+        let rate =
+            hound::WavReader::open(out_dir.join(file)).map_or(44100, |r| r.spec().sample_rate);
+        let secs = |n: usize| n as f64 / rate as f64;
+        let (fname, kind, reason) = match (&src.loop_info, extended.get(&src_i)) {
+            (Some(l), Some((f, cycles))) => (
+                f.clone(),
+                FileKind::IntroLoopExtended,
+                format!(
+                    "intro of its own ({:.2} s before the loop starts): intro + {cycles} whole cycles ({:.0} s), played once, as AltSound loops whole files only",
+                    secs(l.repeats_from_samples),
+                    secs(l.intro_samples + cycles * l.period_samples),
+                ),
+            ),
+            (Some(l), None) => {
+                let own = secs(l.repeats_from_samples);
+                let reason = if l.loop_file.is_none() {
+                    "the loop starts with the sound: the whole file loops".to_string()
+                } else if intro_loop_secs <= 0.0 && own >= OWN_INTRO_MIN_SECS {
+                    format!(
+                        "--intro-loop-secs 0: the body alone, looped; the intro ({own:.2} s of its own) is not played"
+                    )
+                } else {
+                    format!(
+                        "no intro of its own ({own:.3} s before the loop starts, or silence): the body alone, looped"
+                    )
+                };
+                (
+                    l.loop_file.clone().unwrap_or_else(|| file.clone()),
+                    FileKind::BodyLoop,
+                    reason,
+                )
+            }
+            (None, _) => (
+                src.file.clone().unwrap_or_else(|| file.clone()),
+                FileKind::OneShot,
+                if src.loop_unresolved.is_some() {
+                    "no exact loop found: cut at --max-secs, played once".to_string()
+                } else {
+                    "ends by itself: played once".to_string()
+                },
+            ),
         };
+        let looped = kind == FileKind::BodyLoop;
+        let continuous = kind == FileKind::IntroLoopExtended
+            || (src.loop_info.is_none() && src.loop_unresolved.is_some());
         referenced.insert(fname.clone());
         rows.push(Row::plain(
             id,
@@ -673,6 +865,7 @@ pub fn write_pack(
             fname,
         ));
         row_sound.push(i);
+        row_file.push((kind, reason));
     }
     report.rows = rows.len();
     report.files_referenced = referenced.len();
@@ -684,6 +877,7 @@ pub fn write_pack(
             let own = [
                 s.file.clone(),
                 s.loop_info.as_ref().and_then(|l| l.loop_file.clone()),
+                extended.get(&t.index).map(|x| x.0.clone()),
             ];
             for f in own.into_iter().flatten() {
                 if !referenced.contains(&f) {
@@ -706,7 +900,9 @@ pub fn write_pack(
         fs::write(&p, text).map_err(|e| err(&p, e))?;
     }
 
-    annotate_manifest(out_dir, sounds, &twins, &rows, &row_sound, &report)?;
+    annotate_manifest(
+        out_dir, sounds, &twins, &rows, &row_sound, &row_file, &report,
+    )?;
     Ok(report)
 }
 
@@ -843,6 +1039,7 @@ fn annotate_manifest(
     twins: &[Twin],
     rows: &[Row],
     row_sound: &[usize],
+    row_file: &[(FileKind, String)],
     report: &PackReport,
 ) -> Result<(), String> {
     let path = out_dir.join("manifest.json");
@@ -873,9 +1070,13 @@ fn annotate_manifest(
             }
         }
         // What each row became in the two CSVs.
-        for (row, &i) in rows.iter().zip(row_sound) {
+        for ((row, &i), (kind, reason)) in rows.iter().zip(row_sound).zip(row_file) {
             if let Some(e) = list.iter_mut().find(|e| e["id"] == sounds[i].id) {
                 e["pack"] = serde_json::json!({
+                    "file": row.fname,
+                    "file_kind": kind.as_str(),
+                    "file_reason": reason,
+                    "loop": u8::from(row.looped) * 100,
                     "channel": row.channel,
                     "duck": row.duck,
                     "stop": u8::from(row.stop),
@@ -889,6 +1090,8 @@ fn annotate_manifest(
         "files": [ALTSOUND_CSV, GSOUND_CSV, ALTSOUND_INI],
         "rows": report.rows,
         "loops_with_smpl": report.loops_with_smpl,
+        "intro_loops_extended": report.intro_loops_extended,
+        "intro_loop_secs": report.intro_loop_secs,
         "twins": report.twins,
         "merged_twins": report.merged_twins,
         "files_referenced": report.files_referenced,
@@ -1118,6 +1321,81 @@ mod tests {
         assert!(ini.contains("\n[format]\nformat = altsound\n"));
         assert!(ini.contains("\nrom_volume_ctrl = 0\n"));
         assert!(!ini.contains("\n     "));
+    }
+
+    #[test]
+    fn extended_file_joins_cycles_exactly() {
+        // Stereo: an intro of 7 frames, then a body of 5 frames whose samples are distinct.
+        let ch = 2;
+        let (intro, period) = (7, 5);
+        let samples: Vec<i16> = (0..(intro + period) * ch)
+            .map(|v| v as i16 * 3 - 20)
+            .collect();
+        let total = 30; // frames
+        let cycles = extended_cycles(intro, period, total);
+        assert_eq!(cycles, 5); // 7 + 5 * 5 = 32 >= 30, and 4 cycles (27) is not enough
+        let x = extend_loop(&samples, ch, intro, period, cycles);
+        assert_eq!(x.len(), (intro + cycles * period) * ch);
+        // The intro and the first cycle are the file as it was.
+        assert_eq!(&x[..samples.len()], &samples[..]);
+        // Every later cycle is the body again, sample for sample: each joint is the body's
+        // own end-to-start joint.
+        let body = &samples[intro * ch..];
+        for k in 0..cycles {
+            let a = (intro + k * period) * ch;
+            assert_eq!(&x[a..a + period * ch], body, "cycle {k}");
+        }
+        // At least one cycle, even when the intro alone is longer than asked.
+        assert_eq!(extended_cycles(100, 5, 30), 1);
+        assert_eq!(extended_cycles(0, 10, 100), 10);
+    }
+
+    #[test]
+    fn extended_file_carries_the_loop_points() {
+        let dir = std::env::temp_dir().join(format!("r2a-ext-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let rate = 1000;
+        let (intro, period) = (200usize, 300usize);
+        // An intro of its own (a ramp), then one cycle of a tone.
+        let s: Vec<i16> = (0..intro)
+            .map(|n| (n as i16) * 50)
+            .chain((0..period).map(|n| {
+                (8000.0 * (n as f64 * 2.0 * std::f64::consts::PI * 3.0 / period as f64).sin())
+                    as i16
+            }))
+            .collect();
+        let file = "0x0009-test.wav";
+        write_wav(&dir.join(file), &s, 1, rate).unwrap();
+        let mut l = crate::extract::LoopInfo::for_test(intro, period);
+        l.repeats_from_samples = 150; // 0.15 s of its own
+        let (name, cycles) = write_extended(&dir, file, &l, 2.0)
+            .unwrap()
+            .expect("extended");
+        assert_eq!(name, "0x0009-test-extended.wav");
+        assert_eq!(cycles, 6); // 200 + 6 * 300 = 2000 frames = 2 s
+        let bytes = fs::read(dir.join(&name)).unwrap();
+        let at = bytes
+            .windows(4)
+            .position(|w| w == b"smpl")
+            .expect("smpl chunk");
+        let u = |o: usize| u32::from_le_bytes(bytes[at + o..at + o + 4].try_into().unwrap());
+        assert_eq!((u(52), u(56)), (intro as u32, (intro + period - 1) as u32));
+        let (x, ch) = read_wav(&dir.join(&name)).unwrap();
+        assert_eq!((x.len(), ch), (intro + cycles * period, 1));
+        // The joint between two cycles is the one between the body's end and its start.
+        let j = intro + period;
+        assert_eq!((x[j - 1], x[j]), (s[intro + period - 1], s[intro]));
+        // No intro of its own (the repetition starts at once): no extended file.
+        l.repeats_from_samples = 10;
+        assert!(write_extended(&dir, file, &l, 2.0).unwrap().is_none());
+        // An intro of its own that is silence: none either.
+        let quiet: Vec<i16> = std::iter::repeat_n(3, intro)
+            .chain(s[intro..].iter().copied())
+            .collect();
+        write_wav(&dir.join(file), &quiet, 1, rate).unwrap();
+        l.repeats_from_samples = 150;
+        assert!(write_extended(&dir, file, &l, 2.0).unwrap().is_none());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

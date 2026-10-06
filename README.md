@@ -17,7 +17,8 @@ Give it a ROM zip (`afm_113b.zip`) and it:
 2. sends every sound command of the ROM to the emulated sound board, one after another;
 3. records each one to its own WAV file, all at the same reference volume;
 4. finds where music loops and cuts it to its intro plus **one exact cycle**, so that it
-   loops without a seam;
+   loops without a seam (a music whose loop follows an intro, a fanfare for example, also
+   gets a 5-minute file: the intro, then the cycle repeated);
 5. writes a folder that VPinball's AltSound plugin reads as is: the WAV files,
    `altsound.csv`, `g-sound.csv`, `altsound.ini`, and `manifest.json` with everything
    that was measured.
@@ -81,7 +82,9 @@ VPinball.
 ```
 afm_113b/
 ├── 0x0001-afm_113b.wav         intro + one loop cycle, with its loop points (WAV smpl chunk)
-├── 0x0001-afm_113b-loop.wav    the loop alone (what AltSound plays)
+├── 0x0001-afm_113b-loop.wav    the loop alone (what AltSound plays, looped)
+├── 0x0009-afm_113b-extended.wav  a loop with an intro: the intro + 5 minutes of cycles
+│                               (what AltSound plays, once)
 ├── 0x0064-afm_113b.wav         one file per command
 ├── ...
 ├── altsound.csv                AltSound format (selected in altsound.ini)
@@ -181,10 +184,17 @@ program, with the file's CRC) or `hle`. `--bsmt-hle` forces the older one.
 
 ### Limits
 
-- **AltSound loops whole files only**, so a looping music plays its loop without the intro
-  ([libaltsound issue #14](https://github.com/vpinball/libaltsound/issues/14)). The full
-  file, intro + loop with its loop points, is kept next to it for when this is fixed, or for
-  other players.
+- **AltSound loops whole files only**: it cannot play an intro once and then loop the rest
+  ([libaltsound issue #14](https://github.com/vpinball/libaltsound/issues/14)). A music
+  whose loop has no intro plays its loop alone, looped. A music with an intro of its own
+  (Attack from Mars `0009`, the Martian attack: a fanfare, then the loop that `000A` plays
+  without it) plays an extended file instead: the intro, then the cycle repeated without a
+  seam for 5 minutes (`--intro-loop-secs`, 0 to turn it off), played once. If the game
+  keeps the same music longer than that, it stops in `altsound.csv` (in `g-sound.csv`,
+  where every music loops, it starts again from the intro). Each such file is about 26 MB
+  (mono, 16-bit, 44.1 kHz). The intro + one cycle file, with its loop points, is kept
+  next to it for when libaltsound can loop part of a file, and for other players. Thanks
+  to deadmanworking for spotting it.
 - **Data East and Whitestar music never repeats exactly** (the board's timing drifts a
   little), so it cannot be looped without a seam: those tracks are cut at 2 minutes
   (`--max-secs`). They are on the music channel, so the next music replaces them.
@@ -245,7 +255,9 @@ Donnez-lui une ROM (`afm_113b.zip`), et il :
 2. envoie une à une toutes les commandes de son de la ROM à la carte son émulée ;
 3. enregistre chacune dans son propre fichier WAV, toutes au même volume de référence ;
 4. repère les boucles des musiques et les coupe à leur introduction plus **un cycle exact**,
-   pour qu'elles bouclent sans raccord audible ;
+   pour qu'elles bouclent sans raccord audible (une musique dont la boucle suit une
+   introduction, une fanfare par exemple, a aussi un fichier de 5 minutes : l'introduction,
+   puis le cycle répété) ;
 5. écrit un dossier que le plugin AltSound de VPinball lit tel quel : les fichiers WAV,
    `altsound.csv`, `g-sound.csv`, `altsound.ini`, et `manifest.json` avec toutes les mesures.
 
@@ -311,7 +323,9 @@ Copiez ensuite le dossier de la ROM à côté de votre table, en
 ```
 afm_113b/
 ├── 0x0001-afm_113b.wav         intro + un cycle de boucle, avec ses points de boucle (bloc WAV smpl)
-├── 0x0001-afm_113b-loop.wav    la boucle seule (ce que joue AltSound)
+├── 0x0001-afm_113b-loop.wav    la boucle seule (ce que joue AltSound, en boucle)
+├── 0x0009-afm_113b-extended.wav  une boucle avec introduction : l'intro + 5 minutes de cycles
+│                               (ce que joue AltSound, une fois)
 ├── 0x0064-afm_113b.wav         un fichier par commande
 ├── ...
 ├── altsound.csv                format AltSound (celui choisi dans altsound.ini)
@@ -415,11 +429,19 @@ programme de la puce, avec le CRC du fichier) ou `hle`. `--bsmt-hle` impose l'an
 
 ### Limites
 
-- **AltSound ne fait boucler que des fichiers entiers** : une musique qui boucle est donc
-  jouée sans son introduction
-  ([ticket libaltsound n° 14](https://github.com/vpinball/libaltsound/issues/14)). Le
-  fichier complet, intro + boucle avec ses points de boucle, est gardé à côté, pour le
-  jour où ce sera corrigé ou pour d'autres lecteurs.
+- **AltSound ne fait boucler que des fichiers entiers** : il ne sait pas jouer une
+  introduction une fois puis faire boucler la suite
+  ([ticket libaltsound n° 14](https://github.com/vpinball/libaltsound/issues/14)). Une
+  musique dont la boucle n'a pas d'introduction joue sa boucle seule, en boucle. Une
+  musique qui a sa propre introduction (Attack from Mars `0009`, l'attaque martienne : une
+  fanfare, puis la boucle que `000A` joue sans elle) joue à la place un fichier prolongé :
+  l'introduction, puis le cycle répété sans raccord pendant 5 minutes
+  (`--intro-loop-secs`, 0 pour s'en passer), joué une fois. Si le jeu garde la même
+  musique plus longtemps, elle s'arrête avec `altsound.csv` (avec `g-sound.csv`, où toute
+  musique boucle, elle repart de l'introduction). Chacun de ces fichiers fait environ
+  26 Mo (mono, 16 bits, 44,1 kHz). Le fichier intro + un cycle, avec ses points de
+  boucle, est gardé à côté, pour le jour où libaltsound saura faire boucler une partie de
+  fichier, et pour d'autres lecteurs. Merci à deadmanworking de l'avoir repéré.
 - **La musique Data East et Whitestar ne se répète jamais exactement** (le rythme de la
   carte dérive un peu), on ne peut donc pas la faire boucler sans raccord : ces morceaux
   sont coupés à 2 minutes (`--max-secs`). Ils sont sur la voie musique, la musique

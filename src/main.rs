@@ -56,9 +56,11 @@ The pack is a starting point: every sound plays at the same level. On DCS boards
 the channels and the ducking come from the ROM's own track programs (the music is
 lowered under a sound by as much as the real board lowers it); on the other boards
 nothing is ducked or stopped. Do the artistic pass (ducking, stops, gains) in an
-AltSound editor such as VPin Studio. AltSound loops whole files only, so a loop plays its
-body without the intro (https://github.com/vpinball/libaltsound/issues/14); the
-full intro + loop file, with its loop points, is kept next to it.
+AltSound editor such as VPin Studio. AltSound loops whole files only
+(https://github.com/vpinball/libaltsound/issues/14): a loop with an intro of its own
+(a fanfare before the loop) plays from an extended file, the intro then whole cycles
+for --intro-loop-secs, once; the other loops play their body, looped. The intro +
+one cycle file, with its loop points, is kept next to them.
 
 Project: https://github.com/Le-Syl21/rom2altsound
 Discord: https://discord.gg/T37DYHmt2j (channel #rom2altsound)";
@@ -164,6 +166,11 @@ struct Cli {
     /// Show libpinmame info messages
     #[arg(long)]
     verbose: bool,
+    /// Length of the file a loop with an intro of its own (a fanfare, then the loop) plays
+    /// from: the intro then whole cycles, played once, as AltSound loops whole files only
+    /// (seconds; 0: the body alone, looped, the intro not played)
+    #[arg(long, default_value_t = altsound::DEFAULT_INTRO_LOOP_SECS, value_name = "SECS")]
+    intro_loop_secs: f64,
     /// Do not write the AltSound pack (altsound.csv, g-sound.csv, altsound.ini, the loop
     /// points in the WAV files): only the WAV files and manifest.json
     #[arg(long)]
@@ -453,11 +460,13 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
     x.write_manifest();
     summary(&job.rom, &x, wall.elapsed().as_secs_f64());
     if !cli.no_altsound {
-        let r = altsound::write_pack(&job.out, &x.results, cli.merge_twins)?;
+        let r = altsound::write_pack(&job.out, &x.results, cli.merge_twins, cli.intro_loop_secs)?;
         println!(
-            "  altsound: {} row(s), {} loop(s) with loop points, {} twin(s){}, {} file(s) referenced",
+            "  altsound: {} row(s), {} loop(s) with loop points ({} with an intro of their own, extended to {:.0} s), {} twin(s){}, {} file(s) referenced",
             r.rows,
             r.loops_with_smpl,
+            r.intro_loops_extended,
+            r.intro_loop_secs,
             r.twins,
             if r.merged_twins {
                 " merged"

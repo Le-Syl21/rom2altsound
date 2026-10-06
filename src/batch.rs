@@ -89,6 +89,7 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
     opt("--max-secs", Some(cli.max_secs.to_string()));
     opt("--loop-max-secs", Some(cli.loop_max_secs.to_string()));
     opt("--no-sound-secs", Some(cli.no_sound_secs.to_string()));
+    opt("--intro-loop-secs", Some(cli.intro_loop_secs.to_string()));
     opt(
         "--vpm",
         cli.vpm.as_ref().map(|v| v.to_string_lossy().into_owned()),

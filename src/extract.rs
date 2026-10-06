@@ -359,6 +359,10 @@ pub struct LoopInfo {
     /// frames); the body's last frame joins its first.
     pub intro_samples: usize,
     pub period_samples: usize,
+    /// Where the repetition starts (`looping::Loop::repeats_from`): the intro's own audio,
+    /// before it turns into the loop. Near 0 for a loop without an intro of its own (the
+    /// body then starts a little in only to keep clear of the first cycle's edge).
+    pub repeats_from_samples: usize,
     /// The period with its fraction of a sample (the cycles are that far apart; the body
     /// is rounded to whole samples).
     pub period_exact_samples: f64,
@@ -387,6 +391,36 @@ pub struct LoopInfo {
     pub audio_period_samples: Option<Option<usize>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+}
+
+#[cfg(test)]
+impl LoopInfo {
+    /// A loop of `intro` then `period` frames, without an intro of its own.
+    pub fn for_test(intro: usize, period: usize) -> Self {
+        LoopInfo {
+            intro_samples: intro,
+            period_samples: period,
+            repeats_from_samples: 0,
+            period_exact_samples: period as f64,
+            period_secs: 0.0,
+            cycles: 1,
+            method: "audio",
+            confidence: 1.0,
+            residual_db: -90.0,
+            verified_secs: 0.0,
+            loop_file: None,
+            seam: SeamInfo {
+                joint_step: 0,
+                natural_step: 0,
+                error: 0,
+                body_p99_step: 0,
+                body_max_step: 0,
+            },
+            dcs_track: None,
+            audio_period_samples: None,
+            note: None,
+        }
+    }
 }
 
 /// The joint of a loop body (`looping::Seam`), in LSB of the written samples.
@@ -2763,9 +2797,10 @@ impl Extractor {
         );
         if let Some(l) = &loop_info {
             eprintln!(
-                "      loop ({}): intro {:.3} s + body {:.3} s, residual {:.1} dB over {:.1} s, seam error {} LSB (step {} for {} in the recording){}",
+                "      loop ({}): intro {:.3} s ({:.3} s of its own) + body {:.3} s, residual {:.1} dB over {:.1} s, seam error {} LSB (step {} for {} in the recording){}",
                 l.method,
                 l.intro_samples as f64 / rate as f64,
+                l.repeats_from_samples as f64 / rate as f64,
                 l.period_secs,
                 l.residual_db,
                 l.verified_secs,
@@ -2848,6 +2883,7 @@ impl Extractor {
         LoopInfo {
             intro_samples: l.intro,
             period_samples: l.period,
+            repeats_from_samples: l.repeats_from,
             period_exact_samples: round3(l.period_exact),
             period_secs: round3(l.period as f64 / rate as f64),
             cycles: l.cycles,

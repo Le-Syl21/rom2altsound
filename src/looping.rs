@@ -53,6 +53,11 @@ const QUICK_MAX_DB: f64 = -6.0;
 pub struct Loop {
     /// Where the loop body starts (the intro is everything before).
     pub intro: usize,
+    /// Where the repetition starts: from here on the signal is the same one period later.
+    /// The body starts a little after it (`verify`), so the intro always holds this much
+    /// audio that is not the loop, then a piece of the loop itself; 0 for a loop without
+    /// an intro of its own.
+    pub repeats_from: usize,
     /// The body's length, rounded to whole samples.
     pub period: usize,
     /// The period with its fractional part.
@@ -371,6 +376,7 @@ fn verify(x: &[f32], lag: usize, delta: f64, need: usize) -> Option<Loop> {
     }
     let found = |intro| Loop {
         intro,
+        repeats_from: start,
         period: lag,
         period_exact: lag as f64 + delta,
         residual_db: worst,
@@ -540,6 +546,9 @@ mod tests {
             "{l:?}"
         );
         assert!(l.residual_db < -30.0, "{l:?}");
+        // The repetition starts where the intro ends (within a window).
+        assert!(l.repeats_from.abs_diff(intro) <= WIN, "{l:?}");
+        assert!(l.repeats_from <= l.intro, "{l:?}");
     }
 
     #[test]
@@ -566,6 +575,7 @@ mod tests {
         let l = find(&x, RATE, None).expect("loop found");
         assert_eq!(l.period, period as usize);
         assert_eq!(l.intro, 0, "{l:?}");
+        assert_eq!(l.repeats_from, 0, "{l:?}");
     }
 
     #[test]
@@ -610,6 +620,7 @@ mod tests {
     fn short_fractional_periods_take_whole_cycles() {
         let l = Loop {
             intro: 100,
+            repeats_from: 0,
             period: 2984,
             period_exact: 2984.1,
             residual_db: -60.0,
