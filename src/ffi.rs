@@ -84,6 +84,7 @@ unsafe extern "C" {
     pub fn shim_reset_audio_cpus() -> c_int;
     pub fn shim_sound_region(len: *mut c_uint) -> *const u8;
     pub fn shim_game_gen() -> u64;
+    pub fn shim_has_bsmt2000() -> c_int;
     pub static mut shim_log_min_level: c_int;
     pub fn shim_log(level: c_int, format: *const c_char, args: *mut c_void, user: *mut c_void);
 }
@@ -101,6 +102,11 @@ pub fn sound_region() -> Option<&'static [u8]> {
 pub fn is_data_east() -> bool {
     let generation = unsafe { shim_game_gen() };
     generation & GEN_DATA_EAST != 0
+}
+
+/// True when the machine has a BSMT2000 sound chip (only valid while the emulation runs).
+pub fn has_bsmt2000() -> bool {
+    unsafe { shim_has_bsmt2000() != 0 }
 }
 
 /// Converts a nullable C string to an owned `String`.

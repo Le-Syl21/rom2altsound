@@ -187,6 +187,8 @@ pub struct Options {
     /// `dcs-effects` diagnostic.
     pub dump_region: Option<PathBuf>,
     pub verbose: bool,
+    /// Which BSMT2000 emulation PinMAME will pick (reported if the machine has the chip).
+    pub bsmt: crate::bsmtfw::Status,
 }
 
 /// Which master volume the sound boards play at.
@@ -648,6 +650,9 @@ struct Manifest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     factory: Option<&'a serde_json::Value>,
     boards: &'a [String],
+    /// Machines with a BSMT2000: which emulation ran (the chip's own program, or the HLE).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bsmt2000: Option<&'a crate::bsmtfw::Report>,
     sample_rate: u32,
     channels: usize,
     boot: BootReport,
@@ -786,6 +791,8 @@ struct RecordingCap {
 pub struct Extractor {
     opts: Options,
     dat: SoundsDat,
+    /// The BSMT2000 emulation that ran, on machines with the chip (known once booted).
+    bsmt: Option<crate::bsmtfw::Report>,
     pub rate: u32,
     pub channels: usize,
     /// Emulated time, in sample frames since the first audio callback.
@@ -877,6 +884,7 @@ impl Extractor {
         Self {
             opts,
             dat,
+            bsmt: None,
             rate: 0,
             channels: 0,
             t: 0,
@@ -1612,6 +1620,10 @@ impl Extractor {
         // The reports are also written after PinmameStop, when the boards are gone.
         self.families = [0, 1].map(|b| board_typestr(b).unwrap_or_default());
         self.data_east = ffi::is_data_east();
+        self.bsmt = ffi::has_bsmt2000().then(|| self.opts.bsmt.report());
+        if let Some(b) = &self.bsmt {
+            eprintln!("BSMT2000: {}", b.label());
+        }
         let boot = self.boot_report();
         eprintln!(
             "boot: {:.1} s emulated (ended by {ended_by}), game sent {} sound byte(s), boards {:?}",
@@ -2958,6 +2970,10 @@ impl Extractor {
         (!game.is_empty()).then(|| game.join(" "))
     }
 
+    pub fn bsmt_report(&self) -> Option<&crate::bsmtfw::Report> {
+        self.bsmt.as_ref()
+    }
+
     pub fn write_manifest(&self) {
         let stop: Vec<String> = self
             .stop
@@ -2977,6 +2993,7 @@ impl Extractor {
             mode: if factory { "factory" } else { "normal" },
             factory: self.opts.factory.as_ref(),
             boards: &self.boards,
+            bsmt2000: self.bsmt.as_ref(),
             sample_rate: self.rate,
             channels: self.channels,
             boot: self.boot_report(),

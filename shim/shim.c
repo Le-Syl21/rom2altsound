@@ -88,3 +88,12 @@ const unsigned char *shim_sound_region(unsigned *len) {
 unsigned long long shim_game_gen(void) {
   return core_gameData ? (unsigned long long)core_gameData->gen : 0;
 }
+
+// 1 if the machine has a BSMT2000 sound chip (Data East, Sega/Stern Whitestar, Alvin G.).
+int shim_has_bsmt2000(void) {
+  int ii;
+  for (ii = 0; ii < MAX_SOUND; ii++)
+    if (Machine->drv->sound[ii].sound_type == SOUND_BSMT2000)
+      return 1;
+  return 0;
+}

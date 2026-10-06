@@ -3,6 +3,7 @@
 
 mod altsound;
 mod batch;
+mod bsmtfw;
 mod dcsrom;
 mod ducking;
 mod extract;
@@ -34,7 +35,12 @@ folder that VPinball's AltSound plugin reads as is: drop it as
 <table folder>/altsound/<rom>/.
 
 Supported boards: Williams/Bally DCS, WPC (WPC89/WPCS), System 11, Data East
-(BSMT) and Sega/Stern Whitestar. Not supported: Stern SAM, Bally Cheap Squeak/TCS.";
+(BSMT), Sega/Stern Whitestar and Bally Cheap Squeak / Turbo Cheap Squeak. Not
+supported: Stern SAM.
+
+BSMT boards (Data East, Sega, Whitestar): with the chip's own program,
+bsmt2000.zip (bsmt2000.bin, CRC c2a265af, not distributed), next to the ROM zip,
+in --roms or in ./roms, the real chip runs; without it, PinMAME's older emulation.";
 
 const AFTER_HELP: &str = "\
 Examples:
@@ -140,6 +146,14 @@ struct Cli {
     /// "All sound off" / "Reset Sound System" from sounds.dat, else an audio CPU reset)
     #[arg(long)]
     stop: Option<String>,
+    /// BSMT boards: use PinMAME's older BSMT2000 emulation (HLE) even when the chip's own
+    /// program (bsmt2000.zip) is found
+    #[arg(long)]
+    bsmt_hle: bool,
+    /// Internal: where bsmt2000.zip (or a bsmt2000/ folder) is looked for, in order
+    /// [default: the ROM's directory, then ./roms]
+    #[arg(long, hide = true, value_name = "DIR")]
+    firmware_dir: Vec<PathBuf>,
     /// Write DC-blocked audio (10 Hz high-pass, like an AC-coupled output) instead of the
     /// raw emulated samples
     #[arg(long)]
@@ -259,6 +273,11 @@ fn main() {
         _ => {}
     }
     let cli = Cli::parse();
+    if cli.bsmt_hle {
+        // SAFETY: still single-threaded (nothing has been started yet). PinMAME reads it when
+        // the BSMT2000 starts, and the child processes inherit it.
+        unsafe { std::env::set_var(bsmtfw::HLE_ENV, "1") };
+    }
     if cli.in_process {
         let [rom] = cli.rom_args.as_slice() else {
             eprintln!("error: --in-process takes exactly one ROM");
@@ -339,6 +358,25 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
     for set in std::iter::once(&job.rom).chain(parent.as_ref()) {
         link_rom(&job.roms, &vpm, set)?;
     }
+    let sets: Vec<&str> = std::iter::once(job.rom.as_str())
+        .chain(parent.as_deref())
+        .collect();
+    let bsmt = bsmtfw::stage(
+        &firmware_dirs(cli, job),
+        &vpm.join("roms"),
+        &sets,
+        bsmtfw::forced_hle(cli.bsmt_hle),
+    );
+    for r in &bsmt.rejected {
+        eprintln!("BSMT2000 program: ignored {r}");
+    }
+    if let Some(src) = &bsmt.source {
+        eprintln!(
+            "BSMT2000 program: {} (from {})",
+            bsmtfw::FILE,
+            src.display()
+        );
+    }
 
     *STATE.lock().unwrap() = Some(Extractor::new(
         Options {
@@ -369,6 +407,7 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             check_ducking: cli.check_ducking,
             dump_region: cli.dump_sound_region.clone(),
             verbose: cli.verbose,
+            bsmt,
         },
         dat,
     ));
@@ -495,6 +534,12 @@ fn cold_boot(cli: &Cli, job: &Job, vpm: &Path) -> Result<serde_json::Value, Stri
         .arg(cli.boot_max_secs.to_string())
         .arg("--cold-boot-only")
         .arg("--in-process");
+    for d in firmware_dirs(cli, job) {
+        child.arg("--firmware-dir").arg(d);
+    }
+    if cli.bsmt_hle {
+        child.arg("--bsmt-hle");
+    }
     if let Some(dat) = &cli.sounds_dat {
         child.arg("--sounds-dat").arg(dat);
     }
@@ -593,6 +638,9 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
     }
     if let Some(note) = &vol.note {
         println!("  {label}: no master volume seen ({note})");
+    }
+    if let Some(b) = x.bsmt_report() {
+        println!("  BSMT2000: {}", b.label());
     }
     println!(
         "  recorded at: {}",
@@ -722,6 +770,15 @@ fn work_dir() -> Result<PathBuf, String> {
     }
     .ok_or("no user cache directory found (HOME / LOCALAPPDATA unset): pass --vpm")?;
     Ok(cache.join("rom2altsound"))
+}
+
+/// Where the BSMT2000's program is looked for: as handed down by the parent process, else
+/// the ROM's directory, then `./roms`.
+fn firmware_dirs(cli: &Cli, job: &Job) -> Vec<PathBuf> {
+    if !cli.firmware_dir.is_empty() {
+        return cli.firmware_dir.clone();
+    }
+    vec![job.roms.clone(), PathBuf::from("roms")]
 }
 
 /// Puts `<roms>/<set>.zip` into the private `<vpm>/roms`, if it exists: a symbolic link

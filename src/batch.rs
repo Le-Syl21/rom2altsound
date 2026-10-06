@@ -117,12 +117,37 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
         ("--no-altsound", cli.no_altsound),
         ("--merge-twins", cli.merge_twins),
         ("--check-ducking", cli.check_ducking),
+        ("--bsmt-hle", cli.bsmt_hle),
     ] {
         if on {
             a.push(flag.into());
         }
     }
+    for d in firmware_dirs(cli, rom) {
+        a.push("--firmware-dir".into());
+        a.push(d.into());
+    }
     a
+}
+
+/// Where the BSMT2000's program (bsmt2000.zip or a bsmt2000/ folder) is looked for: next to
+/// the ROM's zip, in --roms, then in ./roms (absolute: the child may not resolve them alike).
+fn firmware_dirs(cli: &Cli, rom: &RomSpec) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for d in [
+        Some(rom.dir.as_path()),
+        cli.roms.as_deref(),
+        Some(Path::new("roms")),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let d = std::path::absolute(d).unwrap_or_else(|_| d.to_path_buf());
+        if !dirs.contains(&d) {
+            dirs.push(d);
+        }
+    }
+    dirs
 }
 
 /// How one ROM went.
@@ -278,6 +303,9 @@ fn line(o: &Outcome) -> String {
         );
         if let Some(t) = m["altsound"]["twins"].as_u64() {
             d.push_str(&format!(", {t} twin(s)"));
+        }
+        if let Some(e) = m["bsmt2000"]["emulation"].as_str() {
+            d.push_str(&format!(", BSMT2000 {}", e.to_uppercase()));
         }
         d
     });
