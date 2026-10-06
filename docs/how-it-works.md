@@ -30,7 +30,9 @@ machine per process.
 ## Build
 
 `build.rs` builds PinMAME's static library from the `vendor/pinmame` submodule with the
-`cmake` crate. `cmake/libpinmame/CMakeLists.txt` expects to be at the root of the source
+`cmake` crate. The submodule points at a fork (Le-Syl21/pinmame, branch `bsmt2000-lle`):
+upstream master plus the BSMT2000 low level emulation and the Cheap Squeak / Turbo Cheap
+Squeak manual commands (see "Per family" and "BSMT2000: the chip's own program"). `cmake/libpinmame/CMakeLists.txt` expects to be at the root of the source
 tree (PinMAME's CI copies it there), so a patched copy is generated in Cargo's `OUT_DIR`
 with every tree-relative path made absolute; nothing is written into the submodule. Every
 patch must match, so a PinMAME update that moves things fails the build instead of
@@ -309,7 +311,8 @@ on the warm boot they send `55 AA 67 98` after 6-12 s.
 | Whitestar BSMT (Sega/Stern) | `FE xx FD`, level = 2F - xx, 0..31 | the master volume (ours with the factory settings, else the game's `FE xx FD`, which it re-sends every 0.5 s) | `00` |
 | Data East BSMT | none (hardware pot) | the music volume `20`..`2F`, then the stop `00` | `00` |
 | System 11 (WMSS11, 11C, 11J) | none (no volume stage) | none | `00` / `20` (11C) |
-| SAM, Bally Cheap Squeak | cannot be driven (see Limits) | | |
+| Bally Cheap Squeak (BY45), Turbo Cheap Squeak (BYTCS) | none known | none | `00` |
+| SAM | cannot be driven (see Limits) | | |
 
 **DCS**: `55 AA vv ~vv` sets the master volume (`~vv` must be the complement, else the
 firmware drops it). The bytes of a command go out one frame apart. The DCS firmware drops
@@ -353,7 +356,43 @@ overlay). A sweep of all 256 bytes used as the stop after the looping `0x22` fou
 `93`, `94`, `98` and `9E` silent within 0.5 s; `20` then stopped all 22 looping commands of
 the board. WMSS11J: `00`, an unmeasured guess (the reset fallback covers a wrong guess).
 
-**SAM, Cheap Squeak**: cannot be driven, see Limits.
+**Bally Cheap Squeak / Turbo Cheap Squeak** (spyhuntr, motrdome, cityslck): PinMAME's
+`BY45` and `BYTCS` boards had no manual-command handler; the PinMAME fork rom2altsound
+builds adds one (`by35snd.c`). The game sends a byte as two nibbles with one strobe: the low
+nibble with the sound interrupt, the high one 70 to 130 us later, read by the same interrupt
+handler; the handler hands the high nibble over on the read that follows. No sounds.dat
+section: the sweep is 01..FF. Stop `00` (the games send it at power-up and between
+sounds). It does not stop every music (motrdome `21`, `34`, `50`..`52`, spyhuntr `11`,
+`12`), and the board is then reset; after a sound CPU reset the TCS program runs a ROM and
+RAM self-test (about 5 s on cityslck) before it enables its command interrupt, so the wait
+for quiet after a reset is 7 s on `BYTCS` (`REBOOT_SECS`; with the old 4 s, and with a
+reset as the only stop, the next command was swallowed). Defaults, `--max-secs 20
+--loop-max-secs 40`: spyhuntr 53 sounds (2 resets), motrdome 64 (5 resets), cityslck 133
+(7 blips, 10 recovered by the retry, no reset); no loop repeated exactly within 40 s.
+
+**SAM**: cannot be driven, see Limits.
+
+### BSMT2000: the chip's own program
+
+The BSMT2000 (Data East, Sega, Stern Whitestar, Alvin G.) is a TMS320C15 DSP with the
+sound program in its mask ROM. PinMAME emulated it at a high level (HLE: voices, ADPCM and
+mixing rewritten in C, with known approximations). The fork built here also runs the chip's
+real program on a TMS320C1x core (LLE, after MAME's `bsmt2000.cpp`) when it finds MAME's
+`bsmt2000.bin` (8 KiB, CRC `c2a265af`): in `bsmt2000.zip` or a `bsmt2000/` folder of its
+ROM path, else inside the game's zip (then its parent's). The file is never shipped nor
+embedded. rom2altsound links (copies, on Windows) the first valid `bsmt2000.zip` or
+`bsmt2000/bsmt2000.bin` it finds next to the ROM zip, in `--roms` or in `./roms` into its
+private `vpm/roms`, then does PinMAME's lookup itself (`src/bsmtfw.rs`: the zip's central
+directory CRC, or the file's, in the same order as `lle_load_firmware`) to report which
+emulation ran: `manifest.json` `bsmt2000.emulation` is `lle` (with `firmware_crc` and where
+it was found) or `hle` (with why), on machines with the chip only (`shim_has_bsmt2000`).
+`--bsmt-hle` sets `PINMAME_BSMT2000_HLE=1`, which makes PinMAME use the HLE anyway.
+
+Measured against the HLE (same packs otherwise): the HLE without the file is byte-identical
+to the previous PinMAME on apollo13, btmn_106, gnr_300, hook_408, monopole, rctycn,
+trek_201 and xfiles. With the program, Monopoly writes 208 files instead of 165 (sounds
+the HLE left silent), ADPCM sounds (`5F`) change, the rest keeps its counts within a file
+or two; the LLE runs about 1.6 times slower (apollo13: 1050 s instead of 650 s).
 
 ### Commands
 
@@ -637,8 +676,7 @@ Two rounds before:
 ## Limits
 
 - **Boards without a manual-command handler** produce nothing. The tool checks `manCmd_w` in
-  PinMAME's board table before starting and stops with an error naming the board. In the table,
-  Bally Cheap Squeak (`BY45`) and Turbo Cheap Squeak (`BYTCS`) have a NULL handler. SAM has an
+  PinMAME's board table before starting and stops with an error naming the board. SAM has an
   empty stub (`sam.c` `man3_w`), so the tool lists it by name. On SAM the sound also comes
   from the game CPU, which is halted. Machines with no sound board report that too.
 - **DCS first-try losses.** About one command in 200 on rs_l6 (none of 893 on mm_109c with

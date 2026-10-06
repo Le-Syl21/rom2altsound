@@ -132,10 +132,10 @@ What rom2altsound gets out of each sound board family:
 | Williams/Bally WPC DCS (1993-1999) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ¹ |
 | Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ⚠️ ⁸ | ❌ | ❌ | ❌ |
 | Williams System 11 | ✅ | ⚠️ ³ | ❌ ⁴ | ❌ | ❌ | ❌ |
-| Data East (BSMT) | ✅ | ⚠️ ⁵ | ⚠️ ⁶ | ❌ | ❌ | ❌ |
-| Sega / Stern Whitestar (BSMT) | ✅ | ⚠️ ⁵ | ✅ | ❌ | ❌ | ❌ |
+| Data East (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ⚠️ ⁶ | ❌ | ❌ | ❌ |
+| Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ | ❌ | ❌ | ❌ |
 | Stern SAM | ❌ ⁷ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Bally Cheap Squeak / Turbo Cheap Squeak | ❌ ⁷ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ¹⁰ | ❌ ¹⁰ | ❌ | ❌ | ❌ |
 
 ✅ verified, ⚠️ partial, ❌ not available. "Reference volume": every sound recorded at one
 loud volume set the way the game sets it, and the game's own (factory) volume read and
@@ -153,10 +153,31 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
 5. The music never repeats exactly (Twilight Zone: none of its 45 music tracks within
    4 minutes): it is cut at 2 minutes (`--max-secs`).
 6. Music volume only: the master volume is a hardware knob.
-7. Cannot be driven: on SAM the sound comes from the game CPU, and PinMAME cannot send
-   commands to Cheap Squeak / Turbo Cheap Squeak.
+7. Cannot be driven: on SAM the sound comes from the game CPU.
 8. The game's factory volume (`79 vv ~vv`) is read, but the sounds are recorded at it: no
    reference volume for this board yet.
+9. With the BSMT2000's own program (see [The BSMT2000 program](#the-bsmt2000-program)) the
+   real chip runs: ADPCM sounds come out exactly, without clipping, and Monopoly gains 43
+   sounds. Without it, PinMAME's older emulation of the chip is used.
+10. Verified on Spy Hunter (Cheap Squeak: 53 sounds), Motordome (Turbo Cheap Squeak: 64)
+    and City Slicker (Turbo Cheap Squeak 2: 133), with no option to add. The stop between
+    sounds is `00`; a music it does not stop is ended by a sound board reset, after which
+    the tool waits out the Turbo Cheap Squeak's 5 s self-test. No music of the three
+    repeated exactly within 40 s (they are cut at `--max-secs`), and no volume command is
+    known for these boards: the files are at the board's own level.
+
+### The BSMT2000 program
+
+Data East, Sega and Stern Whitestar machines play their sounds on a BSMT2000, a chip that
+runs its own program. PinMAME can run that program, the real chip's, if you give it the
+file: **`bsmt2000.zip`** (holding `bsmt2000.bin`, CRC `c2a265af`, MAME's file for this
+chip). It is not distributed with rom2altsound: get it where you get your ROMs, and put it
+next to the ROM zip, in the `--roms` folder or in `./roms` (a `bsmt2000/` folder holding
+`bsmt2000.bin` works too). rom2altsound brings it along like the ROM.
+
+Without it, PinMAME uses its older emulation of the chip, as VPinball does without the
+file. The summary and `manifest.json` (`bsmt2000`) say which one ran: `lle` (the chip's own
+program, with the file's CRC) or `hle`. `--bsmt-hle` forces the older one.
 
 ### Limits
 
@@ -199,7 +220,9 @@ How it all works, measured ROM by ROM: [docs/how-it-works.md](docs/how-it-works.
 BSD-3-Clause (see [LICENSE](LICENSE)), the license PinMAME is moving to. rom2altsound includes PinMAME
 (<https://github.com/vpinball/pinmame>), under its own license (see
 [vendor/pinmame/LICENSE](https://github.com/vpinball/pinmame/blob/master/LICENSE): BSD-3-Clause
-for new code, the former MAME license for the rest). You need your own ROM files; none are
+for new code, the former MAME license for the rest), built from a fork
+(<https://github.com/Le-Syl21/pinmame>, branch `bsmt2000-lle`) that adds the BSMT2000
+chip program emulation and the Cheap Squeak / Turbo Cheap Squeak commands. You need your own ROM files and, for the BSMT2000, its program; none are
 included.
 
 The release binaries embed PinMAME, so they are distributed under PinMAME's terms as well: free of charge, with the source available here.
@@ -340,10 +363,10 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 | Williams/Bally WPC DCS (1993-1999) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ¹ |
 | Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ⚠️ ⁸ | ❌ | ❌ | ❌ |
 | Williams System 11 | ✅ | ⚠️ ³ | ❌ ⁴ | ❌ | ❌ | ❌ |
-| Data East (BSMT) | ✅ | ⚠️ ⁵ | ⚠️ ⁶ | ❌ | ❌ | ❌ |
-| Sega / Stern Whitestar (BSMT) | ✅ | ⚠️ ⁵ | ✅ | ❌ | ❌ | ❌ |
+| Data East (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ⚠️ ⁶ | ❌ | ❌ | ❌ |
+| Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ | ❌ | ❌ | ❌ |
 | Stern SAM | ❌ ⁷ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Bally Cheap Squeak / Turbo Cheap Squeak | ❌ ⁷ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ¹⁰ | ❌ ¹⁰ | ❌ | ❌ | ❌ |
 
 ✅ vérifié, ⚠️ partiel, ❌ non disponible. « Volume de référence » : tous les sons sont
 enregistrés à un même volume fort, réglé comme le jeu le règle, et le volume d'usine du jeu
@@ -362,10 +385,33 @@ reste joué en parallèle.
 5. La musique ne se répète jamais exactement (Twilight Zone : aucun de ses 45 morceaux en
    4 minutes) : elle est coupée à 2 minutes (`--max-secs`).
 6. Volume de la musique seulement : le volume général est un bouton matériel.
-7. Impossible à piloter : sur SAM le son vient du processeur du jeu, et PinMAME ne sait pas
-   envoyer de commandes aux Cheap Squeak / Turbo Cheap Squeak.
+7. Impossible à piloter : sur SAM le son vient du processeur du jeu.
 8. Le volume d'usine du jeu (`79 vv ~vv`) est lu, mais les sons sont enregistrés à ce
    volume : pas encore de volume de référence pour cette carte.
+9. Avec le programme du BSMT2000 (voir [Le programme du BSMT2000](#le-programme-du-bsmt2000)),
+   c'est la vraie puce qui tourne : les sons ADPCM sortent exacts, sans saturation, et
+   Monopoly gagne 43 sons. Sans lui, PinMAME utilise son ancienne émulation de la puce.
+10. Vérifié sur Spy Hunter (Cheap Squeak : 53 sons), Motordome (Turbo Cheap Squeak : 64)
+    et City Slicker (Turbo Cheap Squeak 2 : 133), sans option à ajouter. L'arrêt entre deux
+    sons est `00` ; une musique qu'il n'arrête pas est coupée par une remise à zéro de la
+    carte son, après quoi l'outil attend la fin de l'autotest de 5 s de la Turbo Cheap Squeak.
+    Aucune musique des trois ne s'est répétée exactement en 40 s (elles sont coupées à
+    `--max-secs`), et aucune commande de volume n'est connue pour ces cartes : les fichiers
+    sont au niveau propre de la carte.
+
+### Le programme du BSMT2000
+
+Les flippers Data East, Sega et Stern Whitestar jouent leurs sons sur un BSMT2000, une puce
+qui fait tourner son propre programme. PinMAME sait faire tourner ce programme, celui de la
+vraie puce, si on lui donne le fichier : **`bsmt2000.zip`** (qui contient `bsmt2000.bin`,
+CRC `c2a265af`, le fichier de MAME pour cette puce). Il n'est pas distribué avec
+rom2altsound : procurez-le-vous là où vous trouvez vos ROM, et posez-le à côté du zip de la
+ROM, dans le dossier `--roms` ou dans `./roms` (un dossier `bsmt2000/` contenant
+`bsmt2000.bin` marche aussi). rom2altsound l'emporte avec la ROM.
+
+Sans lui, PinMAME utilise son ancienne émulation de la puce, comme VPinball sans ce
+fichier. Le résumé et `manifest.json` (`bsmt2000`) disent laquelle a tourné : `lle` (le
+programme de la puce, avec le CRC du fichier) ou `hle`. `--bsmt-hle` impose l'ancienne.
 
 ### Limites
 
@@ -412,7 +458,10 @@ Le fonctionnement détaillé, mesuré ROM par ROM (en anglais) :
 BSD-3-Clause (voir [LICENSE](LICENSE)), la licence vers laquelle PinMAME migre. rom2altsound contient PinMAME
 (<https://github.com/vpinball/pinmame>), sous sa propre licence (voir
 [vendor/pinmame/LICENSE](https://github.com/vpinball/pinmame/blob/master/LICENSE) :
-BSD-3-Clause pour le code récent, l'ancienne licence MAME pour le reste). Il vous faut vos
-propres fichiers de ROM ; aucun n'est fourni.
+BSD-3-Clause pour le code récent, l'ancienne licence MAME pour le reste), compilé depuis
+une branche (<https://github.com/Le-Syl21/pinmame>, branche `bsmt2000-lle`) qui ajoute
+l'émulation du programme de la puce BSMT2000 et les commandes des Cheap Squeak / Turbo
+Cheap Squeak. Il vous faut vos propres fichiers de ROM et, pour le
+BSMT2000, son programme ; aucun n'est fourni.
 
 Les binaires publiés embarquent PinMAME : ils sont donc aussi distribués selon ses conditions, gratuitement et avec les sources disponibles ici.
