@@ -12,9 +12,17 @@ rom2altsound <rom>... [--roms <dir>] [--out <dir>] [--jobs N] [--no-factory | --
              | --whitestar-volume HH | --no-volume-init] [--dcs-volume HH] [--only 0x0186,0x0002,...]
              [--limit N] [--boot-secs S] [--boot-max-secs S] [--max-secs S] [--loop-max-secs S]
              [--no-sound-secs S] [--stop 0xHHHH] [--dc-block] [--vpm <dir>] [--no-altsound]
-             [--merge-twins]
+             [--merge-twins] [--check-ducking]
 rom2altsound loop-scan [--hint SECS | --hint-frames F] <wav>...    # the loop detector alone
+rom2altsound dcs-effects <region.bin> <rom> [--json F]   # DCS track programs (diagnostic)
+rom2altsound duck-fit <M.wav> <C.wav> <MC.wav> <at_secs> [--win S]  # music gain under a sound
+rom2altsound drift-check <A.wav> <B.wav>                 # does a board replay sample-exactly?
 ```
+
+The three diagnostics are not in `--help`. `dcs-effects` reads a region dumped with the
+hidden `--dump-sound-region <file>`; `duck-fit` takes recordings of `--only` scenarios
+(`--only 0x000C,0x01B6,0x000C+3+0x01B6`: the last one sends `000C`, waits 3 s and sends
+`01B6`, in one recording).
 
 Each ROM runs in a child process of its own (`--in-process`, internal): libpinmame runs one
 machine per process.
@@ -28,6 +36,11 @@ with every tree-relative path made absolute; nothing is written into the submodu
 patch must match, so a PinMAME update that moves things fails the build instead of
 producing a different library. Link-time optimization is turned off: the upstream file turns
 it on for Release, which would leave GCC bytecode (or MSVC `/GL` objects) in the archive.
+
+PinMAME compiles its own zlib (`ext/zlib`), but its CMake file only puts those headers on
+the include path on Windows; elsewhere the build picked the system's `zlib.h` and failed on
+a Linux host without `zlib1g-dev`. `build.rs` adds `ext/zlib` on every platform, so the
+headers always match the vendored sources and no zlib development package is needed.
 
 `build.rs` compiles `shim/shim.c` with the exact defines and include paths CMake used for the
 library (CMake writes them out with `file(GENERATE)`, whatever the generator), so the shim
@@ -116,19 +129,22 @@ AltSound folder).
   `LOOP` = 100: the intro is not played (libaltsound issue
   [#14](https://github.com/vpinball/libaltsound/issues/14)).
 - **`altsound.csv`** (`ID,CHANNEL,DUCK,GAIN,LOOP,STOP,NAME,FNAME`, libaltsound's
-  `altsound_csv_parser`): `CHANNEL` 0 (music: one at a time, a new one replaces it) for
-  loops, for sounds that never ended (`loop_unresolved`, not looped) and for sounds.dat
-  `Music:` names; empty (= -1, voice/SFX) for the rest. `DUCK` 100 (no ducking), `GAIN`
-  100 (every file is at the same reference volume), `STOP` 0. `NAME` is the sounds.dat
-  name without commas and quotes (the parser splits on commas and deletes quotes), or
-  `sound <id>`.
-- **`g-sound.csv`** (`ID,TYPE,GAIN,DUCKING_PROFILE,FNAME`, `gsound_csv_parser`): `music`
-  for loops and sounds that never ended (in G-Sound every music sample loops), `callout`
-  for voice lines (quoted sounds.dat names, `VOX:`), `sfx` for the rest, including one-shot
-  `Music:` jingles. `DUCKING_PROFILE` 0 (none).
-- **`altsound.ini`**: libaltsound's template with `format = altsound` (change it to
-  `g-sound` to use the other CSV) and `rom_volume_ctrl = 0`: the files already carry the
-  right relative levels, and the ROM's volume commands must not change them.
+  `altsound_csv_parser`). Boards other than DCS: `CHANNEL` 0 (music: one at a time, a new
+  one replaces it) for loops, for sounds that never ended (`loop_unresolved`, not looped)
+  and for sounds.dat `Music:` names; empty (= -1, voice/SFX) for the rest; `DUCK` 100 (no
+  ducking), `STOP` 0. Their sound programs are code for the board's own CPU, with nothing
+  that says how one sound changes another's level, so nothing is made up. DCS: from the
+  track programs, see "Ducking, stops and channels" below. Everywhere: `GAIN` 100 (every
+  file is at the same reference volume). `NAME` is the sounds.dat name without commas and
+  quotes (the parser splits on commas and deletes quotes), or `sound <id>`.
+- **`g-sound.csv`** (`ID,TYPE,GAIN,DUCKING_PROFILE,FNAME`, `gsound_csv_parser`). Boards
+  other than DCS: `music` for loops and sounds that never ended (in G-Sound every music
+  sample loops), `callout` for voice lines (quoted sounds.dat names, `VOX:`), `sfx` for the
+  rest, including one-shot `Music:` jingles; `DUCKING_PROFILE` 0 (none). DCS: below.
+- **`altsound.ini`**: `format = altsound` (change it to `g-sound` to use the other CSV)
+  and `rom_volume_ctrl = 0`: the files already carry the right relative levels, and the
+  ROM's volume commands must not change them. Boards other than DCS get libaltsound's own
+  G-Sound template; DCS gets the ROM's ducking profiles (below).
 - Ids that are not a single number (none so far) are left out of the CSVs.
 
 ### Twins
@@ -146,10 +162,86 @@ Measured on afm_113b: the 303 pairs that pass the first two tests are at -64 to 
 aligned (a linear interpolator left them at -25 to -55 dB: the copies differ by the
 fractional phase of the resampler); different sounds of nearly the same length are above
 0 dB. Each sound is compared to the earlier sounds that are not twins themselves, so
-`twin_of` always names an original. The ROM's reason for these copies is not established
-(probably channel or priority variants), so by default every command keeps its own file
-and its own CSV rows; `--merge-twins` points a twin's rows at its original's file and does
-not keep the twin's own files.
+`twin_of` always names an original. On DCS the reason is the board's channels (see
+"Ducking, stops and channels"): a new command on a channel cuts what was playing there, so
+afm_113b puts its sound effects on channels 1 and 2 and its Martian voices and effects on
+4 and 5 as identical pairs (107 and 82), and the game sends a sound to the free channel of
+the pair: two copies overlap instead of cutting each other. The General (channel 3) has no
+twin, so a new line cuts the previous one. `twin_reason` says which channels. By default
+every command keeps its own file and its own CSV rows, because they carry this channel
+information; `--merge-twins` only shares the WAV file: a twin's rows (kept distinct) point
+at its original's file, and the twin's own files are not kept.
+
+### Ducking, stops and channels (DCS)
+
+A DCS track program (the bytecode the board runs for each command, see Loops) says in
+plain opcodes what it does to the other channels (from mjrgh's DCSExplorer, `ExecTrack`,
+`MixingLevelOp`, `LoadTrack`). Once booted, `dcsrom::command_effects` follows every
+populated track of the catalog from a silent board for up to 60 s (0.1 s for AFM's 590)
+and records:
+
+- **the home channel** (header byte 2). A type 1 track replaces the program on its channel
+  and clears that channel's stream: **a new command on a channel cuts the previous one
+  there, and nothing else**. Type 2 tracks only leave a deferred track for their channel,
+  which a music track starts at its next phrase boundary (opcode `05`).
+- **ducks**: opcodes `07`-`0C` set, raise or lower a channel's mixing level, at once or with
+  a fade over N frames. Each channel keeps one contribution per source channel, and its
+  level is their sum; one unit is `0.9733` in gain, **0.2352 dB**, whatever the channel's
+  own level. A contribution is dropped when its program ends, is stopped or is replaced, so
+  a duck lasts as long as the program that set it; programs give it back with a fade
+  (`0B`) just before they end (0.15 s for most AFM commands).
+- **stops**: opcode `02 c` stops channel `c`; a track that plays nothing on its home
+  channel only clears it (AFM `0x03E3` clears channel 0, the music).
+
+Per command, `manifest.json` gets `dcs`: `track_type`, `channel`, `streams` (channels it
+plays on), `stops`, `ducks` (per other channel: `units`, `db`, `start_s`, `full_s`,
+`end_s`, `restore` = `fade` / `program end` / `step` / `held`, `release_s`), `deferred`,
+`queues`, `own_level`, `length_s`, `error` (a program that could not be followed: the
+command keeps the plain rows). At the top level, `dcs` sums up the catalog: per channel
+the tracks, how many play a stream and how many duck the music, the `stop_commands`
+(what libaltsound does with each), the `deferred` tracks, the `unreadable` ones.
+
+On afm_113b: channel 0 holds the 20 music tracks, 1 and 2 the same sound effects twice
+(107 pairs), 3 the General's 171 lines, 4 and 5 the Martians' voices and effects twice.
+313 of the 576 written commands lower the music: by 10 units (-2.35 dB, DUCK 76: most of
+the General's lines), 15 (-3.53, DUCK 67: most voices), 20 (58), 30 (44), and the fanfares
+and big effects by 70 to 100 units (-16.5 to -23.5 dB, DUCK 15, 11 and 7). Nothing stops
+the music but the stop commands, which play nothing.
+
+**Twins** are the explanation of AFM's "every sound effect appears twice": the same sound
+on two channels (1 and 2, 4 and 5), so that two of them can play at once; the game picks
+the free one (see Twins above).
+
+How the programs map onto the pack (libaltsound's `altsound_processor.cpp` and
+`gsound_processor.cpp`):
+
+| column | DCS rule | what is exact, what is lost |
+|---|---|---|
+| `CHANNEL` | 0 for a track on channel 0 that plays a stream (the music); 1 (jingle: one at a time) for the **voice channel**, the channel with the most voice lines (quoted names, most of its rows) that has no twin channel (more than half of its sounds also on another channel); -1 otherwise | AFM: channel 3, so a General line cuts the previous one, as on the board. The other channels cut their own previous sound on the board, but AltSound has one music and one jingle channel only: they play polyphonic |
+| `DUCK` | `round(100 * 0.9733^units)` of the deepest contribution to channel 0; 100 when none (and on music rows, which the parser forces to 100 anyway) | The depth is exact. AltSound keeps it while the file plays and gives the level back **at once** when it ends, where the board fades it back (0.15 s mostly; 17 AFM effects give it back 0.2 to 2 s before their end). Overlapping ducks **add up** on the board (-2.35 and -3.53 give -5.9 dB) but AltSound uses **only the deepest** ([libaltsound issue #15](https://github.com/vpinball/libaltsound/issues/15)). Only the music is ducked: a duck of another channel (3 AFM commands) is in the manifest only |
+| `STOP` | 1 when the row is on the jingle channel and its program stops channel 0 | AltSound can only stop the music, and only from a jingle; such a stop on another row is listed in `altsound.dcs.limits`. AFM: none. The stop commands play nothing, so they have no row: libaltsound stops the music on `0x03E3` itself; `0x0000` (all channels) and the per-channel stops (`0x03E1`, `0x03E2`, `0x03E4`...) are lost |
+| `LOOP` | as before, from the loop found | The intro is not played ([issue #14](https://github.com/vpinball/libaltsound/issues/14)) |
+| `TYPE` | `music` for channel 0 loops, `callout` for the voice channel, `sfx` for the rest (a one-shot channel 0 track too) | Same limits as `CHANNEL`: callouts cut each other, sfx are polyphonic |
+| `DUCKING_PROFILE` | per type, one profile per distinct DUCK value, lightest first: `ducking_profileN = music:<DUCK>` in `[callout_ducking_profiles]` / `[sfx_ducking_profiles]`, with `ducks = music` in `[callout]` / `[sfx]` (left empty for a type without profile: libaltsound refuses `ducks` without one) | Same limits as `DUCK`. AFM: callout `76, 67, 58`, sfx `76, 67, 58, 44, 15, 11, 7` |
+
+The deferred tracks (a music change on the beat) cannot be expressed in either format: they
+are only listed. The 1993 DCS software reads opcodes `04` and `06` differently (see Loops),
+and DCS-95 opcodes `10`-`12` are not modelled: such a program ends in `error` and its
+command keeps the plain rows.
+
+**`--check-ducking`** plays it back: once the extraction is done, the loudest written music
+loop alone, then per duck depth one written command (the one whose full depth holds longest,
+up to 6 s) alone and sent 3 s into the music, all at the reference volume. The music's gain
+is fitted by least squares (`MC = gm * M + gc * C`) in 30 ms windows, the median `gm` over
+the full depth (60 ms kept from each end) is compared with the program's depth, and a
+difference over 0.5 dB is a `mismatch` (manifest `dcs.ducking_check`, and the summary). The
+fit before the command must be within 0.1 dB of 0 (`before_db`), or the check is not
+measured and counts as a mismatch. The boards are reset once before the check (one more
+`board_resets`): the main pass leaves a deferred track armed that the stop does not clear,
+and on afm_113b the first take of music `0011` then played another track. It adds about a minute of emulation. Only DCS boards
+replay a sound sample-exactly (two takes correlate at 0.998+); on Whitestar (apollo13) they
+correlate at 0.3 to 0.99 and the fit means nothing, so there is no check, and no reading,
+on other boards. The research behind this: [ducking-study.md](ducking-study.md).
 
 ### Factory mode (the default; `--no-factory` turns it off)
 
@@ -213,7 +305,7 @@ on the warm boot they send `55 AA 67 98` after 6-12 s.
 |---|---|---|---|
 | DCS (WPC) | `55 AA vv ~vv`, level = (vv - 7) / 8, 8..31 (`67` = 12) | none | `00 00` |
 | DCS channel mix | `55 AB..B0 vv ~vv` (rs_l6 fades `55 AB` FF to 07 and back to FF at boot) | none | |
-| WPCS | `79 vv ~vv` (untested: no WPCS ROM) | none | `00` |
+| WPCS | `79 vv ~vv`: the game's is read (tz_94h `79 0C F3`), no reference volume (the files are at the game's) | none | `00` |
 | Whitestar BSMT (Sega/Stern) | `FE xx FD`, level = 2F - xx, 0..31 | the master volume (ours with the factory settings, else the game's `FE xx FD`, which it re-sends every 0.5 s) | `00` |
 | Data East BSMT | none (hardware pot) | the music volume `20`..`2F`, then the stop `00` | `00` |
 | System 11 (WMSS11, 11C, 11J) | none (no volume stage) | none | `00` / `20` (11C) |
@@ -438,10 +530,14 @@ the previous sound could not be stopped), `retried`, `ignores_master_volume`,
 `master_volume_check` (the volume it was played at again, the levels away, its level and
 move, the reference's id and move), `board`, `volume_init`, `idle_level` (output level at
 the end, in LSB).
-With the AltSound pack: `twin_of` (the original's id) and `twin` (`residual_db`,
-`lag_samples`, `length_diff_samples`, `lufs_diff`) on twins, and at the top level
-`altsound` (`files`, `rows`, `loops_with_smpl`, `twins`, `merged_twins`,
-`files_referenced`, `twin_test`).
+DCS: `dcs` (see "Ducking, stops and channels").
+With the AltSound pack: `twin_of` (the original's id), on DCS `twin_reason` (the two
+channels), and `twin` (`residual_db`,
+`lag_samples`, `length_diff_samples`, `lufs_diff`) on twins, `pack` on every row
+(`channel`, `duck`, `stop`, `gsound_type`, `ducking_profile`: what it became in the CSVs),
+and at the top level `altsound` (`files`, `rows`, `loops_with_smpl`, `twins`,
+`merged_twins`, `files_referenced`, `dcs`: `voice_channel`, row counts, `duck_values`,
+`callout_profiles`, `sfx_profiles`, `limits`; `twin_test`).
 
 At the top level: `mode` (`factory` or `normal`), `factory` (vpm, saved nvram path and size,
 cold boot report), the boards, `boot` (length, what ended it, every byte per board as
@@ -451,7 +547,8 @@ at), `volume_replays`, `refreshed_before_each_command`, `commands_from`, `counts
 with_sound, written, blips, no_sound, loops, loops_exact_dcs_catalog, loops_exact_audio,
 loops_unresolved, not_clean, clipped (written files only), retried,
 recovered_by_retry, ignores_master_volume), `loudness`, the `stop` actually sent,
-`board_resets` and `dc_blocked_wav`. `recording_cap`: `max_secs` (120 s by default),
+`board_resets` and `dc_blocked_wav`. DCS: `dcs` (the catalog summary and
+`ducking_check`). `recording_cap`: `max_secs` (120 s by default),
 `loop_max_secs` (240 s), `loop_hint_max_secs` (900 s) and what they do (see Loops).
 
 Reference mode (the default) adds `levels_note`, `factory_offset_db` (the ROM's offset: 0
@@ -597,7 +694,13 @@ Two rounds before:
   writes both bytes to the board, so padding a one-byte command would also send `00` ("Reset
   Sound System"). One-byte commands (all of sounds.dat's WPCS entries, and the stop `00`)
   therefore go through `sndbrd_data_w`, the path the WPC game CPU uses (wpc.c
-  `WPC_SND_DATA`). Not tested: no WPCS ROM was available.
+  `WPC_SND_DATA`). Tested on tz_94h (Twilight Zone): 307 commands from sounds.dat, 302
+  written, 5 silent, no blip, no clipped file, no board reset. That byte also comes back
+  through libpinmame's sound-command callback while the extractor's state is held; the
+  callback skips it (a blocking lock there hung the extraction). None of its 45 music
+  tracks repeats exactly within 240 s (YM2151 + DAC): they are cut at
+  `--max-secs`. Its master volume is not set by the tool: the files are at the game's
+  factory level (`79 0C F3`), and the master volume check has no other level to replay at.
 - **Several commands can map to one sound** (whirl_l3 `0x0001` = `0x0004`). They are marked
   as twins (above) but kept, and the loudness totals count every copy.
 - **The factory volume is the boot (attract mode) volume.** Nothing is played, so whether a

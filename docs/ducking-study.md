@@ -1,8 +1,10 @@
 # Ducking, stops and channels from the ROM: feasibility study
 
-Branch `ducking-study`, October 2026. ROM: Attack from Mars `afm_113b` (WPC-95, DCS, sound
-ROM `afm_s2.l1`, 1130 catalog slots, 590 populated). Status: research and prototype, not
-integrated in the pack writer.
+October 2026. ROM: Attack from Mars `afm_113b` (WPC-95, DCS, sound ROM `afm_s2.l1`, 1130
+catalog slots, 590 populated). Status: integrated in 0.1.0-beta.2 (the manifest's `dcs`,
+CHANNEL/DUCK/STOP, G-Sound TYPE and ducking profiles, `--check-ducking`); see
+[how-it-works.md](how-it-works.md), "Ducking, stops and channels". This is the research
+report it came from; the prototype names below are those of the study.
 
 ## Summary
 
@@ -138,7 +140,7 @@ No program queues anything. What stops a sound on AFM is:
 - **the no-stream tracks** 0x03E3 (ch0), 0x03E4 (ch1), 0x03E5 (ch2), 0x03E6 (ch3),
   0x03E1 (ch4), 0x03E2 (ch5), which only clear their channel. 0x03E7/0x03E8 do the same on
   ch0 and write 0x11/0x00 back to the game (sent at boot). libaltsound hardcodes 0x03E3 as
-  "stop music" for DCS, and 0x0000 too, but not the others;
+  "stop music" for DCS, but not 0x0000 (its 0x0000 rule is for Whitestar) nor the others;
 - type 2 tracks 0x0050/51/52 set a deferred track on ch0/1/2 (0x0003, 0x0007, 0x0012). A
   running music track starts it with opcode `05` at its next phrase boundary: a music
   transition on the beat, which AltSound has no way to express.
@@ -198,7 +200,7 @@ These two files are identical in the local checkout and at the pinned `f4b790a1`
   ends. Music rows get 100. Only the music is ducked: nothing ducks SFX or jingles.
 - `STOP` = 1 on a jingle stops the music (no effect on other channels).
 - `LOOP` = 100 loops.
-- Built-in DCS handling: 0x0000 and 0x03E3 stop the music (`altsound_postprocess_commands`).
+- Built-in DCS handling: 0x03E3 stops the music (`altsound_postprocess_commands`; its 0x0000 rule is for Whitestar only).
 
 **g-sound.csv** (`ID,TYPE,GAIN,DUCKING_PROFILE,FNAME`) and `altsound.ini`:
 - Types: `music`, `callout`, `solo` and `overlay` are each exclusive within their type (a
@@ -216,7 +218,7 @@ These two files are identical in the local checkout and at the pinned `f4b790a1`
 |---|---|---|
 | AltSound `CHANNEL` | 0 = home channel 0 with a stream (music). One exclusive DCS channel (AFM: ch3, the General) can be the jingle channel 1, which gives "a new line cuts the previous one". Everything else -1 | Exact for music and for one voice channel. The DCS's other exclusive channels (ch1, ch2, ch4, ch5: same channel cuts) become polyphonic. The game sends commands to a free twin channel anyway, so the difference is small in play |
 | AltSound `DUCK` | `round(100 · 0.9733^units)` from the deepest contribution to channel 0; 100 if none | Depth exact (±0.2 dB). Length = the file's length, which matches the ROM within 0.1 s for 296 of 313 commands. AltSound cannot express the 0.15 s release, the late onset or ramp of 10 commands, or the early release of 17 SFX. Overlapping ducks add up on the DCS (-2.35 and -3.53 give -5.9 dB) but AltSound keeps only the deepest (-3.53). |
-| AltSound `STOP` | 0 everywhere on AFM, which is exact: no sound stops the music. The commands that stop channels play nothing, so they have no row (libaltsound handles 0x0000/0x03E3 itself; 0x03E1/E2/E4-E8 are lost, and only 0x03E7/E8 are sent, at boot) | Exact for AFM. A ROM whose sound programs use `02 00` would get STOP = 1 on a jingle, but only for the music |
+| AltSound `STOP` | 0 everywhere on AFM, which is exact: no sound stops the music. The commands that stop channels play nothing, so they have no row (libaltsound handles 0x03E3 itself; 0x0000 and 0x03E1/E2/E4-E8 are lost, and only 0x03E7/E8 are sent, at boot) | Exact for AFM. A ROM whose sound programs use `02 00` would get STOP = 1 on a jingle, but only for the music |
 | AltSound `LOOP` | unchanged (already from the program's loop) | exact |
 | AltSound `GAIN` | unchanged: the programs' own levels (`07 c vv`, AFM 60-126) are already in the recorded WAV levels | exact (already) |
 | G-Sound `TYPE` | ch0 + stream: `music`. The voice channel without twins (ch3): `callout` (exclusive, as on the DCS). Other channels: `sfx`. Optionally one more exclusive channel as `overlay` | Same limits as CHANNEL. G-Sound has 4 exclusive groups, so up to 4 DCS channels could keep their exclusivity, except that `overlay` cannot stop or pause anything and `solo` cannot duck |
@@ -297,12 +299,13 @@ Estimate: steps 1-2 and tests, about 2 days. Step 3, 1 day. Other boards: open r
 - `src/ducking.rs`: `dcs-effects <region.bin> <sounds.dat section> [--json F] [--max-secs S]`,
   `duck-fit <M.wav> <C.wav> <MC.wav> <at_secs> [--win S]`, `drift-check <A.wav> <B.wav>`.
 - `src/extract.rs`: `Send::Wait` and scenario ids in `--only` (`0x000C+3+0x01B6`).
-  `R2A_DUMP_REGION=<file>` dumps the DCS sound region at the end of boot.
+  `--dump-sound-region <file>` (hidden option; `R2A_DUMP_REGION` in the study) dumps the DCS
+  sound region at the end of boot.
 
 Reproduce (AFM):
 
 ```
-R2A_DUMP_REGION=afm_region.bin rom2altsound afm_113b --roms <dir> --out runs/probe --only 0x01b6
+rom2altsound afm_113b --roms <dir> --out runs/probe --only 0x01b6 --dump-sound-region afm_region.bin
 rom2altsound dcs-effects afm_region.bin afm_113 --json afm_effects.json
 rom2altsound afm_113b --roms <dir> --out runs/dyn --loop-max-secs 0 --max-secs 9 \
   --only 0x000C,0x01B6,0x000C+3+0x01B6
@@ -310,7 +313,6 @@ rom2altsound duck-fit runs/dyn/afm_113b/0x000C-afm_113b.wav runs/dyn/afm_113b/0x
   runs/dyn/afm_113b/0x000C+3+0x01B6-afm_113b.wav 3 --win 0.03
 ```
 
-Build note: on the host `serveur` the PinMAME build needs
-`CFLAGS/CXXFLAGS=-I<repo>/vendor/pinmame/ext/zlib`. PinMAME compiles its own zlib, but on
-Linux the CMake file does not add the include path, so it relies on the system headers
-(`zlib1g-dev`), which this host does not have.
+Build note: PinMAME compiles its own zlib, but on Linux its CMake file did not add the
+include path, so the build relied on the system headers (`zlib1g-dev`). `build.rs` now adds
+`vendor/pinmame/ext/zlib` on every platform.
