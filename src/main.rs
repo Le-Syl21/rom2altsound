@@ -46,9 +46,11 @@ Examples:
 Each ROM folder holds the WAV files, altsound.csv, g-sound.csv, altsound.ini,
 manifest.json, cold-boot.json and factory-nvram/.
 
-The pack is a starting point: every sound plays at the same level, nothing is
-ducked or stopped. Do the artistic pass (ducking, stops, gains) in an AltSound
-editor such as VPin Studio. AltSound loops whole files only, so a loop plays its
+The pack is a starting point: every sound plays at the same level. On DCS boards
+the channels and the ducking come from the ROM's own track programs (the music is
+lowered under a sound by as much as the real board lowers it); on the other boards
+nothing is ducked or stopped. Do the artistic pass (ducking, stops, gains) in an
+AltSound editor such as VPin Studio. AltSound loops whole files only, so a loop plays its
 body without the intro (https://github.com/vpinball/libaltsound/issues/14); the
 full intro + loop file, with its loop points, is kept next to it.
 
@@ -154,9 +156,19 @@ struct Cli {
     no_altsound: bool,
     /// Commands that play the same audio (twins, listed as `twin_of` in manifest.json) share
     /// the first one's file in the CSVs, and the twins' own WAV files are not kept. Off by
-    /// default: every command keeps its own file
+    /// default: every command keeps its own file (on DCS, twins are the same sound on two
+    /// channels, so that two of them can play at once)
     #[arg(long, conflicts_with = "no_altsound")]
     merge_twins: bool,
+    /// DCS: after the extraction, play the loudest music loop with one command per duck
+    /// depth on top, and check that the music is lowered as much as the ROM's track
+    /// programs say (a difference over 0.5 dB is flagged in manifest.json and the summary)
+    #[arg(long)]
+    check_ducking: bool,
+    /// Write PinMAME's sound region (the DCS ROM image) to this file once booted, for the
+    /// `dcs-effects` diagnostic
+    #[arg(long, hide = true, value_name = "FILE")]
+    dump_sound_region: Option<PathBuf>,
     /// Internal: extract the single ROM given in this process; --roms is its directory and
     /// --out its own folder (libpinmame runs one machine per process)
     #[arg(long, hide = true)]
@@ -224,7 +236,7 @@ unsafe extern "C" fn on_sound_command(board: c_int, cmd: c_int, _: *mut c_void) 
     {
         x.on_game_command(board, cmd);
     }
-
+}
 
 unsafe extern "C" fn on_game(game: *mut ffi::Game, user: *mut c_void) {
     let game = unsafe { &*game };
@@ -239,7 +251,7 @@ fn main() {
         loop_scan(std::env::args().skip(2).collect());
         return;
     }
-    // Ducking study diagnostics (prototype).
+    // DCS ducking diagnostics (docs/how-it-works.md, "Ducking, stops and channels").
     match std::env::args().nth(1).as_deref() {
         Some("dcs-effects") => return ducking::dcs_effects(std::env::args().skip(2).collect()),
         Some("duck-fit") => return ducking::duck_fit(std::env::args().skip(2).collect()),
@@ -354,6 +366,8 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             factory,
             stop: cli.stop.clone(),
             dc_block: cli.dc_block,
+            check_ducking: cli.check_ducking,
+            dump_region: cli.dump_sound_region.clone(),
             verbose: cli.verbose,
         },
         dat,
@@ -413,6 +427,22 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             },
             r.files_referenced
         );
+        if let Some(d) = &r.dcs {
+            println!(
+                "  altsound (DCS): music channel 0 {} row(s), voice channel {} -> CHANNEL 1 {} row(s), {} row(s) duck the music (DUCK {}), {} STOP",
+                d.music_rows,
+                d.voice_channel
+                    .map_or("none".into(), |c| format!("DCS {c}")),
+                d.voice_rows,
+                d.ducking_rows,
+                d.duck_values
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join("/"),
+                d.stop_rows,
+            );
+        }
     }
     Ok(())
 }
@@ -619,6 +649,34 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
                     .map_or("n/a".into(), |v| format!("{v:.1} dBTP")),
             ),
             None => println!("    as shipped: n/a (factory offset not measured)"),
+        }
+    }
+    if let Some(r) = x.duck_report() {
+        match &r.note {
+            Some(n) if r.checks.is_empty() => println!("  ducking check: {n}"),
+            _ => {
+                println!(
+                    "  ducking check: music {}, {} depth(s), {} mismatch(es) over {} dB",
+                    r.music,
+                    r.checks.len(),
+                    r.mismatches,
+                    r.tolerance_db
+                );
+                for c in &r.checks {
+                    println!(
+                        "    {} {:+.2} dB predicted, {}{}",
+                        c.id,
+                        c.predicted_db,
+                        c.measured_db
+                            .map_or("not measured".into(), |m| format!("{m:+.2} dB measured")),
+                        if c.mismatch {
+                            "  MISMATCH".to_string()
+                        } else {
+                            c.note.as_ref().map_or(String::new(), |n| format!(" ({n})"))
+                        }
+                    );
+                }
+            }
         }
     }
     if !l.excluded_ignoring_master_volume.is_empty() {

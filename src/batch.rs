@@ -100,6 +100,12 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
             .map(|v| v.to_string_lossy().into_owned()),
     );
     opt("--stop", cli.stop.clone());
+    opt(
+        "--dump-sound-region",
+        cli.dump_sound_region
+            .as_ref()
+            .map(|v| v.to_string_lossy().into_owned()),
+    );
     for (flag, on) in [
         ("--no-factory", cli.no_factory),
         ("--factory-volume", cli.factory_volume),
@@ -110,6 +116,7 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
         ("--verbose", cli.verbose),
         ("--no-altsound", cli.no_altsound),
         ("--merge-twins", cli.merge_twins),
+        ("--check-ducking", cli.check_ducking),
     ] {
         if on {
             a.push(flag.into());

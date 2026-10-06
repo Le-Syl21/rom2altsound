@@ -14,7 +14,7 @@
 //! exact cycle of its loop is confirmed (`looping`, and on DCS the track program's own period
 //! from `dcsrom::track_run`); the file is then its intro and one loop body.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::ffi::c_int;
 use std::path::PathBuf;
 
@@ -23,7 +23,7 @@ use serde::Serialize;
 use crate::loudness::{self, Aggregate, FileLoudness};
 use crate::soundsdat::{Entry, SoundsDat};
 use crate::volume::{self, VolumeCmd};
-use crate::{dcsrom, ffi, looping};
+use crate::{dcsrom, ducking, ffi, looping};
 
 /// A sample within this many LSB of the idle level is digital silence: the upstream mixer
 /// adds +/-1 LSB TPDF dither.
@@ -54,6 +54,16 @@ const LATE_LOOP_CHECK_SECS: f64 = 10.0;
 const LOOP_HINT_MAX_SECS: f64 = 900.0;
 /// DCS frame length: 240 samples at 31250 Hz.
 const DCS_FRAME_SECS: f64 = 240.0 / 31250.0;
+/// `--check-ducking`: when the other command is sent over the music, the fit's window, the
+/// margin kept from both ends of the full depth, the longest hold played, and the largest
+/// difference with the program's depth accepted. The board rounds its level arithmetic:
+/// on afm_113b deep ducks measure 0.1 to 0.2 dB deeper than 0.2352 dB per unit.
+const DUCK_CHECK_AT_SECS: f64 = 3.0;
+const DUCK_CHECK_WINDOW_SECS: f64 = 0.03;
+const DUCK_CHECK_MARGIN_SECS: f64 = 0.06;
+const DUCK_CHECK_MAX_HOLD_SECS: f64 = 6.0;
+const DUCK_CHECK_TOLERANCE_DB: f64 = 0.5;
+const DUCK_CHECK_BEFORE_MAX_DB: f64 = 0.1;
 /// Between two commands: required silence, and how long we wait for it at most.
 const QUIET_SECS: f64 = 0.5;
 const QUIET_MAX_SECS: f64 = 10.0;
@@ -161,6 +171,12 @@ pub struct Options {
     pub stop: Option<String>,
     /// Write DC-blocked audio instead of the raw emulated output.
     pub dc_block: bool,
+    /// DCS: after the extraction, play the music with one command per duck depth on top and
+    /// compare the music's measured gain with the depth read in the track programs.
+    pub check_ducking: bool,
+    /// Write PinMAME's sound region (the DCS ROM image) to this file once booted, for the
+    /// `dcs-effects` diagnostic.
+    pub dump_region: Option<PathBuf>,
     pub verbose: bool,
 }
 
@@ -216,6 +232,8 @@ enum Pass {
     VolumeCheck,
     /// A few files again at the game's factory volume (`VolumeInit::Reference` only).
     FactoryOffset,
+    /// DCS, `--check-ducking`: the music with one command per duck depth on top.
+    DuckCheck,
 }
 
 #[derive(Clone)]
@@ -230,6 +248,24 @@ struct Cmd {
     slot: Option<usize>,
     /// Volume check: the other master volume, sent before the command.
     alt: Option<AltVolume>,
+    /// Ducking check: what this recording is for, and its length.
+    check: Option<DuckTake>,
+}
+
+/// A recording of the ducking check, `secs` long from the first command byte.
+#[derive(Clone, Copy, Debug)]
+struct DuckTake {
+    kind: TakeKind,
+    secs: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TakeKind {
+    /// The music alone.
+    Music,
+    /// The sound of check `n` alone, then the music with that sound on top.
+    Sound(usize),
+    Mixed(usize),
 }
 
 /// Another master volume for the volume check.
@@ -428,6 +464,44 @@ pub struct SoundInfo {
     pub idle_level: i32,
     /// Emulated time from the first command byte to the first non-silent sample.
     pub onset: Option<f64>,
+    /// DCS: what the command's track program does (`dcsrom::command_effects`): its channel,
+    /// the level changes (ducks) and stops it applies to the other channels.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dcs: Option<dcsrom::CommandEffects>,
+}
+
+#[cfg(test)]
+impl SoundInfo {
+    /// A written one-shot sound with DCS data, for the pack writer's tests.
+    pub fn for_test(id: &str, name: &str, dcs: dcsrom::CommandEffects) -> Self {
+        SoundInfo {
+            id: id.into(),
+            name: name.into(),
+            file: Some(format!("{id}.wav")),
+            duration: 1.0,
+            blip: false,
+            lufs: Some(-20.0),
+            true_peak_dbtp: None,
+            level_lufs: None,
+            peak_dbfs: None,
+            rms_dbfs: None,
+            clipped_samples: 0,
+            dc_offset: 0,
+            ended_by: "silence",
+            looping_or_truncated: false,
+            loop_info: None,
+            loop_unresolved: None,
+            clean_start: true,
+            retried: false,
+            ignores_master_volume: false,
+            master_volume_check: None,
+            board: "DCS".into(),
+            volume_init: None,
+            idle_level: 0,
+            onset: Some(0.01),
+            dcs: Some(dcs),
+        }
+    }
 }
 
 /// A file played again at another master volume.
@@ -599,7 +673,89 @@ struct Manifest<'a> {
     stop: String,
     board_resets: u32,
     dc_blocked_wav: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dcs: Option<DcsReport<'a>>,
     sounds: &'a [SoundInfo],
+}
+
+/// DCS: the channels, stops and deferred tracks of the whole catalog, read in the track
+/// programs, and the ducking check.
+#[derive(Serialize)]
+struct DcsReport<'a> {
+    note: &'static str,
+    /// Per home channel: how many populated tracks, how many play a stream, how many lower
+    /// the music (channel 0).
+    channels: Vec<DcsChannel>,
+    /// Tracks that stop channels and play nothing (no file, no row in the pack).
+    stop_commands: Vec<DcsStop>,
+    /// Type 2 tracks: the track they leave for their channel.
+    deferred: Vec<DcsDeferred>,
+    /// Tracks whose program could not be followed.
+    unreadable: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ducking_check: Option<&'a DuckCheckReport>,
+}
+
+#[derive(Serialize)]
+struct DcsChannel {
+    channel: u8,
+    tracks: usize,
+    with_stream: usize,
+    ducking_music: usize,
+}
+
+#[derive(Serialize)]
+struct DcsStop {
+    id: String,
+    name: String,
+    stops: Vec<u8>,
+    /// What libaltsound does with it.
+    altsound: &'static str,
+}
+
+#[derive(Serialize)]
+struct DcsDeferred {
+    id: String,
+    channel: u8,
+    track: Option<String>,
+}
+
+/// `--check-ducking`: the music's measured gain under one command per duck depth.
+#[derive(Clone, Serialize)]
+pub struct DuckCheckReport {
+    /// The music played under every check, and when the other command was sent.
+    pub music: String,
+    pub sent_at_s: f64,
+    pub window_s: f64,
+    pub tolerance_db: f64,
+    pub checks: Vec<DuckCheck>,
+    /// Checks whose measured depth differs from the program's by more than the tolerance.
+    pub mismatches: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct DuckCheck {
+    pub id: String,
+    pub name: String,
+    /// The depth read in the program, in level units and dB.
+    pub units: f64,
+    pub predicted_db: f64,
+    /// Where the full depth holds, in seconds from the command (the measurement keeps
+    /// `DUCK_CHECK_MARGIN_SECS` away from both ends).
+    pub hold_s: [f64; 2],
+    /// The median of the music's fitted gain over the hold, its standard deviation and the
+    /// number of windows.
+    pub measured_db: Option<f64>,
+    pub sd_db: Option<f64>,
+    /// The same fit before the command was sent: about 0 dB when the takes line up.
+    pub before_db: Option<f64>,
+    pub windows: usize,
+    pub diff_db: Option<f64>,
+    pub mismatch: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -674,6 +830,17 @@ pub struct Extractor {
     offsets: Vec<BoardOffset>,
     offset_note: Option<String>,
     pub results: Vec<SoundInfo>,
+    /// DCS: the board, and what each populated track of its catalog does
+    /// (`dcsrom::command_effects`), read once booted.
+    dcs_board: Option<c_int>,
+    dcs_fx: BTreeMap<u16, dcsrom::CommandEffects>,
+    /// `--check-ducking`: the report, and the takes recorded so far (mono, trimmed): the
+    /// music alone, and the current check's sound alone with its onset.
+    duck_report: Option<DuckCheckReport>,
+    duck_music: Option<Vec<f64>>,
+    duck_sound: Option<(Vec<f64>, f64)>,
+    /// Reset the boards before the next command (the start of the ducking check).
+    reset_before_pass: bool,
     /// The loudness of each written file, by result index.
     loud: Vec<Option<FileLoudness>>,
     pub done: bool,
@@ -738,6 +905,12 @@ impl Extractor {
             offsets: Vec::new(),
             offset_note: None,
             results: Vec::new(),
+            dcs_board: None,
+            dcs_fx: BTreeMap::new(),
+            duck_report: None,
+            duck_music: None,
+            duck_sound: None,
+            reset_before_pass: false,
             loud: Vec::new(),
             done: false,
             error: None,
@@ -1131,16 +1304,20 @@ impl Extractor {
                 let max_secs = (self.opts.max_secs * self.rate as f64) as u64;
                 // A loop search records past `max_secs`; a replay of a loop file (volume
                 // check, factory offset) is as long as the written file.
-                let max = match (&rec.search, rec.cmd.slot) {
-                    (Some(search), _) => search.cap,
-                    (None, Some(i)) => match &self.results[i] {
-                        s if s.loop_info.is_some() => {
-                            ((s.onset.unwrap_or(0.0) + s.duration.max(BLIP_SECS))
-                                * self.rate as f64) as u64
-                        }
+                let max = if let Some(take) = rec.cmd.check {
+                    (take.secs * self.rate as f64) as u64
+                } else {
+                    match (&rec.search, rec.cmd.slot) {
+                        (Some(search), _) => search.cap,
+                        (None, Some(i)) => match &self.results[i] {
+                            s if s.loop_info.is_some() => {
+                                ((s.onset.unwrap_or(0.0) + s.duration.max(BLIP_SECS))
+                                    * self.rate as f64) as u64
+                            }
+                            _ => max_secs,
+                        },
                         _ => max_secs,
-                    },
-                    _ => max_secs,
+                    }
                 };
                 let no_sound = (self.opts.no_sound_secs * self.rate as f64) as u64;
                 if rec.drained_at.is_none() && self.sender.is_empty() {
@@ -1225,6 +1402,12 @@ impl Extractor {
         if !self.fill_queue() {
             self.phase = Phase::Done;
             self.done = true;
+            return;
+        }
+        if std::mem::take(&mut self.reset_before_pass) {
+            // The volume goes out again once the board is back (`quiet(true)`).
+            self.sender.push_back(Send::Reset);
+            self.phase = Phase::Quiet(self.quiet(true));
             return;
         }
         if then_pre {
@@ -1388,6 +1571,13 @@ impl Extractor {
     /// other master volume.
     fn pre_sends(&mut self) -> Vec<Send> {
         let mut v = Vec::new();
+        // A ducking check compares takes with each other: all at our master volume, whatever
+        // the passes before it left on the board.
+        if self.pass == Pass::DuckCheck {
+            let vol = self.volume_sends();
+            self.volume_replays += u32::from(!vol.is_empty());
+            v.extend(vol);
+        }
         if self.pass == Pass::Retry {
             v.extend(self.stop.iter().copied());
             let vol = self.volume_sends();
@@ -1436,11 +1626,10 @@ impl Extractor {
             self.done = true;
             return;
         }
-        // Ducking study: dump the DCS sound region for `dcs-effects`.
-        if let (Ok(path), Some(region)) = (std::env::var("R2A_DUMP_REGION"), ffi::sound_region()) {
-            if let Err(e) = std::fs::write(&path, region) {
-                eprintln!("cannot dump the sound region to {path}: {e}");
-            }
+        if let (Some(path), Some(region)) = (&self.opts.dump_region, ffi::sound_region())
+            && let Err(e) = std::fs::write(path, region)
+        {
+            eprintln!("cannot dump the sound region to {}: {e}", path.display());
         }
         let halted = unsafe { ffi::shim_halt_game_cpus(1) };
         eprintln!("halted {halted} game CPU(s)");
@@ -1476,6 +1665,7 @@ impl Extractor {
         for l in &self.refresh_labels {
             eprintln!("  before every command: {l}");
         }
+        self.read_dcs_programs();
         self.main_cmds = self.build_commands();
         self.queue = self.main_cmds.clone().into();
         eprintln!("{} command(s) to extract", self.queue.len());
@@ -1577,7 +1767,20 @@ impl Extractor {
                         eprintln!("factory offset: {n}");
                     }
                 }
-                Pass::FactoryOffset => return false,
+                Pass::FactoryOffset => {
+                    self.pass = Pass::DuckCheck;
+                    self.queue = self.duck_check_commands().into();
+                    // The main pass leaves state on a DCS board that the stop does not clear
+                    // (a deferred track: afm_113b's music 0011 then played another track in
+                    // the first take only), and the takes must be the same music.
+                    self.reset_before_pass = !self.queue.is_empty();
+                    if let Some(r) = &self.duck_report
+                        && let Some(n) = &r.note
+                    {
+                        eprintln!("ducking check: {n}");
+                    }
+                }
+                Pass::DuckCheck => return false,
             }
         }
         true
@@ -1746,6 +1949,356 @@ impl Extractor {
         cmds
     }
 
+    /// DCS: follows every populated track of the catalog once (`dcsrom::command_effects`,
+    /// a fraction of a second for a whole ROM).
+    fn read_dcs_programs(&mut self) {
+        let Some(board) = self
+            .board_list()
+            .find(|&b| self.families[b as usize] == "DCS")
+        else {
+            return;
+        };
+        self.dcs_board = Some(board);
+        let Some(region) = ffi::sound_region() else {
+            return;
+        };
+        let Some((_, tracks)) = dcsrom::tracks(region) else {
+            return;
+        };
+        self.dcs_fx = tracks
+            .into_iter()
+            .filter_map(|t| {
+                dcsrom::command_effects(region, t, dcsrom::EFFECTS_MAX_SECS).map(|e| (t, e))
+            })
+            .collect();
+        let ducking = self
+            .dcs_fx
+            .values()
+            .filter(|e| e.duck_on(0).is_some_and(|d| d.units < 0.0))
+            .count();
+        eprintln!(
+            "  DCS track programs: {} read, {ducking} lower the music",
+            self.dcs_fx.len()
+        );
+    }
+
+    /// What a command's DCS track program does, for a plain track number on the DCS board.
+    fn dcs_effects_of(&self, cmd: &Cmd) -> Option<&dcsrom::CommandEffects> {
+        let id = parse_id(&cmd.id);
+        if Some(cmd.board_no) != self.dcs_board || id.len() != 2 {
+            return None;
+        }
+        self.dcs_fx.get(&u16::from_be_bytes([id[0], id[1]]))
+    }
+
+    fn dcs_report(&self) -> Option<DcsReport<'_>> {
+        if self.dcs_fx.is_empty() {
+            return None;
+        }
+        let name = |t: u16| {
+            let id = format!("0x{t:04X}");
+            let n = self
+                .main_cmds
+                .iter()
+                .find(|c| c.id == id)
+                .map_or(String::new(), |c| c.name.clone());
+            (id, n)
+        };
+        let channels = (0..8u8)
+            .filter_map(|ch| {
+                let on: Vec<_> = self
+                    .dcs_fx
+                    .values()
+                    .filter(|e| e.channel == ch && e.track_type == 1)
+                    .collect();
+                (!on.is_empty()).then(|| DcsChannel {
+                    channel: ch,
+                    tracks: on.len(),
+                    with_stream: on.iter().filter(|e| !e.streams.is_empty()).count(),
+                    ducking_music: on
+                        .iter()
+                        .filter(|e| e.duck_on(0).is_some_and(|d| d.units < 0.0))
+                        .count(),
+                })
+            })
+            .collect();
+        let stop_commands = self
+            .dcs_fx
+            .iter()
+            .filter(|(_, e)| e.streams.is_empty() && !e.stops.is_empty())
+            .map(|(&t, e)| {
+                let (id, name) = name(t);
+                DcsStop {
+                    altsound: if t == 0x03E3 {
+                        "built in: libaltsound stops the music on 0x03E3"
+                    } else if e.stops.contains(&0) {
+                        "lost: libaltsound only stops the music on 0x03E3"
+                    } else {
+                        "lost: AltSound cannot stop a voice or sound effect"
+                    },
+                    id,
+                    name,
+                    stops: e.stops.clone(),
+                }
+            })
+            .collect();
+        let deferred = self
+            .dcs_fx
+            .iter()
+            .filter(|(_, e)| e.track_type == 2)
+            .map(|(&t, e)| DcsDeferred {
+                id: name(t).0,
+                channel: e.channel,
+                track: e.deferred.clone(),
+            })
+            .collect();
+        let unreadable = self
+            .dcs_fx
+            .iter()
+            .filter(|(_, e)| e.error.is_some())
+            .map(|(&t, _)| name(t).0)
+            .collect();
+        Some(DcsReport {
+            note: "read in the DCS track programs (docs/how-it-works.md, \"Ducking, stops and channels\"): each command has a home channel, and a new command on a channel cuts the previous one there; a duck is a level change (0.2352 dB per unit) a program applies to another channel while it runs, given back with a fade (release_s) before it ends",
+            channels,
+            stop_commands,
+            deferred,
+            unreadable,
+            ducking_check: self.duck_report.as_ref(),
+        })
+    }
+
+    pub fn duck_report(&self) -> Option<&DuckCheckReport> {
+        self.duck_report.as_ref()
+    }
+
+    /// `--check-ducking`: the loudest written music loop, then per duck depth found in the
+    /// programs one written command (the one with the longest hold up to
+    /// `DUCK_CHECK_MAX_HOLD_SECS`): its sound alone, and the music with it sent
+    /// `DUCK_CHECK_AT_SECS` in.
+    fn duck_check_commands(&mut self) -> Vec<Cmd> {
+        if !self.opts.check_ducking {
+            return Vec::new();
+        }
+        let mut report = DuckCheckReport {
+            music: String::new(),
+            sent_at_s: DUCK_CHECK_AT_SECS,
+            window_s: DUCK_CHECK_WINDOW_SECS,
+            tolerance_db: DUCK_CHECK_TOLERANCE_DB,
+            checks: Vec::new(),
+            mismatches: 0,
+            note: None,
+        };
+        let written = |s: &SoundInfo| s.file.is_some() && s.lufs.is_some();
+        let music = self
+            .results
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| {
+                written(s) && s.looping_or_truncated && s.dcs.as_ref().is_some_and(|d| d.is_music())
+            })
+            .max_by(|a, b| {
+                a.1.lufs
+                    .unwrap_or(-99.0)
+                    .total_cmp(&b.1.lufs.unwrap_or(-99.0))
+            })
+            .map(|(i, _)| i);
+        let Some(music) = music.filter(|&i| i < self.main_cmds.len()) else {
+            report.note = Some(if self.dcs_fx.is_empty() {
+                "not run: not a DCS board".into()
+            } else {
+                "not run: no written music loop to play under the other sounds".into()
+            });
+            self.duck_report = Some(report);
+            return Vec::new();
+        };
+        report.music = self.results[music].id.clone();
+        // Per depth (in hundredths of a unit): the command with the best hold.
+        let mut by_depth: BTreeMap<i64, (usize, f64, [f64; 2], f64)> = BTreeMap::new();
+        for (i, s) in self.results.iter().enumerate() {
+            let Some(d) = s
+                .dcs
+                .as_ref()
+                .filter(|d| !d.is_music())
+                .and_then(|d| d.duck_on(0))
+            else {
+                continue;
+            };
+            if !written(s) || d.units >= 0.0 || i >= self.main_cmds.len() {
+                continue;
+            }
+            let end = d
+                .end_s
+                .map_or(s.onset.unwrap_or(0.0) + s.duration, |e| e - d.release_s);
+            let hold = end - d.full_s;
+            let score = if hold >= 0.3 {
+                hold.min(DUCK_CHECK_MAX_HOLD_SECS)
+            } else {
+                hold - 100.0
+            };
+            let key = (d.units * 100.0).round() as i64;
+            if by_depth.get(&key).is_none_or(|b| score > b.1) {
+                let length = d
+                    .end_s
+                    .unwrap_or(end)
+                    .max(s.onset.unwrap_or(0.0) + s.duration);
+                by_depth.insert(key, (i, score, [d.full_s, end], length));
+            }
+        }
+        if by_depth.is_empty() {
+            report.note = Some("not run: no written command lowers the music".into());
+            self.duck_report = Some(report);
+            return Vec::new();
+        }
+        let mut cmds = Vec::new();
+        let music_cmd = self.main_cmds[music].clone();
+        let mut longest: f64 = 0.0;
+        for (n, (_, &(i, _, hold, length))) in by_depth.iter().rev().enumerate() {
+            let s = &self.results[i];
+            let d = s.dcs.as_ref().and_then(|d| d.duck_on(0)).unwrap();
+            report.checks.push(DuckCheck {
+                id: s.id.clone(),
+                name: s.name.clone(),
+                units: d.units,
+                predicted_db: d.db,
+                hold_s: hold.map(round3),
+                measured_db: None,
+                sd_db: None,
+                before_db: None,
+                windows: 0,
+                diff_db: None,
+                mismatch: false,
+                note: None,
+            });
+            let sound = self.main_cmds[i].clone();
+            let secs = DUCK_CHECK_AT_SECS + length.min(DUCK_CHECK_MAX_HOLD_SECS + 2.0) + 0.5;
+            longest = longest.max(secs);
+            let mut mixed = music_cmd.clone();
+            mixed.id = format!("{}+{DUCK_CHECK_AT_SECS}+{}", music_cmd.id, sound.id);
+            mixed
+                .sends
+                .push(Send::Wait((DUCK_CHECK_AT_SECS * 1000.0) as u32));
+            mixed.sends.extend(sound.sends.iter().copied());
+            mixed.check = Some(DuckTake {
+                kind: TakeKind::Mixed(n),
+                secs,
+            });
+            let mut alone = sound;
+            alone.check = Some(DuckTake {
+                kind: TakeKind::Sound(n),
+                secs: length.min(DUCK_CHECK_MAX_HOLD_SECS + 2.0) + 0.5,
+            });
+            cmds.push(alone);
+            cmds.push(mixed);
+        }
+        let mut m = music_cmd;
+        m.check = Some(DuckTake {
+            kind: TakeKind::Music,
+            secs: longest,
+        });
+        cmds.insert(0, m);
+        report.note = Some(format!(
+            "music {} with one command per duck depth ({} depths) sent {DUCK_CHECK_AT_SECS} s in",
+            report.music,
+            report.checks.len()
+        ));
+        self.duck_report = Some(report);
+        cmds
+    }
+
+    /// A ducking check recording: kept until its mixed take, which is then measured.
+    fn finish_duck_take(&mut self, rec: Recording, a: Analysis) {
+        let Some(take) = rec.cmd.check else { return };
+        let x = ducking::mono(&a.blocked, self.channels.max(1));
+        let onset = rec.first_loud.map_or(0.0, |f| f as f64 / self.rate as f64);
+        let n = match take.kind {
+            TakeKind::Music => {
+                self.duck_music = Some(x);
+                return;
+            }
+            TakeKind::Sound(_) => {
+                self.duck_sound = Some((x, onset));
+                return;
+            }
+            TakeKind::Mixed(n) => n,
+        };
+        let rate = self.rate;
+        let (Some(m), Some((c, c_onset)), Some(report)) = (
+            self.duck_music.as_ref(),
+            self.duck_sound.take(),
+            self.duck_report.as_mut(),
+        ) else {
+            return;
+        };
+        let Some(check) = report.checks.get_mut(n) else {
+            return;
+        };
+        if m.is_empty() || c.is_empty() || x.is_empty() {
+            check.note = Some("a take played nothing".into());
+            return;
+        }
+        let fit = ducking::music_gain(m, &c, &x, rate, DUCK_CHECK_AT_SECS, DUCK_CHECK_WINDOW_SECS);
+        // The command went out `c_onset` before its sound starts.
+        let sent = fit.sound_at - c_onset;
+        let (lo, hi) = (
+            sent + check.hold_s[0] + DUCK_CHECK_MARGIN_SECS,
+            sent + check.hold_s[1] - DUCK_CHECK_MARGIN_SECS,
+        );
+        // Before the command, the music must fit itself at 0 dB: if not, the takes do not
+        // line up (or were not played at the same level) and nothing can be measured.
+        let mut before: Vec<f64> = fit
+            .windows
+            .iter()
+            .filter(|w| w.0 + DUCK_CHECK_WINDOW_SECS <= sent - 0.1)
+            .map(|w| w.1)
+            .collect();
+        before.sort_by(f64::total_cmp);
+        let before = before.get(before.len() / 2).copied();
+        check.before_db = before.map(round2);
+        if before.is_none_or(|b| b.abs() > DUCK_CHECK_BEFORE_MAX_DB) {
+            check.note = Some(format!(
+                "the music alone and under the sound do not match before the command ({}): not measured",
+                before.map_or("no window".into(), |b| format!("{b:+.2} dB"))
+            ));
+            check.mismatch = true;
+            report.mismatches = report.checks.iter().filter(|c| c.mismatch).count();
+            return;
+        }
+        let mut gains: Vec<f64> = fit
+            .windows
+            .iter()
+            .filter(|w| w.0 >= lo && w.0 + DUCK_CHECK_WINDOW_SECS <= hi)
+            .map(|w| w.1)
+            .collect();
+        check.windows = gains.len();
+        if gains.len() < 3 {
+            check.note = Some(format!(
+                "the full depth holds {:.2} s: too short to measure",
+                check.hold_s[1] - check.hold_s[0]
+            ));
+            return;
+        }
+        let mean = gains.iter().sum::<f64>() / gains.len() as f64;
+        let sd =
+            (gains.iter().map(|g| (g - mean).powi(2)).sum::<f64>() / gains.len() as f64).sqrt();
+        gains.sort_by(f64::total_cmp);
+        let median = gains[gains.len() / 2];
+        let diff = median - check.predicted_db;
+        check.measured_db = Some(round2(median));
+        check.sd_db = Some(round2(sd));
+        check.diff_db = Some(round2(diff));
+        check.mismatch = diff.abs() > DUCK_CHECK_TOLERANCE_DB;
+        eprintln!(
+            "      ducking: predicted {:+.2} dB, measured {:+.2} dB (sd {:.2}, {} windows){}",
+            check.predicted_db,
+            median,
+            sd,
+            gains.len(),
+            if check.mismatch { "  MISMATCH" } else { "" }
+        );
+        report.mismatches = report.checks.iter().filter(|c| c.mismatch).count();
+    }
+
     /// The ROM's factory offset: 0 when no board has a master volume of ours, the one
     /// board's offset otherwise (the median of all samples if several boards have one).
     pub fn rom_offset(&self) -> Option<f64> {
@@ -1817,6 +2370,7 @@ impl Extractor {
             (Pass::FactoryOffset, Some(a)) => {
                 format!("{} (at factory {}, {:+} levels)", cmd.id, a.bytes, a.levels)
             }
+            (Pass::DuckCheck, _) => format!("{} (ducking check)", cmd.id),
             _ => cmd.id.clone(),
         };
         eprint!("  {what} {:<32}", cmd.name);
@@ -2044,6 +2598,7 @@ impl Extractor {
             sends,
             slot: None,
             alt: None,
+            check: None,
         }
     }
 
@@ -2073,6 +2628,7 @@ impl Extractor {
             sends,
             slot: None,
             alt: None,
+            check: None,
         }
     }
 
@@ -2126,6 +2682,7 @@ impl Extractor {
         match self.pass {
             Pass::VolumeCheck => self.finish_check(rec, a, ended_by),
             Pass::FactoryOffset => self.finish_offset(rec, a, ended_by),
+            Pass::DuckCheck => self.finish_duck_take(rec, a),
             Pass::Main | Pass::Retry => self.finish_sound(rec, a, ended_by),
         }
         self.write_manifest();
@@ -2196,6 +2753,7 @@ impl Extractor {
         } else if let Some(r) = rec.unresolved.as_ref().filter(|_| ended_by == "max") {
             eprintln!("      loop not found: {r}");
         }
+        let dcs = self.dcs_effects_of(&rec.cmd).cloned();
         let info = SoundInfo {
             id: rec.cmd.id,
             name: rec.cmd.name,
@@ -2221,6 +2779,7 @@ impl Extractor {
             volume_init: self.volume_label(),
             idle_level: self.idle.first().copied().unwrap_or(0),
             onset: rec.first_loud.map(|f| round3(f as f64 / rate as f64)),
+            dcs,
         };
         match rec.cmd.slot {
             // A retry that played something replaces the first try.
@@ -2437,6 +2996,7 @@ impl Extractor {
             stop: stop.join(" "),
             board_resets: self.board_resets,
             dc_blocked_wav: self.opts.dc_block,
+            dcs: self.dcs_report(),
             sounds: &self.results,
         };
         let path = self.opts.out_dir.join("manifest.json");
@@ -2557,6 +3117,7 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>) {
                 sends: board_sends(mask, b, &bytes),
                 slot: None,
                 alt: None,
+                check: None,
             });
         }
     }
@@ -2787,6 +3348,10 @@ fn master_level(bytes: &[u8]) -> i32 {
     }
 }
 
+fn round2(x: f64) -> f64 {
+    (x * 100.0).round() / 100.0
+}
+
 fn round3(x: f64) -> f64 {
     (x * 1000.0).round() / 1000.0
 }
@@ -2956,6 +3521,7 @@ mod tests {
                 sends: Vec::new(),
                 slot: None,
                 alt: None,
+                check: None,
             },
             frames: samples.len() as u64,
             last_loud_end: samples.len() as u64,

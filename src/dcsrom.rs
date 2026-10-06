@@ -1,4 +1,6 @@
-//! Reads the track catalog of a DCS sound ROM, to know which commands are tracks.
+//! Reads the track catalog of a DCS sound ROM, to know which commands are tracks, and
+//! follows their programs: where they loop (`track_run`), and what they do to the board's
+//! channels (`command_effects`: home channel, ducks, stops).
 //!
 //! Layout (from mjrgh's DCSExplorer, `DCSDecoder::FindCatalog` and `AddROM`): the catalog
 //! sits in ROM U2 at $3000, $4000 or $6000. It starts with U2's own catalog entry: its size
@@ -8,6 +10,8 @@
 //!
 //! A DCS command below the track count plays that track; `55 AA ..` and the other
 //! `55 xx` specials are far above it.
+
+use serde::Serialize;
 
 /// Offsets where the catalog may start in U2.
 const CATALOG_OFFSETS: [usize; 3] = [0x3000, 0x4000, 0x6000];
@@ -129,7 +133,12 @@ pub enum EventKind {
     Queue { track: u16 },
     /// Opcodes 07-0C on a channel: `mode` 0 set, 1 increase, 2 decrease; `param` in level
     /// units (the INT8 operand); `frames` > 0 for a fade.
-    Mix { channel: u8, mode: u8, param: i8, frames: u16 },
+    Mix {
+        channel: u8,
+        mode: u8,
+        param: i8,
+        frames: u16,
+    },
 }
 
 impl<'a> Sim<'a> {
@@ -239,10 +248,13 @@ impl<'a> Sim<'a> {
                     if target >= CHANNELS {
                         return Err(format!("stream on channel {target}"));
                     }
-                    self.log(c, EventKind::Stream {
-                        channel: target as u8,
-                        loops,
-                    });
+                    self.log(
+                        c,
+                        EventKind::Stream {
+                            channel: target as u8,
+                            loops,
+                        },
+                    );
                     if frames != 0 {
                         let old = self.ch[target].source;
                         if let Some(old) = old.filter(|&o| o != c) {
@@ -264,9 +276,12 @@ impl<'a> Sim<'a> {
                     if target >= CHANNELS {
                         return Err(format!("stop on channel {target}"));
                     }
-                    self.log(c, EventKind::Stop {
-                        channel: target as u8,
-                    });
+                    self.log(
+                        c,
+                        EventKind::Stop {
+                            channel: target as u8,
+                        },
+                    );
                     if self.ch[target].stream.take().is_some() {
                         self.reset_mixing(target);
                     }
@@ -299,12 +314,15 @@ impl<'a> Sim<'a> {
                     let param = i32::from(self.u8(p + 1)? as i8) << 6;
                     let steps = if fade { self.u16(p + 2)? } else { 0 };
                     p += if fade { 4 } else { 2 };
-                    self.log(c, EventKind::Mix {
-                        channel: target as u8,
-                        mode: (op - 0x07) % 3,
-                        param: self.u8(p - if fade { 3 } else { 1 })? as i8,
-                        frames: steps,
-                    });
+                    self.log(
+                        c,
+                        EventKind::Mix {
+                            channel: target as u8,
+                            mode: (op - 0x07) % 3,
+                            param: self.u8(p - if fade { 3 } else { 1 })? as i8,
+                            frames: steps,
+                        },
+                    );
                     let m = self
                         .ch
                         .get_mut(target)
@@ -502,7 +520,12 @@ pub fn track_effects(region: &[u8], track: u16, max_frames: u32) -> Option<Effec
     for _ in 0..max_frames {
         let r = step(&mut s);
         e.levels.push(std::array::from_fn(|t| {
-            s.ch[t].mixer.iter().map(|m| m.level).sum::<i32>().clamp(-8191, 8191)
+            s.ch[t]
+                .mixer
+                .iter()
+                .map(|m| m.level)
+                .sum::<i32>()
+                .clamp(-8191, 8191)
         }));
         e.frames += 1;
         match r {
@@ -519,6 +542,211 @@ pub fn track_effects(region: &[u8], track: u16, max_frames: u32) -> Option<Effec
     }
     e.events = s.events;
     Some(e)
+}
+
+/// One DCS frame, in seconds (240 samples at 31250 Hz).
+pub const FRAME_SECS: f64 = 240.0 / 31250.0;
+
+/// The gain of one mixing level unit: a channel's level is `pow(0.9733, 127 - units)`.
+pub const LEVEL_FACTOR: f64 = 0.9733;
+
+/// How long a command is followed for `command_effects`: a music track loops forever, and
+/// what it does to the other channels is all in its first seconds.
+pub const EFFECTS_MAX_SECS: f64 = 60.0;
+
+/// What a command does to the board, as stored in `manifest.json` (`dcs`): its home channel,
+/// the streams it plays, what it does to the other channels.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct CommandEffects {
+    /// 1: a track that runs at once; 2: it only sets the deferred track of `channel`.
+    pub track_type: u8,
+    /// The home channel. A type 1 track replaces the program on this channel and clears its
+    /// stream: a new command on a channel cuts the previous one there, and nothing else.
+    pub channel: u8,
+    /// Channels it plays a stream on.
+    pub streams: Vec<u8>,
+    /// Channels whose sound it stops without playing anything there: opcode 02, or its home
+    /// channel when it plays nothing there (0x03E3 on AFM only clears channel 0, the music).
+    pub stops: Vec<u8>,
+    /// Level changes on the channels it does not play on.
+    pub ducks: Vec<Duck>,
+    /// Type 2: the track it leaves for its channel, started by the music at a phrase
+    /// boundary (opcode 05).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deferred: Option<String>,
+    /// Tracks it starts itself (opcode 03, or 05 for a deferred one).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub queues: Vec<String>,
+    /// Its own level on its home channel (opcode 07 on that channel), in level units.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub own_level: Option<i8>,
+    /// Played alone, every channel was idle after this long (null: still running after
+    /// `EFFECTS_MAX_SECS`, a loop).
+    pub length_s: Option<f64>,
+    /// The program could not be followed (then the other fields stop there).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// A level change one command applies to a channel it does not play on (a duck when
+/// negative). The board adds every program's contribution to a channel's level, and gives
+/// it back when the program that set it ends.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Duck {
+    pub channel: u8,
+    /// The deepest (or highest) contribution reached, in level units (negative: lower) and
+    /// in dB (`DB_PER_LEVEL` per unit).
+    pub units: f64,
+    pub db: f64,
+    /// When it starts and when it reaches that depth, in seconds from the command.
+    pub start_s: f64,
+    pub full_s: f64,
+    /// When the channel is back at 0 (null: still applied when the simulation stopped).
+    pub end_s: Option<f64>,
+    /// How it ends: "fade" (a mixing fade back, over `release_s`), "step" (a mixing
+    /// opcode puts it back at once), "program end" (the contribution is dropped when the
+    /// program ends), or "held".
+    pub restore: &'static str,
+    pub release_s: f64,
+}
+
+impl CommandEffects {
+    /// The change applied to `channel`, if any.
+    pub fn duck_on(&self, channel: u8) -> Option<&Duck> {
+        self.ducks.iter().find(|d| d.channel == channel)
+    }
+
+    /// Plays a stream on its home channel 0: a music track.
+    pub fn is_music(&self) -> bool {
+        self.track_type == 1 && self.channel == 0 && self.streams.contains(&0)
+    }
+}
+
+/// The volume factor (0..1) of a duck of `units` level units (negative: lower).
+pub fn duck_factor(units: f64) -> f64 {
+    LEVEL_FACTOR.powf(-units.min(0.0))
+}
+
+/// Follows `track` from a silent board for at most `max_secs` and sums up what it does.
+/// None for an empty catalog slot or a track number out of the catalog.
+pub fn command_effects(region: &[u8], track: u16, max_secs: f64) -> Option<CommandEffects> {
+    let e = track_effects(region, track, (max_secs / FRAME_SECS) as u32)?;
+    let streams_mask = e.stream_channels();
+    let streams: Vec<u8> = (0..CHANNELS as u8)
+        .filter(|c| streams_mask & (1 << c) != 0)
+        .collect();
+    let mut stops: Vec<u8> = e
+        .events
+        .iter()
+        .filter_map(|ev| match ev.what {
+            EventKind::Stop { channel } => Some(channel),
+            _ => None,
+        })
+        .chain((e.kind == 1).then_some(e.channel))
+        .filter(|c| streams_mask & (1 << c) == 0)
+        .collect();
+    stops.sort_unstable();
+    stops.dedup();
+    let home_of = |track: u16| {
+        let s = Sim::new(region).ok()?;
+        let a = u24(region, s.index + 3 * track as usize)?;
+        (track < s.count && a & 0xFF_0000 != 0xFF_0000).then(|| rom_pointer(a))
+    };
+    let deferred = (e.kind == 2)
+        .then(|| home_of(track).and_then(|p| u16be(region, p + 2)))
+        .flatten()
+        .map(|t| format!("0x{t:04X}"));
+    let mut queues: Vec<String> = e
+        .events
+        .iter()
+        .filter_map(|ev| match ev.what {
+            EventKind::Queue { track } => Some(format!("0x{track:04X}")),
+            _ => None,
+        })
+        .collect();
+    queues.dedup();
+    let own_level = e.events.iter().find_map(|ev| match ev.what {
+        EventKind::Mix {
+            channel,
+            mode: 0,
+            param,
+            ..
+        } if channel == e.channel => Some(param),
+        _ => None,
+    });
+    let mut ducks = Vec::new();
+    for ch in 0..CHANNELS as u8 {
+        if streams_mask & (1 << ch) != 0 || ch == e.channel {
+            continue;
+        }
+        let lv: Vec<i32> = e.levels.iter().map(|l| l[ch as usize]).collect();
+        let Some(first) = lv.iter().position(|&v| v != 0) else {
+            continue;
+        };
+        // The deepest point (or the highest, for a raise), its first frame.
+        let (peak_i, peak) =
+            lv.iter()
+                .copied()
+                .enumerate()
+                .fold((0usize, 0i32), |(bi, bv), (i, v)| {
+                    if v.abs() > bv.abs() { (i, v) } else { (bi, bv) }
+                });
+        let end = lv[peak_i..]
+            .iter()
+            .position(|&v| v == 0)
+            .map(|k| k + peak_i);
+        let release_start = lv[peak_i..]
+            .iter()
+            .position(|&v| v != peak)
+            .map(|k| k + peak_i);
+        let (restore, release) = match (end, release_start) {
+            (None, _) => ("held", 0),
+            // The fade's first step is already in `levels[rs]`.
+            (Some(end), Some(rs)) if end > rs => ("fade", end + 1 - rs),
+            (Some(end), _) => {
+                // Dropped at once: by a mixing opcode, or by the end of the program that set
+                // it (which resets its contributions).
+                let by_op = e.events.iter().any(|ev| {
+                    ev.frame + 1 == end as u32
+                        && matches!(ev.what, EventKind::Mix { channel, .. } if channel == ch)
+                });
+                (if by_op { "step" } else { "program end" }, 0)
+            }
+        };
+        let units = f64::from(peak) / 64.0;
+        // Level `levels[i]` is the state after frame i ran: a change made in frame i is
+        // heard from i on, so frame indices are times from the command.
+        ducks.push(Duck {
+            channel: ch,
+            units: round2(units),
+            db: round2(units * DB_PER_LEVEL),
+            start_s: round3(first as f64 * FRAME_SECS),
+            full_s: round3(peak_i as f64 * FRAME_SECS),
+            end_s: end.map(|x| round3(x as f64 * FRAME_SECS)),
+            restore,
+            release_s: round3(release as f64 * FRAME_SECS),
+        });
+    }
+    Some(CommandEffects {
+        track_type: e.kind,
+        channel: e.channel,
+        streams,
+        stops,
+        ducks,
+        deferred,
+        queues,
+        own_level,
+        length_s: e.ended.then(|| round3(e.frames as f64 * FRAME_SECS)),
+        error: e.error,
+    })
+}
+
+fn round2(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
+
+fn round3(v: f64) -> f64 {
+    (v * 1000.0).round() / 1000.0
 }
 
 /// A 24-bit ROM pointer to an offset in PinMAME's DCS region: chip select in bits 21-23
@@ -628,6 +856,71 @@ mod tests {
         let t: &[u8] = &[1, 0, 0, 0, 0x01, 0, 0x00, 0x71, 0x00, 1, 0, 2, 0x00];
         let rom = rom_with(&[t]);
         assert_eq!(track_run(&rom, 0, 1000), TrackRun::Ends(3));
+    }
+
+    #[test]
+    fn a_callout_ducks_the_music_and_fades_it_back() {
+        // "Jackpot!" (afm 0x01B6) in small: channel 3 lowers channel 0 by 10 units, plays
+        // its stream, fades channel 0 back over 4 frames, ends.
+        let t: &[u8] = &[
+            1, 3, //
+            0, 0, 0x09, 0, 10, //
+            0, 0, 0x07, 3, 0x7D, //
+            0, 0, 0x01, 3, 0x00, 0x70, 0x00, 1, //
+            0, 5, 0x0B, 0, 10, 0, 4, //
+            0, 4, 0x00,
+        ];
+        let rom = rom_with(&[t]);
+        let e = command_effects(&rom, 0, 10.0).unwrap();
+        assert_eq!((e.track_type, e.channel), (1, 3));
+        assert_eq!(e.streams, vec![3]);
+        assert!(e.stops.is_empty());
+        assert_eq!(e.own_level, Some(0x7D));
+        let d = e.duck_on(0).unwrap();
+        assert_eq!(d.units, -10.0);
+        assert!((d.db + 2.35).abs() < 0.01, "{d:?}");
+        assert_eq!((d.start_s, d.full_s), (0.0, 0.0));
+        assert_eq!(d.restore, "fade");
+        assert!((d.release_s - 4.0 * FRAME_SECS).abs() < 0.001, "{d:?}");
+        assert!(e.length_s.is_some());
+    }
+
+    #[test]
+    fn a_duck_ends_with_its_program() {
+        let t: &[u8] = &[
+            1, 1, //
+            0, 0, 0x09, 0, 20, //
+            0, 0, 0x01, 1, 0x00, 0x70, 0x00, 1, //
+            0, 10, 0x00,
+        ];
+        let rom = rom_with(&[t]);
+        let d = command_effects(&rom, 0, 10.0).unwrap().ducks[0].clone();
+        assert_eq!((d.channel, d.units, d.restore), (0, -20.0, "program end"));
+        assert_eq!(d.release_s, 0.0);
+        assert!(
+            (d.end_s.unwrap() - 10.0 * FRAME_SECS).abs() < 0.001,
+            "{d:?}"
+        );
+    }
+
+    #[test]
+    fn stops_and_deferred_tracks() {
+        // 0: clears channel 0 (plays nothing there); 1: stops channels 1 and 2; 2: leaves
+        // track 0x0003 for channel 0.
+        let rom = rom_with(&[
+            &[1, 0, 0, 0, 0x00],
+            &[1, 0, 0, 0, 0x02, 1, 0, 0, 0x02, 2, 0, 0, 0x00],
+            &[2, 0, 0x00, 0x03],
+        ]);
+        let e = command_effects(&rom, 0, 1.0).unwrap();
+        assert!(e.streams.is_empty());
+        assert_eq!(e.stops, vec![0]);
+        assert!(!e.is_music());
+        assert_eq!(command_effects(&rom, 1, 1.0).unwrap().stops, vec![0, 1, 2]);
+        let e = command_effects(&rom, 2, 1.0).unwrap();
+        assert_eq!((e.track_type, e.channel), (2, 0));
+        assert_eq!(e.deferred.as_deref(), Some("0x0003"));
+        assert!(e.stops.is_empty());
     }
 
     #[test]
