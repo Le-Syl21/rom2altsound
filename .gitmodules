@@ -1,3 +1,4 @@
 [submodule "vendor/pinmame"]
 	path = vendor/pinmame
-	url = https://github.com/vpinball/pinmame.git
+	url = https://github.com/Le-Syl21/pinmame.git
+	branch = bsmt2000-lle
