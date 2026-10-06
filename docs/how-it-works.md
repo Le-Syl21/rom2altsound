@@ -44,6 +44,11 @@ the include path on Windows; elsewhere the build picked the system's `zlib.h` an
 a Linux host without `zlib1g-dev`. `build.rs` adds `ext/zlib` on every platform, so the
 headers always match the vendored sources and no zlib development package is needed.
 
+`build.rs` also reads PinMAME's SAM driver (`src/wpc/sam.c`) for its `SAM1_ROM32MB` /
+`SAM1_ROM128MB` sets (set name, image file, CRC32, length) and writes them to
+`OUT_DIR/sam_sets.rs`: a SAM ROM is extracted statically, so it must be known as one
+before PinMAME runs.
+
 `build.rs` compiles `shim/shim.c` with the exact defines and include paths CMake used for the
 library (CMake writes them out with `file(GENERATE)`, whatever the generator), so the shim
 sees PinMAME's structures with the right layout.
@@ -340,7 +345,7 @@ on the warm boot they send `55 AA 67 98` after 6-12 s.
 | Data East BSMT | none (hardware pot) | the music volume `20`..`2F`, then the stop `00` | `00` |
 | System 11 (WMSS11, 11C, 11J) | none (no volume stage) | none | `00` / `20` (11C) |
 | Bally Cheap Squeak (BY45), Turbo Cheap Squeak (BYTCS) | none known | none | `00` |
-| SAM | cannot be driven (see Limits) | | |
+| Stern SAM | PCM1755 DAC attenuation, `FF` = 0 dB, -0.5 dB per step (read, not driven) | none | none (static, see Stern SAM) |
 
 **DCS**: `55 AA vv ~vv` sets the master volume (`~vv` must be the complement, else the
 firmware drops it). The bytes of a command go out one frame apart. The DCS firmware drops
@@ -398,7 +403,7 @@ reset as the only stop, the next command was swallowed). Defaults, `--max-secs 2
 --loop-max-secs 40`: spyhuntr 53 sounds (2 resets), motrdome 64 (5 resets), cityslck 133
 (7 blips, 10 recovered by the retry, no reset); no loop repeated exactly within 40 s.
 
-**SAM**: cannot be driven, see Limits.
+**SAM**: no sound board; the sounds are read from the image (see Stern SAM).
 
 ### BSMT2000: the chip's own program
 
@@ -421,6 +426,133 @@ to the previous PinMAME on apollo13, btmn_106, gnr_300, hook_408, monopole, rcty
 trek_201 and xfiles. With the program, Monopoly writes 208 files instead of 165 (sounds
 the HLE left silent), ADPCM sounds (`5F`) change, the rest keeps its counts within a file
 or two; the LLE runs about 1.6 times slower (apollo13: 1050 s instead of 650 s).
+
+### Stern SAM
+
+A SAM machine has one CPU, an Atmel AT91 (ARM7) at 40 MHz, and no sound board: the FIQ
+handler (4 kHz) mixes up to 8 voices in software and writes the mix to a TI PCM1755 DAC
+through a Xilinx FIFO, 24 kHz stereo. The game never sends a sound command (sam.c's board
+interface has empty handlers), so neither the method of the other families nor PinMAME's
+AltSound can work. `run` hands every set of the SAM driver (`sam_sets.rs`) to
+`src/sampack.rs`, which reads the sounds from the flash image (`src/sam.rs`) without
+emulation, and boots the game only for its volume.
+
+**Image**: the largest member of the zip (acd_168h: `ACD168LE.BIN`, 119,685,024 bytes, 14.3
+banks of 8 MB; the name differs from sam.c's `acd_168h.bin`, PinMAME matches the CRC),
+inflated in memory (`src/zipread.rs`, `miniz_oxide`) and checked against the zip's CRC32,
+then compared with the driver's.
+
+**Format** (Ashram56's reverse engineering of Tron LE 1.74,
+<https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption>, confirmed on acd_168h):
+
+- banked pointer `p`: file offset `(p >> 24) * 0x800000 + (p & 0xFFFFFF)`;
+- **sample directory**: the longest run of u32 words of the first 8 MB that are 0 or banked
+  pointers to a valid script header (acd_168h: file `0x1200EC`, 5270 words). The language
+  count is the largest stride for which at least half of the groups of entries hold one
+  pointer (5 on acd_168h: 1054 samples x 5 languages, all five the same on this US ROM);
+- **script**: `05 <voice mask> <voices> <len32>` (length in FIQ ticks) then opcodes, each
+  with a fixed operand count (`sam::SCRIPT_ARGS`; bytes above `10` are padding). Every one
+  of acd_168h's 1054 distinct scripts parses to its end:
+
+| op | operands | meaning |
+|---|---|---|
+| `00` | - | end |
+| `01` | 2 | ? (`01 00 00`, `01 00 01`) |
+| `02` | 2 | `<voice> <bus>` routing (music = bus 3) |
+| `03` | 1 | loop: back to the `07` mark |
+| `04` | 2 | bus link |
+| `06` | - | ? (once) |
+| `07` | 1 | loop start mark |
+| `08` | 4 | u32 marker the game polls |
+| `09` | 15 | volume ramp `<bus> <period u32> <steps u32> <start> <delta> <final>` |
+| `0a` | 5 | start a stream: `<voice> <banked ptr32>` (replaces the voice's stream) |
+| `0b` | 2 | channel stop stub (samples 1-8) |
+| `0d` | 4 | u32 song position the game polls: `song << 24 \| chunk index` |
+| `0e` | 1 | stop the voices in the mask |
+| `0f` | 4 | wait N ticks |
+| `10` | 1 | wait until the voices in the mask have finished |
+
+- **stream**: `u32 samples, u16 1, u8 divisor, u8 divisor`, then IMA ADPCM, 4 bits, low
+  nibble first, the standard step table, predictor and index from 0 at the start of every
+  stream; 24000 / divisor Hz (24 kHz, 12 kHz for most voices);
+- **sound call table**: 20-byte records whose `+8` points (CPU address `0x04xxxxxx`) to a
+  0-terminated u16 list of sample ids; the game's code plays a call, which picks one of its
+  samples. The table is the longest run of records with a non-empty list, then grown over
+  neighbours with an empty list whose first word (a pointer to the call's state in nvram)
+  continues the sequence: acd_168h's starts at file `0x10ADF4` with call 0, which plays
+  nothing, for 413 calls. (The study script that came first started one record later, so
+  its call numbers are one lower.)
+
+**Sounds**: a script with at most one stream and no loop is a sound; each distinct stream
+is decoded once at its own rate and named after the first directory entry that plays it
+(`s<sample>-<rom>.wav`, `s<sample>-l<language>-<rom>.wav` beyond the first language). The
+script's own volume ramps (`09`) are not applied. acd_168h: 951 streams (1854 s), 8 stub
+scripts (no stream).
+
+**Music**: a script with two streams or more, or a `07`...`03` loop, is music. It runs once
+on a 24 kHz timeline: `0f` adds 6 frames per tick, `10` waits for the voice's stream end,
+`0a` on a busy voice cuts its stream; 12 kHz chunks are brought to 24 kHz by linear
+interpolation (the FIQ's). Chunks chained with `10` are joined gaplessly; a gap under one
+tick holds the last value, a longer one is silence; overlapping streams (two short loop
+beds) are mixed. Every chunk restarts its ADPCM decoder at 0, so its first nibbles saturate
+(`x7`/`xF`) and the join dips for about 0.3 ms, on the machine too: those leading samples
+(at most 16) are replaced by a line from the previous sample. Roles: `teaser` (song select:
+markers 0 then 1, loops), `full` (chunk 1 to the end, once), `main` (the script that picks
+up right after the teaser's last chunk; loops on songs 1-12 and 18), `resume` (another
+partial version, once), `bed` (a loop without song positions). A looping script gets a
+`smpl` loop from the `07` mark to its end; with an intro before the mark (the two beds),
+`-loop.wav` holds the cycle (its first chunk's ramp redrawn from the cycle's own end) and
+`-extended.wav` the intro then whole cycles for `--intro-loop-secs`, each cycle's ramp
+redrawn from the previous one; the CSVs play the extended file once (LOOP 0), as for the
+other families. acd_168h: 86 scripts, 24 songs (teaser, main and full each; resume for
+songs 1-12), 268.5 minutes, 4255 distinct chunks, 39 loops.
+
+**Checked** against the study script (`sam_study.py`, Python, written from the same
+format): the 951 sound files and the 86 music files are sample-identical, `smpl` loop
+points, roles and songs included. Its `export` wrote 1872 files: the same 951, plus 917
+music chunks that its byte-by-byte pointer search found in the first 256 bytes of the
+music scripts, plus 4 false positives (headers with field 4 != 1, decoding to noise); the
+opcode parser finds neither.
+
+**Levels**: the files are the samples as decoded, at full scale: what the DAC plays at 0
+dB (attenuation `FF`), the reference volume. 855 of the 1037 acd_168h files reach
++32767/-32768 as decoded (median 6 samples, at most 3.6 % of a file): the ADPCM data is
+mastered that hot; the ARM's decoder clamps the same way. Loudness is measured as for the
+other families, except for the true peak: `ebur128`'s precise true-peak resampler costs
+about 0.13 s of CPU per second of audio (more than 2000 s for acd_168h's 5 hours), so SAM
+files use `loudness::measure_fast`: the same R128 meter for the loudness and
+`true_peak_interpolated` for the peak (x8 at 24 kHz, a 16-tap Lanczos-windowed sinc; within
+0.1 dB of the meter in the tests). The totals count the first language's sounds and every
+music file.
+
+**Factory volume**: the PCM1755's attenuation registers (`0x10` left, `0x11` right; FF =
+0 dB, -0.5 dB per step, 80 and below mute, per the datasheet) are written by bit-banging
+the PIO lines, which PinMAME sees as writes to the CPU's single I/O port (`sam_port_w`).
+sam.c keeps the result in its private struct, so the shim installs its own port handler
+in front of it (`shim_sam_hook_dac`, from the audio-available callback, before the CPU
+runs): it decodes the same serial words, logs them with the emulated time and calls sam.c's
+handler, which still does the work; PinMAME is not modified. The cold boot (child process,
+no nvram) and the warm boot (from the cold boot's nvram) each run until the DAC has been
+quiet for 3 s after `--boot-secs`. acd_168h writes `10 E8` and `11 E8` 0.37 s into every
+boot, cold or warm, and nothing more in 120 s of attract mode: -11.5 dB
+(`factory_offset_db`). PinMAME plays that register as a linear mixer level,
+`(v & 7F) * 100 / 7F` = 81 % (-1.8 dB), not as the DAC does. That `E8` follows the
+operator's volume setting is not verified (`factory_offset.verified` false): pressing the
+coin door's `+` key in libpinmame changed no DAC register, and the game may scale its mix
+in software as well. `E8` = `80 + 2 x 52`. Boot cost: 12-13 s wall per boot (15 s
+emulated, the ARM7 interpreter; the asmjit JIT is off in this build).
+
+**AltSound**: one row per (call, sample of the call), the first language: ID = call id,
+music rows on channel 0 (looping ones LOOP 100, the extended ones LOOP 0), the rest
+polyphonic, DUCK 100, STOP 0; a sample whose languages differ is a callout. acd_168h: 1129
+rows for 412 calls, 561 files. **They do not play**: PinMAME's AltSound is fed by sound
+commands and SAM has none. A PinMAME that reported the call ids would need the address of
+the game's `snd_play` (per ROM, like sam.c's `fastflipaddr`) or a signature search; until
+then the CSVs are for editing and measurement.
+
+**Cost** on the 8-core Xeon test host: acd_168h in 49 s wall (24 s for the files, 4
+threads; two boots of 12 s), peak RSS 956 MB (the 120 MB image, plus up to four files in
+flight, the longest a 17.7-minute song).
 
 ### Commands
 
@@ -710,9 +842,12 @@ Two rounds before:
 ## Limits
 
 - **Boards without a manual-command handler** produce nothing. The tool checks `manCmd_w` in
-  PinMAME's board table before starting and stops with an error naming the board. SAM has an
-  empty stub (`sam.c` `man3_w`), so the tool lists it by name. On SAM the sound also comes
-  from the game CPU, which is halted. Machines with no sound board report that too.
+  PinMAME's board table before starting and stops with an error naming the board. Machines
+  with no sound board report that too. SAM sets never get there: they are read statically
+  (see Stern SAM).
+- **Stern SAM**: the AltSound files do not play in PinMAME (no sound command); the scripts'
+  volume ramps and the game's mixing are not reproduced; the factory volume is the DAC's,
+  not verified against the operator setting; only acd_168h was checked.
 - **DCS first-try losses.** About one command in 200 on rs_l6 (none of 893 on mm_109c with
   the current pacing) plays nothing on its first try and plays normally on the retry. Which
   ones depends on the boot's timing, which varies by a frame or two from run to run (the WPC

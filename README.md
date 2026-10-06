@@ -23,6 +23,9 @@ Give it a ROM zip (`afm_113b.zip`) and it:
    `altsound.csv`, `g-sound.csv`, `altsound.ini`, and `manifest.json` with everything
    that was measured.
 
+Stern SAM machines have no sound board to drive: their sounds are read straight from the
+ROM image instead (see [Stern SAM](#stern-sam)).
+
 ### Why not PinMAME's own sound dump?
 
 PinMAME can record its output while you play sounds by hand (the sound commander, F6).
@@ -137,7 +140,7 @@ What rom2altsound gets out of each sound board family:
 | Williams System 11 | ✅ | ⚠️ ³ | ❌ ⁴ | ❌ | ❌ | ❌ |
 | Data East (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ⚠️ ⁶ | ❌ | ❌ | ❌ |
 | Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ | ❌ | ❌ | ❌ |
-| Stern SAM | ❌ ⁷ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Stern SAM | ✅ ⁷ | ✅ ⁷ | ⚠️ ⁷ | ❌ | ❌ | ❌ |
 | Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ¹⁰ | ❌ ¹⁰ | ❌ | ❌ | ❌ |
 
 ✅ verified, ⚠️ partial, ❌ not available. "Reference volume": every sound recorded at one
@@ -156,7 +159,12 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
 5. The music never repeats exactly (Twilight Zone: none of its 45 music tracks within
    4 minutes): it is cut at 2 minutes (`--max-secs`).
 6. Music volume only: the master volume is a hardware knob.
-7. Cannot be driven: on SAM the sound comes from the game CPU.
+7. Read from the ROM image, without emulation (see [Stern SAM](#stern-sam)); verified on
+   AC/DC LE 1.68. Every sound, and every version of every song as one continuous file,
+   looped where the game loops it. The files are at full scale (the reference volume);
+   the factory volume is read in the DAC, but whether it follows the game's volume setting
+   is not verified. **The pack does not play in VPinball today**: SAM sends no sound
+   command, so PinMAME has nothing to hand to AltSound.
 8. The game's factory volume (`79 vv ~vv`) is read, but the sounds are recorded at it: no
    reference volume for this board yet.
 9. With the BSMT2000's own program (see [The BSMT2000 program](#the-bsmt2000-program)) the
@@ -168,6 +176,55 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
     the tool waits out the Turbo Cheap Squeak's 5 s self-test. No music of the three
     repeated exactly within 40 s (they are cut at `--max-secs`), and no volume command is
     known for these boards: the files are at the board's own level.
+
+### Stern SAM
+
+Stern SAM machines (2006-2014, from World Poker Tour to The Walking Dead) have no sound
+board and no sound CPU: the game's own processor mixes every sound in software. There is
+nothing to send a command to, so rom2altsound reads the sounds from the ROM image itself,
+in seconds and without emulation (AC/DC LE: 25 s for 951 sounds and 4.5 hours of music,
+every version of every song). The format was worked out by Ashram56 on Tron LE
+([Tron-Legacy-LE-ROM-Decryption](https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption)),
+and checked on AC/DC.
+
+```
+acd_168h/
+├── s0008-acd_168h.wav          one file per distinct sound, named after its sample id,
+│                               mono at the ROM's own rate (24 kHz, or 12 kHz for most voices)
+├── s0123-l2-acd_168h.wav       a voice line in another language, on a ROM that has its own
+│                               (AC/DC LE has five language slots, all the same)
+├── s0175-acd_168h.wav          a song as one continuous file (24 kHz)
+├── s001E-acd_168h.wav          a loop: intro + one cycle, with its loop points (smpl)
+├── s001E-acd_168h-loop.wav     ...the cycle alone, s001E-acd_168h-extended.wav the intro + 5 min
+├── altsound.csv, g-sound.csv   keyed by the game's sound calls (see below)
+├── altsound.ini
+├── manifest.json               sample ids, calls, songs, languages, lengths, loudness
+├── cold-boot.json
+└── factory-nvram/acd_168h.nv
+```
+
+- **Music**: the game plays a song in chunks of 1 to 2.5 s, chained by a script. Each
+  script becomes one file, the chunks joined without a gap and the click at each join
+  smoothed out (each chunk restarts its decoder, which clicks on the machine too). AC/DC
+  has 24 songs, each in several versions: the song-select teaser (it loops), the in-game
+  one (picks up after the teaser; songs 1-12 and 18 loop), a resume version and the full
+  song. A loop is the script's own: exact, with its loop points in the file.
+- **Volume**: the files hold the samples as stored, at full scale, which is what the DAC
+  plays at 0 dB. For the factory volume, rom2altsound boots the game in PinMAME (cold to
+  write its factory settings, then warm from them) and reads what it writes to its DAC
+  (a TI PCM1755): AC/DC writes `E8`, -11.5 dB by the DAC's datasheet (`factory_offset_db`
+  in `manifest.json`). It is written at power-up and never changes in attract mode; that
+  it follows the operator's volume setting is not verified.
+- **AltSound**: `altsound.csv` and `g-sound.csv` are keyed by the game's sound calls (what
+  its code asks for; a call picks one of a few samples), one row per sample. **VPinball
+  cannot play them today**: PinMAME's AltSound needs a sound command, and SAM never sends
+  one. They are there to edit and measure the sounds, and for a PinMAME that would report
+  the calls.
+- **Languages**: every language's voice lines are written; the CSVs use the first one.
+  A sound whose languages differ is a voice line (a callout in `g-sound.csv`); the others
+  are sound effects.
+- Not read: the scripts' own volume ramps and how the game mixes sounds together (no
+  ducking, no stops).
 
 ### The BSMT2000 program
 
@@ -217,6 +274,9 @@ program, with the file's CRC) or `hle`. `--bsmt-hle` forces the older one.
   played a second time, which recovers them.
 - The volume is the one the game uses in attract mode, raised to a common reference level;
   a game that changes its volume during play is not followed.
+- **Stern SAM** packs do not play in VPinball yet (see [Stern SAM](#stern-sam)). Only
+  AC/DC LE 1.68 was checked: other SAM games may differ (a ROM in which no sample
+  directory is found stops with an error).
 
 How it all works, measured ROM by ROM: [docs/how-it-works.md](docs/how-it-works.md).
 
@@ -260,6 +320,9 @@ Donnez-lui une ROM (`afm_113b.zip`), et il :
    puis le cycle répété) ;
 5. écrit un dossier que le plugin AltSound de VPinball lit tel quel : les fichiers WAV,
    `altsound.csv`, `g-sound.csv`, `altsound.ini`, et `manifest.json` avec toutes les mesures.
+
+Les Stern SAM n'ont pas de carte son à piloter : leurs sons sont lus directement dans
+l'image de la ROM (voir [Stern SAM](#stern-sam-1)).
 
 ### Pourquoi pas l'enregistrement de PinMAME ?
 
@@ -379,7 +442,7 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 | Williams System 11 | ✅ | ⚠️ ³ | ❌ ⁴ | ❌ | ❌ | ❌ |
 | Data East (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ⚠️ ⁶ | ❌ | ❌ | ❌ |
 | Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ | ❌ | ❌ | ❌ |
-| Stern SAM | ❌ ⁷ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Stern SAM | ✅ ⁷ | ✅ ⁷ | ⚠️ ⁷ | ❌ | ❌ | ❌ |
 | Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ¹⁰ | ❌ ¹⁰ | ❌ | ❌ | ❌ |
 
 ✅ vérifié, ⚠️ partiel, ❌ non disponible. « Volume de référence » : tous les sons sont
@@ -399,7 +462,13 @@ reste joué en parallèle.
 5. La musique ne se répète jamais exactement (Twilight Zone : aucun de ses 45 morceaux en
    4 minutes) : elle est coupée à 2 minutes (`--max-secs`).
 6. Volume de la musique seulement : le volume général est un bouton matériel.
-7. Impossible à piloter : sur SAM le son vient du processeur du jeu.
+7. Lus dans l'image de la ROM, sans émulation (voir [Stern SAM](#stern-sam-1)) ; vérifié
+   sur AC/DC LE 1.68. Tous les sons, et chaque version de chaque morceau en un seul
+   fichier continu, en boucle là où le jeu le fait boucler. Les fichiers sont à pleine
+   échelle (le volume de référence) ; le volume d'usine est lu dans le convertisseur
+   (DAC), mais rien ne vérifie encore qu'il suit le réglage de volume du jeu. **Le pack ne
+   se joue pas dans VPinball aujourd'hui** : une SAM n'envoie aucune commande de son, donc
+   PinMAME n'a rien à transmettre à AltSound.
 8. Le volume d'usine du jeu (`79 vv ~vv`) est lu, mais les sons sont enregistrés à ce
    volume : pas encore de volume de référence pour cette carte.
 9. Avec le programme du BSMT2000 (voir [Le programme du BSMT2000](#le-programme-du-bsmt2000)),
@@ -412,6 +481,59 @@ reste joué en parallèle.
     Aucune musique des trois ne s'est répétée exactement en 40 s (elles sont coupées à
     `--max-secs`), et aucune commande de volume n'est connue pour ces cartes : les fichiers
     sont au niveau propre de la carte.
+
+### Stern SAM
+
+Les Stern SAM (2006-2014, de World Poker Tour à The Walking Dead) n'ont ni carte son ni
+processeur son : le processeur du jeu mélange lui-même tous les sons. Il n'y a rien à qui
+envoyer une commande, alors rom2altsound lit les sons dans l'image de la ROM elle-même, en
+quelques secondes et sans émulation (AC/DC LE : 25 s pour 951 sons et 4 h 30 de musique,
+toutes les versions de tous les morceaux).
+Le format a été décortiqué par Ashram56 sur Tron LE
+([Tron-Legacy-LE-ROM-Decryption](https://github.com/Ashram56/Tron-Legacy-LE-ROM-Decryption)),
+et vérifié sur AC/DC.
+
+```
+acd_168h/
+├── s0008-acd_168h.wav          un fichier par son distinct, nommé d'après son numéro d'échantillon,
+│                               mono à la fréquence de la ROM (24 kHz, ou 12 kHz pour la plupart des voix)
+├── s0123-l2-acd_168h.wav       une phrase dans une autre langue, sur une ROM qui en a
+│                               (AC/DC LE a cinq emplacements de langue, tous identiques)
+├── s0175-acd_168h.wav          un morceau en un seul fichier continu (24 kHz)
+├── s001E-acd_168h.wav          une boucle : intro + un cycle, avec ses points de boucle (smpl)
+├── s001E-acd_168h-loop.wav     ...le cycle seul, s001E-acd_168h-extended.wav l'intro + 5 min
+├── altsound.csv, g-sound.csv   indexés par les appels de son du jeu (voir plus bas)
+├── altsound.ini
+├── manifest.json               numéros d'échantillon, appels, morceaux, langues, durées, sonie
+├── cold-boot.json
+└── factory-nvram/acd_168h.nv
+```
+
+- **Musique** : le jeu joue un morceau par tranches de 1 à 2,5 s, enchaînées par un
+  script. Chaque script devient un fichier, les tranches mises bout à bout sans trou et le
+  clic de chaque raccord lissé (chaque tranche repart de zéro dans son décodeur, ce qui
+  claque aussi sur la machine). AC/DC a 24 morceaux, chacun en plusieurs versions :
+  l'extrait du choix de la musique (en boucle), celle du jeu (elle reprend après l'extrait ;
+  les morceaux 1 à 12 et 18 bouclent), une version de reprise et le morceau entier. Une
+  boucle est celle du script : exacte, avec ses points de boucle dans le fichier.
+- **Volume** : les fichiers contiennent les échantillons tels qu'ils sont stockés, à
+  pleine échelle, ce que le convertisseur joue à 0 dB. Pour le volume d'usine,
+  rom2altsound démarre le jeu dans PinMAME (à froid pour qu'il écrive ses réglages d'usine,
+  puis à chaud à partir d'eux) et lit ce qu'il écrit dans son convertisseur (un TI
+  PCM1755) : AC/DC écrit `E8`, soit -11,5 dB d'après la fiche technique
+  (`factory_offset_db` dans `manifest.json`). Il est écrit à la mise sous tension et ne
+  change plus en mode attraction ; rien ne vérifie encore qu'il suit le réglage de volume
+  de l'exploitant.
+- **AltSound** : `altsound.csv` et `g-sound.csv` sont indexés par les appels de son du jeu
+  (ce que son programme demande ; un appel choisit un son parmi quelques-uns), une ligne
+  par son. **VPinball ne sait pas les jouer aujourd'hui** : l'AltSound de PinMAME a besoin
+  d'une commande de son, et une SAM n'en envoie jamais. Ils servent à éditer et mesurer les
+  sons, et à un futur PinMAME qui signalerait les appels.
+- **Langues** : les phrases de toutes les langues sont écrites ; les CSV utilisent la
+  première. Un son qui change selon la langue est une voix (un « callout » dans
+  `g-sound.csv`) ; les autres sont des effets sonores.
+- Non lus : les variations de volume propres aux scripts, et la façon dont le jeu mélange
+  les sons entre eux (pas de ducking, pas d'arrêts).
 
 ### Le programme du BSMT2000
 
@@ -466,6 +588,10 @@ programme de la puce, avec le CRC du fichier) ou `hle`. `--bsmt-hle` impose l'an
   est rejouée une seconde fois, ce qui les récupère.
 - Le volume est celui que le jeu utilise en mode attraction, monté à un niveau de
   référence commun ; un jeu qui change de volume en cours de partie n'est pas suivi.
+- Les packs **Stern SAM** ne se jouent pas encore dans VPinball (voir
+  [Stern SAM](#stern-sam-1)). Seul AC/DC LE 1.68 a été vérifié : les autres jeux SAM
+  peuvent différer (une ROM où aucun répertoire d'échantillons n'est trouvé s'arrête sur
+  une erreur).
 
 Le fonctionnement détaillé, mesuré ROM par ROM (en anglais) :
 [docs/how-it-works.md](docs/how-it-works.md).
