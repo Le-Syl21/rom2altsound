@@ -82,12 +82,21 @@ const QUIET_AFTER_RESET_SECS: f64 = 4.0;
 /// time, not a contaminated file.
 /// - BSMT (Data East / Sega / Stern Whitestar): 00, which the game sends at power-up and
 ///   which altsound treats as "stop music" on Whitestar (snd_alt.cpp `postprocess_commands`).
+/// - BY45 (Bally Cheap Squeak) and BYTCS (Turbo Cheap Squeak, both memory maps): 00, which
+///   the games send at power-up and between sounds. A reset is the worst stop there: the TCS
+///   program then runs its ROM and RAM self-test (about 5 s on cityslck) before it takes
+///   commands again, which swallowed the next command (see `REBOOT_SECS`).
 const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("WMSS11", &[0x00]),
     ("WMSS11C", &[0x20]),
     ("WMSS11J", &[0x00]),
     ("BSMT", &[0x00]),
+    ("BY45", &[0x00]),
+    ("BYTCS", &[0x00]),
 ];
+/// Boards that take this long after a reset before they take commands again, silently
+/// (the Turbo Cheap Squeak self-test): the wait for quiet after a reset is at least this.
+const REBOOT_SECS: &[(&str, f64)] = &[("BYTCS", 7.0)];
 /// WPCS bytes that change the board's state instead of playing a sound (sounds.dat `wpcs:`):
 /// tempo, DAC and FM volumes, the master volume prefix 79 and the 16-bit prefix 7A.
 const WPCS_STATE: &[std::ops::RangeInclusive<u8>] = &[0x1E..=0x2F, 0x60..=0x72, 0x79..=0x7A];
@@ -1433,7 +1442,10 @@ impl Extractor {
 
     fn quiet(&self, after_reset: bool) -> Quiet {
         let need = if after_reset {
-            QUIET_AFTER_RESET_SECS
+            REBOOT_SECS
+                .iter()
+                .filter(|(t, _)| self.families.iter().any(|f| f == t))
+                .fold(QUIET_AFTER_RESET_SECS, |n, &(_, s)| n.max(s))
         } else {
             QUIET_SECS
         };
