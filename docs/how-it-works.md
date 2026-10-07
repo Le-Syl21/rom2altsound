@@ -354,7 +354,7 @@ on the warm boot they send `55 AA 67 98` after 6-12 s.
 | Data East BSMT | none (hardware pot in the power box) | the music volume `20`..`2F` (the loudest, `20`, with the reference volume), then the stop `00` | `00` |
 | System 11 (WMSS11, 11C, 11J) | none (no volume stage) | none | `00` / `20` (11C) |
 | Bally Cheap Squeak (BY45), Turbo Cheap Squeak (BYTCS) | none (no volume stage) | none | `00` |
-| Stern SAM | PCM1755 DAC attenuation, `FF` = 0 dB, -0.5 dB per step (read, not driven) | none | none (static, see Stern SAM) |
+| Stern SAM | PCM1755 DAC attenuation, `FF` = 0 dB, -0.5 dB per step: the operator's volume setting (read, not driven) | none | none (static, see Stern SAM) |
 
 **DCS**: `55 AA vv ~vv` sets the master volume (`~vv` must be the complement, else the
 firmware drops it). The bytes of a command go out one frame apart. The DCS firmware drops
@@ -545,11 +545,22 @@ no nvram) and the warm boot (from the cold boot's nvram) each run until the DAC 
 quiet for 3 s after `--boot-secs`. acd_168h writes `10 E8` and `11 E8` 0.37 s into every
 boot, cold or warm, and nothing more in 120 s of attract mode: -11.5 dB
 (`factory_offset_db`). PinMAME plays that register as a linear mixer level,
-`(v & 7F) * 100 / 7F` = 81 % (-1.8 dB), not as the DAC does. That `E8` follows the
-operator's volume setting is not verified (`factory_offset.verified` false): pressing the
-coin door's `+` key in libpinmame changed no DAC register, and the game may scale its mix
-in software as well. `E8` = `80 + 2 x 52`. Boot cost: 12-13 s wall per boot (15 s
-emulated, the ARM7 interpreter; the asmjit JIT is off in this build).
+`(v & 7F) * 100 / 7F` = 81 % (-1.8 dB), not as the DAC does. `E8` = `80 + 2 x 52`.
+
+That register **is the operator's volume setting** (`factory_offset.verified` true,
+`verified_by`), measured with the hidden `--sam-volume-test N`: it boots from the nvram in
+the vpm (cold without one), and once the DAC is quiet opens the coin door, presses its
+`Plus` button N times (`Minus` when N is negative), closes the door and logs every DAC
+write; stopping saves the nvram, so a second run with `0` shows what the game writes at
+its next power-up. The coin door buttons only reach the game through libpinmame's
+keyboard handling (sam.c maps them to keys: `END` toggles the door, `8` Minus, `9` Plus,
+and the door state exists only there), so the test turns it on and answers the key
+callback; a switch set with `PinmameSetSwitch` with the door closed did nothing to the
+DAC. On acd_168h, from the factory nvram: `+4` gives `EA`, `EC`, `EE` (the first press
+only shows the setting, then 1 dB, two DAC steps, per press), and the next boot writes
+`EE` at 0.37 s; `-2` then gives `EC`, written again at the next boot. Boot cost: 12-13 s
+wall per boot (15 s emulated, the ARM7 interpreter; the asmjit JIT is off in this
+build).
 
 **AltSound**: one row per (call, sample of the call), the first language: ID = call id,
 music rows on channel 0 (looping ones LOOP 100, the extended ones LOOP 0), the rest

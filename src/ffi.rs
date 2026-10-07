@@ -39,6 +39,12 @@ pub type AudioUpdatedCb = unsafe extern "C" fn(*mut c_void, c_int, *mut c_void) 
 pub type SoundCommandCb = unsafe extern "C" fn(c_int, c_int, *mut c_void);
 pub type StateUpdatedCb = unsafe extern "C" fn(c_int, *mut c_void);
 pub type GameCb = unsafe extern "C" fn(*mut Game, *mut c_void);
+/// `PinmameIsKeyPressedCallback`: a `PINMAME_KEYCODE`, 1 when pressed.
+pub type IsKeyPressedCb = unsafe extern "C" fn(c_int, *mut c_void) -> c_int;
+/// `PINMAME_KEYCODE` (src/libpinmame/libpinmame.h).
+pub const KEYCODE_NUMBER_8: c_int = 34;
+pub const KEYCODE_NUMBER_9: c_int = 35;
+pub const KEYCODE_END: c_int = 78;
 
 /// `PinmameConfig`. Unused callbacks are left null; libpinmame checks every one.
 #[repr(C)]
@@ -55,7 +61,7 @@ pub struct Config {
     pub on_mech_updated: Cb,
     pub on_solenoid_updated: Cb,
     pub on_console_data_updated: Cb,
-    pub is_key_pressed: Cb,
+    pub is_key_pressed: Option<IsKeyPressedCb>,
     pub on_log_message: *const c_void,
     pub on_sound_command: Option<SoundCommandCb>,
 }
@@ -66,6 +72,7 @@ unsafe extern "C" {
     pub fn PinmameRun(name: *const c_char) -> c_int;
     pub fn PinmameIsRunning() -> c_int;
     pub fn PinmameStop();
+    pub fn PinmameSetHandleKeyboard(handle: c_int);
 
     /// src/libpinmame/video.c: when 0 the emulation runs as fast as the host allows.
     pub static mut throttle: c_int;

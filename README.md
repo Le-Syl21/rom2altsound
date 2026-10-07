@@ -141,7 +141,7 @@ What rom2altsound gets out of each sound board family:
 | Williams System 11 | ✅ | ⚠️ ³ | ✅ ⁴ | ❌ | ❌ | ❌ |
 | Data East (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
 | Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ | ❌ | ❌ | ❌ |
-| Stern SAM | ✅ ⁷ | ✅ ⁷ | ⚠️ ⁷ | ❌ | ❌ | ❌ |
+| Stern SAM | ✅ ⁷ | ✅ ⁷ | ✅ ⁷ | ❌ | ❌ | ❌ |
 | Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ¹⁰ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
 ✅ verified, ⚠️ partial, ❌ not available. "Reference volume": every sound recorded at one
@@ -167,9 +167,10 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
 7. Read from the ROM image, without emulation (see [Stern SAM](#stern-sam)); verified on
    AC/DC LE 1.68. Every sound, and every version of every song as one continuous file,
    looped where the game loops it. The files are at full scale (the reference volume);
-   the factory volume is read in the DAC, but whether it follows the game's volume setting
-   is not verified. **The pack does not play in VPinball today**: SAM sends no sound
-   command, so PinMAME has nothing to hand to AltSound.
+   the factory volume is read in the DAC, where the game writes the operator's volume
+   setting (verified: the coin door's volume buttons move it 1 dB per press, and the game
+   writes the new value at its next power-up). **The pack does not play in VPinball
+   today**: SAM sends no sound command, so PinMAME has nothing to hand to AltSound.
 8. The game's factory volume (`79 vv ~vv`) is read, but the sounds are recorded at it: no
    reference volume for this board yet.
 9. With the BSMT2000's own program (see [The BSMT2000 program](#the-bsmt2000-program)) the
@@ -217,8 +218,9 @@ acd_168h/
   plays at 0 dB. For the factory volume, rom2altsound boots the game in PinMAME (cold to
   write its factory settings, then warm from them) and reads what it writes to its DAC
   (a TI PCM1755): AC/DC writes `E8`, -11.5 dB by the DAC's datasheet (`factory_offset_db`
-  in `manifest.json`). It is written at power-up and never changes in attract mode; that
-  it follows the operator's volume setting is not verified.
+  in `manifest.json`). It is the operator's volume setting, written at power-up: with the
+  coin door open, each press of the volume button moves it by 1 dB, and the game writes
+  the new value at its next power-up.
 - **AltSound**: `altsound.csv` and `g-sound.csv` are keyed by the game's sound calls (what
   its code asks for; a call picks one of a few samples), one row per sample. **VPinball
   cannot play them today**: PinMAME's AltSound needs a sound command, and SAM never sends
@@ -447,7 +449,7 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 | Williams System 11 | ✅ | ⚠️ ³ | ✅ ⁴ | ❌ | ❌ | ❌ |
 | Data East (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
 | Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ | ❌ | ❌ | ❌ |
-| Stern SAM | ✅ ⁷ | ✅ ⁷ | ⚠️ ⁷ | ❌ | ❌ | ❌ |
+| Stern SAM | ✅ ⁷ | ✅ ⁷ | ✅ ⁷ | ❌ | ❌ | ❌ |
 | Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ¹⁰ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
 ✅ vérifié, ⚠️ partiel, ❌ non disponible. « Volume de référence » : tous les sons sont
@@ -475,8 +477,9 @@ reste joué en parallèle.
    sur AC/DC LE 1.68. Tous les sons, et chaque version de chaque morceau en un seul
    fichier continu, en boucle là où le jeu le fait boucler. Les fichiers sont à pleine
    échelle (le volume de référence) ; le volume d'usine est lu dans le convertisseur
-   (DAC), mais rien ne vérifie encore qu'il suit le réglage de volume du jeu. **Le pack ne
-   se joue pas dans VPinball aujourd'hui** : une SAM n'envoie aucune commande de son, donc
+   (DAC), où le jeu écrit le réglage de volume de l'exploitant (vérifié : les boutons de
+   volume de la porte le déplacent de 1 dB par appui, et le jeu écrit la nouvelle valeur
+   à la mise sous tension suivante). **Le pack ne se joue pas dans VPinball aujourd'hui** : une SAM n'envoie aucune commande de son, donc
    PinMAME n'a rien à transmettre à AltSound.
 8. Le volume d'usine du jeu (`79 vv ~vv`) est lu, mais les sons sont enregistrés à ce
    volume : pas encore de volume de référence pour cette carte.
@@ -529,9 +532,9 @@ acd_168h/
   rom2altsound démarre le jeu dans PinMAME (à froid pour qu'il écrive ses réglages d'usine,
   puis à chaud à partir d'eux) et lit ce qu'il écrit dans son convertisseur (un TI
   PCM1755) : AC/DC écrit `E8`, soit -11,5 dB d'après la fiche technique
-  (`factory_offset_db` dans `manifest.json`). Il est écrit à la mise sous tension et ne
-  change plus en mode attraction ; rien ne vérifie encore qu'il suit le réglage de volume
-  de l'exploitant.
+  (`factory_offset_db` dans `manifest.json`). C'est le réglage de volume de l'exploitant,
+  écrit à la mise sous tension : porte ouverte, chaque appui sur le bouton de volume le
+  déplace de 1 dB, et le jeu écrit la nouvelle valeur à la mise sous tension suivante.
 - **AltSound** : `altsound.csv` et `g-sound.csv` sont indexés par les appels de son du jeu
   (ce que son programme demande ; un appel choisit un son parmi quelques-uns), une ligne
   par son. **VPinball ne sait pas les jouer aujourd'hui** : l'AltSound de PinMAME a besoin

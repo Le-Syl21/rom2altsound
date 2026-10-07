@@ -102,6 +102,10 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
     );
     opt("--stop", cli.stop.clone());
     opt(
+        "--sam-volume-test",
+        cli.sam_volume_test.map(|n| n.to_string()),
+    );
+    opt(
         "--dump-sound-region",
         cli.dump_sound_region
             .as_ref()

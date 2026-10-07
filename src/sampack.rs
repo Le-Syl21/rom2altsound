@@ -9,8 +9,9 @@
 //!   `smpl` loop when the script loops. All at full scale: the samples as decoded, which
 //!   is what the DAC plays at 0 dB (attenuation FF).
 //! - Factory volume: the game sets its master volume in the PCM1755 DAC (registers
-//!   0x10/0x11), from the operator setting in its nvram. The cold boot (child process)
-//!   writes the factory nvram, the warm boot from it logs the DAC writes (shim hook).
+//!   0x10/0x11), from the operator setting in its nvram (`VOLUME_PROOF`). The cold boot
+//!   (child process) writes the factory nvram, the warm boot from it logs the DAC writes
+//!   (shim hook).
 //! - AltSound: rows keyed by sound call id, one row per sample the call picks from. PinMAME
 //!   cannot play them today: SAM sends no sound command (no AltSound hook for SAM).
 
@@ -131,7 +132,7 @@ fn configure(vpm: &Path, verbose: bool) {
         on_mech_updated: None,
         on_solenoid_updated: None,
         on_console_data_updated: None,
-        is_key_pressed: None,
+        is_key_pressed: Some(is_key_pressed),
         on_log_message: ffi::shim_log as *const c_void,
         on_sound_command: None,
     };
@@ -142,6 +143,34 @@ fn configure(vpm: &Path, verbose: bool) {
 /// for `QUIET_SECS` after `min_secs`, or `max_secs`, then stops it (which writes the
 /// nvram). libpinmame runs one machine per process: call it once per process.
 pub fn boot(rom: &str, min_secs: f64, max_secs: f64) -> Result<Boot, String> {
+    boot_pressing(rom, min_secs, max_secs, 0)
+}
+
+/// How the factory attenuation is known to be the operator's volume setting (measured with
+/// `--sam-volume-test`, docs/how-it-works.md "Stern SAM").
+const VOLUME_PROOF: &str = "acd_168h 1.68: with the coin door open, each press of Plus raises the attenuation the game writes by 1 dB (E8 to EA, EC, EE; the first press only shows the setting), each press of Minus lowers it by 1 dB, and on the next power-up the game writes the new value from its nvram: the DAC attenuation is the operator's volume setting";
+
+/// The key held down for `is_key_pressed`, a `PINMAME_KEYCODE` (-1: none). sam.c's
+/// `SAM_COMPORTS` maps the coin door to keys: END opens and closes the door (a toggle),
+/// 8 is Minus, 9 is Plus; they only reach the game with libpinmame's keyboard handling on,
+/// and the door state only that way.
+static KEY: AtomicI32 = AtomicI32::new(-1);
+
+unsafe extern "C" fn is_key_pressed(key: c_int, _: *mut c_void) -> c_int {
+    c_int::from(key == KEY.load(Ordering::Relaxed))
+}
+
+/// A press holds the key this long, then waits this long, in emulated seconds.
+const PRESS_SECS: f64 = 0.3;
+const RELEASE_SECS: f64 = 0.7;
+
+/// `boot`, then once the DAC is quiet: the coin door opened, `presses` presses of its Plus
+/// button (Minus when negative), the door closed, and the wait for the DAC to be quiet
+/// again.
+fn boot_pressing(rom: &str, min_secs: f64, max_secs: f64, presses: i32) -> Result<Boot, String> {
+    if presses != 0 {
+        unsafe { ffi::PinmameSetHandleKeyboard(1) };
+    }
     let t0 = Instant::now();
     let rom_c = CString::new(rom).unwrap();
     let st = unsafe { ffi::PinmameRun(rom_c.as_ptr()) };
@@ -158,6 +187,22 @@ pub fn boot(rom: &str, min_secs: f64, max_secs: f64) -> Result<Boot, String> {
     };
     let (mut seen, mut last_change) = (0, 0.0);
     let mut started = false;
+    // Presses still to make, and the emulated time the current one ends (button down) or
+    // the next one may start (button up).
+    let button = if presses < 0 {
+        ffi::KEYCODE_NUMBER_8
+    } else {
+        ffi::KEYCODE_NUMBER_9
+    };
+    let mut keys: Vec<c_int> = Vec::new();
+    if presses != 0 {
+        keys.push(ffi::KEYCODE_END);
+        keys.extend(std::iter::repeat_n(button, presses.unsigned_abs() as usize));
+        keys.push(ffi::KEYCODE_END);
+    }
+    keys.reverse();
+    let mut down: Option<f64> = None;
+    let mut next_at = 0.0;
     let ended_by = loop {
         std::thread::sleep(Duration::from_millis(50));
         let running = unsafe { ffi::PinmameIsRunning() } != 0;
@@ -174,7 +219,31 @@ pub fn boot(rom: &str, min_secs: f64, max_secs: f64) -> Result<Boot, String> {
             seen = n;
             last_change = t;
         }
-        if t >= min_secs && seen > 0 && t - last_change >= QUIET_SECS {
+        let quiet = t >= min_secs && seen > 0 && t - last_change >= QUIET_SECS;
+        if let Some(until) = down {
+            if t >= until {
+                KEY.store(-1, Ordering::Relaxed);
+                down = None;
+                next_at = t + RELEASE_SECS;
+                last_change = t;
+            }
+            continue;
+        }
+        if !keys.is_empty() && (quiet || next_at > 0.0) && t >= next_at {
+            let key = keys.pop().unwrap_or(-1);
+            eprintln!(
+                "SAM volume test: {} at {t:.2} s ({n} DAC writes so far)",
+                match key {
+                    ffi::KEYCODE_END => "coin door",
+                    ffi::KEYCODE_NUMBER_9 => "Plus",
+                    _ => "Minus",
+                }
+            );
+            KEY.store(key, Ordering::Relaxed);
+            down = Some(t + PRESS_SECS);
+            continue;
+        }
+        if quiet && keys.is_empty() && t - last_change >= QUIET_SECS {
             break "dac-quiet";
         }
         if t >= max_secs {
@@ -459,6 +528,40 @@ fn load_image(job: &Job) -> Result<(PathBuf, crate::zipread::Entry, Vec<u8>), St
     Ok((zip, e, bytes))
 }
 
+/// `--sam-volume-test N`: boots from the nvram in the vpm (or cold without one), presses
+/// the coin door's Plus button N times (Minus when negative) once the DAC is quiet, prints
+/// every DAC write, and stops, which saves the nvram: a second run with 0 shows what the
+/// game writes at power-up from it.
+fn volume_test(cli: &Cli, job: &Job, vpm: &Path, presses: i32) -> Result<(), String> {
+    configure(vpm, cli.verbose);
+    stage_rom(job, vpm)?;
+    let nv = vpm.join("nvram").join(format!("{}.nv", job.rom));
+    eprintln!(
+        "SAM volume test: {} boot ({}), {presses} press(es)",
+        if nv.exists() { "warm" } else { "cold" },
+        nv.display()
+    );
+    let b = boot_pressing(&job.rom, cli.boot_secs, cli.boot_max_secs, presses)?;
+    for w in &b.writes {
+        let db = u8::from_str_radix(&w.value, 16).ok().and_then(dac_db);
+        println!(
+            "  {:8.3} s  reg {}  {}{}",
+            w.at,
+            w.reg,
+            w.value,
+            db.map_or(String::new(), |d| format!("  ({d:+.1} dB)"))
+        );
+    }
+    println!(
+        "SAM volume test: {} s emulated ({}), last attenuation left {} right {}",
+        b.secs,
+        b.ended_by,
+        b.left.as_deref().unwrap_or("-"),
+        b.right.as_deref().unwrap_or("-")
+    );
+    Ok(())
+}
+
 /// `--cold-boot-only` on a SAM: boot without nvram (the game writes its factory settings)
 /// and write the report the parent reads.
 fn cold_boot_only(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
@@ -496,6 +599,9 @@ fn factory(cli: &Cli, job: &Job, vpm: &Path) -> (Option<Value>, Option<Boot>, Op
 pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
     if cli.cold_boot_only {
         return cold_boot_only(cli, job, vpm);
+    }
+    if let Some(presses) = cli.sam_volume_test {
+        return volume_test(cli, job, vpm, presses);
     }
     let wall = Instant::now();
     for (set, what) in [
@@ -875,8 +981,9 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
             "method": "PCM1755 attenuation (0.5 dB per step from FF) of the master volume the game writes on a warm boot from its factory nvram; the mean of left and right",
             "reference_volume": "FF",
             "factory_volume": dac.map(|(l, r)| format!("{} {}", hex2(l), hex2(r))),
-            "verified": false,
-            "note": factory_note.clone().unwrap_or_else(|| "the last attenuation the game wrote during the warm boot (factory_volume.boot.writes). That it follows the operator's volume setting is not verified: the game may also scale its mix in software".into()),
+            "verified": factory_note.is_none() && dac.is_some(),
+            "verified_by": VOLUME_PROOF,
+            "note": factory_note.clone().unwrap_or_else(|| "the last attenuation the game wrote during the warm boot (factory_volume.boot.writes): the operator's volume setting, as stored in the factory nvram".into()),
         },
         "counts": {
             "written": written.len(),

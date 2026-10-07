@@ -195,6 +195,10 @@ struct Cli {
     /// `dcs-effects` diagnostic
     #[arg(long, hide = true, value_name = "FILE")]
     dump_sound_region: Option<PathBuf>,
+    /// Stern SAM diagnostic: boot from the vpm's nvram, press the coin door's Plus button N
+    /// times (Minus when negative), print the DAC writes and save the nvram
+    #[arg(long, hide = true, value_name = "N", allow_negative_numbers = true)]
+    sam_volume_test: Option<i32>,
     /// Internal: extract the single ROM given in this process; --roms is its directory and
     /// --out its own folder (libpinmame runs one machine per process)
     #[arg(long, hide = true)]
