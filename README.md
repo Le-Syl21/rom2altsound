@@ -139,7 +139,7 @@ What rom2altsound gets out of each sound board family:
 | family | sounds | exact loops | reference volume | ducking (DUCK) | stops (STOP) | channels (CHANNEL / TYPE) |
 |---|---|---|---|---|---|---|
 | Williams/Bally WPC DCS (1993-1999) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ¹ |
-| Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ⚠️ ⁸ | ❌ | ❌ | ❌ |
+| Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ✅ ⁸ | ❌ | ❌ | ❌ |
 | Williams System 11 | ✅ | ⚠️ ⁵ | ✅ ⁴ | ❌ | ❌ | ❌ |
 | Data East (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
 | Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ | ❌ | ❌ | ❌ |
@@ -181,8 +181,10 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
    setting (verified: the coin door's volume buttons move it 1 dB per press, and the game
    writes the new value at its next power-up). **The pack does not play in VPinball
    today**: SAM sends no sound command, so PinMAME has nothing to hand to AltSound.
-8. The game's factory volume (`79 vv ~vv`) is read, but the sounds are recorded at it: no
-   reference volume for this board yet.
+8. Recorded at `79 16 E9` (the master volume runs from `00` to `1F`, the board ignores
+   `20` and above), the loudest at which no Twilight Zone file clips; from `17` up its
+   booms clip. The game's factory volume, `79 0C F3`, is 1.7 dB quieter
+   (`factory_offset_db`, measured on 5 sounds played again at it).
 9. With the BSMT2000's own program (see [The BSMT2000 program](#the-bsmt2000-program)) the
    real chip runs: ADPCM sounds come out exactly, without clipping, and Monopoly gains 43
    sounds. Without it, PinMAME's older emulation of the chip is used.
@@ -462,7 +464,7 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 | famille | sons | boucles exactes | volume de référence | ducking (DUCK) | arrêts (STOP) | voies (CHANNEL / TYPE) |
 |---|---|---|---|---|---|---|
 | Williams/Bally WPC DCS (1993-1999) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ¹ |
-| Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ⚠️ ⁸ | ❌ | ❌ | ❌ |
+| Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ✅ ⁸ | ❌ | ❌ | ❌ |
 | Williams System 11 | ✅ | ⚠️ ⁵ | ✅ ⁴ | ❌ | ❌ | ❌ |
 | Data East (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
 | Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ | ❌ | ❌ | ❌ |
@@ -507,8 +509,10 @@ reste joué en parallèle.
    volume de la porte le déplacent de 1 dB par appui, et le jeu écrit la nouvelle valeur
    à la mise sous tension suivante). **Le pack ne se joue pas dans VPinball aujourd'hui** : une SAM n'envoie aucune commande de son, donc
    PinMAME n'a rien à transmettre à AltSound.
-8. Le volume d'usine du jeu (`79 vv ~vv`) est lu, mais les sons sont enregistrés à ce
-   volume : pas encore de volume de référence pour cette carte.
+8. Enregistré à `79 16 E9` (le volume général va de `00` à `1F`, la carte ignore `20` et
+   au-delà), le plus fort auquel aucun fichier de Twilight Zone ne sature ; à partir de
+   `17`, ses explosions saturent. Le volume d'usine du jeu, `79 0C F3`, est 1,7 dB plus bas
+   (`factory_offset_db`, mesuré sur 5 sons rejoués à ce volume).
 9. Avec le programme du BSMT2000 (voir [Le programme du BSMT2000](#le-programme-du-bsmt2000)),
    c'est la vraie puce qui tourne : les sons ADPCM sortent exacts, sans saturation, et
    Monopoly gagne 43 sons. Sans lui, PinMAME utilise son ancienne émulation de la puce.

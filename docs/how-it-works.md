@@ -320,6 +320,7 @@ apart from isolated clicks. Measured with full sweeps (written files with raw sa
 | family | volume | clipped files at that volume | one step louder |
 |---|---|---|---|
 | DCS | `55 AA EF 10` (level 29/31, `--dcs-volume`) | afm_113b `0186` (1 sample), cv_20h `03DE` (2 samples, a 77 ms click that ignores the master volume) | `FF`: afm 5 files (`0186` 68 samples), cv_20h 18 (its loop `0016` 575), mm_109c 24 (`01AB` 99), rs_l6 5 (`0240` 33) |
+| WPCS | `79 16 E9` (`--wpcs-volume`; the volume runs from `00`, silent, to `1F`, and the board ignores `20` and above) | none (tz_94h, 307 commands) | `17`: tz_94h's booms `A3` (65 samples) and `A4` (31); at `18` 123 and 53, at `1C` `A5` too, at `1F` 247, 105 and 17 samples |
 | Whitestar | `FE 11 FD` (level 30/31, `--whitestar-volume`) | xfiles `1F` (56 samples, a 50 ms click that ignores the master volume) | `FE 10 FD`: apollo13 `5C` 172 samples, `68` 13 (xfiles: only `1F`) |
 | System 11, Cheap Squeak / Turbo Cheap Squeak, Data East | no software volume stage: always full scale, which is the reference (`reference_volume: "full_scale (no volume stage)"`); on Data East the music level is set to its loudest, `20` | | |
 
@@ -331,6 +332,18 @@ has its master volume on a pot in the power junction box ("it was not done throu
 software"); its bytes `20`..`2F` are a music level the game drives (a music may fade it as
 it ends), which the tool sets to its loudest, `20`, before every command. These boards are
 always at full scale: that is their reference volume, and their factory offset is 0.
+
+**WPCS** (tz_94h): a sweep of `79 vv ~vv` on three loud sounds (two booms and music `03`)
+gave silence at `00`, -2.5 dB from `0C` (the game's factory value) at `06`, then +0.8,
++1.5, +2.0, +2.3 and +2.5 dB at `10`, `14`, `18`, `1C` and `1F`; `20`, `24`, `2F` and `FF`
+change nothing (the board keeps the `0C` the game sent at boot). The steps are not even:
+the program turns a digital pot (`wpcs_volume_w`, one step per write, the mixer at
+`pot * 100 / 127` %). Whole-ROM sweeps (10 s per sound) found no clipped file at `14`,
+`15` and `16`, and the booms `A3` and `A4` clipped at `17` and `18` (then `A5` too at
+`1C`): they start on the level the DAC was left at by the sound before (Twilight Zone's
+DAC holds its last value, 9291 LSB before `A3` at `1F`), so a boom that fits alone can
+clip in the ROM's order. The reference is `79 16 E9`; the factory offset (the game's
+`79 0C F3`) is -1.7 dB (5 files, spread 0.0 dB).
 
 Whitestar's top step is not like the others: `FE 10` is 4.8 dB above `FE 11` (apollo13
 offsets to the factory `FE 2C`: -37.4 dB from `FE 10`, -32.6 dB from `FE 11`, i.e. about
@@ -349,7 +362,7 @@ on the warm boot they send `55 AA 67 98` after 6-12 s.
 |---|---|---|---|
 | DCS (WPC) | `55 AA vv ~vv`, level = (vv - 7) / 8, 8..31 (`67` = 12) | none | `00 00` |
 | DCS channel mix | `55 AB..B0 vv ~vv` (rs_l6 fades `55 AB` FF to 07 and back to FF at boot) | none | |
-| WPCS | `79 vv ~vv`: the game's is read (tz_94h `79 0C F3`), no reference volume (the files are at the game's) | none | `00` |
+| WPCS | `79 vv ~vv`, `vv` 00..1F (20 and above ignored): the game's is read (tz_94h `79 0C F3`), the reference `79 16 E9` is sent once | none | `00` |
 | Whitestar BSMT (Sega/Stern) | `FE xx FD`, level = 2F - xx, 0..31 | the master volume (ours with the factory settings, else the game's `FE xx FD`, which it re-sends every 0.5 s) | `00` |
 | Data East BSMT | none (hardware pot in the power box) | the music volume `20`..`2F` (the loudest, `20`, with the reference volume), then the stop `00` | `00` |
 | System 11 (WMSS11, 11C, 11J) | none (no volume stage) | none | `00` / `20` (11C) |

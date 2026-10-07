@@ -211,11 +211,12 @@ pub enum VolumeInit {
     /// The default of `--factory`: record every board at its reference volume, the loudest
     /// master volume that does not clip in emulation (DCS `55 AA vv ~vv` with this `vv`,
     /// Whitestar `FE xx FD` with this `xx`, re-sent before every command as the game
-    /// re-sends its own).
+    /// re-sends its own, WPCS `79 vv ~vv` with this `vv`).
     /// The game's own (factory) volume is only reported, and the dB offset between the two
     /// is measured on a few files played again at the factory volume (`factory_offset`).
-    /// Boards without a master volume (Data East, System 11) are unchanged.
-    Reference { dcs: u8, whitestar: u8 },
+    /// Boards without a volume stage (Data East, System 11, Cheap Squeak) are at full
+    /// scale, their only level.
+    Reference { dcs: u8, whitestar: u8, wpcs: u8 },
 }
 
 /// The DCS master volume a board keeps when the game sends none: its reset default.
@@ -1597,6 +1598,7 @@ impl Extractor {
             (VolumeInit::Dcs(vv) | VolumeInit::Reference { dcs: vv, .. }, "DCS") => {
                 Some(vec![0x55, 0xAA, vv, !vv])
             }
+            (VolumeInit::Reference { wpcs, .. }, "WPCS") => Some(vec![0x79, wpcs, !wpcs]),
             (VolumeInit::Reference { whitestar, .. }, "BSMT" | "AT91")
                 if !self.is_de_board(board) =>
             {
@@ -3665,6 +3667,7 @@ fn master_level(bytes: &[u8]) -> i32 {
     match *bytes {
         [0x55, 0xAA, vv, ..] => i32::from(vv.saturating_sub(7)) / 8,
         [0xFE, xx, ..] => 0x2F - i32::from(xx.min(0x2F)),
+        [0x79, vv, ..] => i32::from(vv),
         _ => 0,
     }
 }

@@ -98,7 +98,7 @@ struct Cli {
     /// PinMAME directory (no nvram) so that the game runs its factory reset and writes its
     /// nvram, then warm from that nvram; the volume the game sets (its factory volume) is
     /// noted and every sound is recorded at the reference volume (the loudest master volume
-    /// that does not clip: DCS 55 AA EF 10, Whitestar FE 11 FD). The dB offset to the
+    /// that does not clip: DCS 55 AA EF 10, Whitestar FE 11 FD, WPCS 79 16 E9). The dB offset to the
     /// factory volume goes in the manifest
     #[arg(long)]
     no_factory: bool,
@@ -118,6 +118,10 @@ struct Cli {
     /// loudest; 2F = silent) [default: 11]
     #[arg(long, conflicts_with_all = ["factory_volume", "no_factory", "no_volume_init", "cold_boot_only"], value_parser = parse_whitestar)]
     whitestar_volume: Option<u8>,
+    /// The WPCS reference volume byte, sent as `79 vv ~vv` (00 = silent, 1F = the loudest;
+    /// the board ignores 20 and above) [default: 16]
+    #[arg(long, conflicts_with_all = ["factory_volume", "no_factory", "no_volume_init", "cold_boot_only"], value_parser = parse_hex_byte)]
+    wpcs_volume: Option<u8>,
     /// Minimum emulated boot time before halting the game CPUs; the boot then lasts until
     /// no game sound byte has arrived for 3 s (and, on DCS, until the game's volume)
     #[arg(long, default_value_t = 15.0)]
@@ -415,6 +419,7 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
                 VolumeInit::Reference {
                     dcs: cli.dcs_volume.unwrap_or(DCS_REFERENCE),
                     whitestar: cli.whitestar_volume.unwrap_or(WHITESTAR_REFERENCE),
+                    wpcs: cli.wpcs_volume.unwrap_or(WPCS_REFERENCE),
                 }
             } else {
                 VolumeInit::Dcs(cli.dcs_volume.unwrap_or(0xFF))
@@ -523,6 +528,11 @@ const DCS_REFERENCE: u8 = 0xEF;
 /// Whitestar `FE 11 FD` (level 30/31): at `FE 10 FD`, apollo13 `5C` clipped 172 samples and
 /// `68` 13; at `FE 11`, nothing but xfiles' click `1F`, which ignores the master volume.
 const WHITESTAR_REFERENCE: u8 = 0x11;
+/// WPCS `79 vv ~vv` (`vv` 00..1F; the board ignores 20 and above): `79 16 E9`. A full
+/// sweep of tz_94h clipped no file at 14, 15 and 16; at 17, 18, 1C and 1F its booms `A3`
+/// and `A4` (and `A5` from 1C) clipped 31 to 247 samples, on the DC level the DAC was left
+/// at by the sound before.
+const WPCS_REFERENCE: u8 = 0x16;
 
 /// The first half of `--factory`: wipe this ROM's nvram and cfg from the private vpm, boot
 /// it cold in a child process (libpinmame runs one machine per process) until the game has

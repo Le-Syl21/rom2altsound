@@ -84,6 +84,7 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
         "--whitestar-volume",
         cli.whitestar_volume.map(|v| format!("{v:02X}")),
     );
+    opt("--wpcs-volume", cli.wpcs_volume.map(|v| format!("{v:02X}")));
     opt("--boot-secs", Some(cli.boot_secs.to_string()));
     opt("--boot-max-secs", Some(cli.boot_max_secs.to_string()));
     opt("--max-secs", Some(cli.max_secs.to_string()));
