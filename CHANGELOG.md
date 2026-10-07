@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 (2026-10-07)
 
 - **The early Bally sound boards** (0 sounds before): Sounds Plus -51 (Viking: 30 sounds
   from its 32 commands, 3 exact loops), Sounds Plus -56 with speech (Xenon: 49 sounds, 20
@@ -14,7 +14,9 @@
   -14 dBFS, which clicked), and its volume lines, which PinMAME does not emulate, are
   reported as such. The -32/-50 is swept too, untested (no ROM). These packs do not play in
   VPinball as they are: PinMAME hands AltSound the raw writes of the lines the game shares
-  with its solenoids, not its commands.
+  with its solenoids, not its commands. The fix is proposed upstream:
+  [vpinball/pinmame#717](https://github.com/vpinball/pinmame/pull/717) and
+  [vpinball/libaltsound#16](https://github.com/vpinball/libaltsound/pull/16).
 - **A run that writes no sound now fails** (`FAILED: no sound was recorded`, exit status 1,
   no pack) instead of reporting OK.
 - **WPCS games without a sounds.dat section** (The Addams Family, issue #1): the raw sweep
