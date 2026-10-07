@@ -230,3 +230,86 @@ int shim_cpu_read(int cpu, unsigned addr, unsigned len, unsigned char *out) {
 unsigned shim_cpu_reg(int cpu, int reg) {
   return cpunum_get_reg(cpu, reg);
 }
+
+// ---------------------------------------------------------------------------------------
+// The sound board's type with its variant (SNDBRD_TYPE(index, subtype), wpc/sndbrd.h), or 0.
+// Tells Bally's Sounds Plus -56 (SNDBRD_BY56) from the -51 (SNDBRD_BY51): PinMAME names
+// both "BY51".
+int shim_board_type(int board) {
+  return sndbrd_type(board);
+}
+
+// ---------------------------------------------------------------------------------------
+// Bally Sounds Plus -56: a command is a byte sent as two nibbles on the same four lines.
+//
+// The game puts the low nibble on the lines and strobes the board; the sound CPU's
+// interrupt handler reads the lines through the AY-3-8910's port A, waits about 50 us,
+// and reads them again, when the game has put the high nibble there (xenon's sound ROM,
+// $F02E-$F078). PinMAME's manual command (by35snd.c `sp51_manCmd_w`) leaves one byte on
+// the lines for both reads, so only the bytes whose two nibbles are equal reach the board.
+//
+// The hook below sits in front of the sound CPU's handler for the PIA that reads port A
+// (as the Stern SAM hook above): once a manual command is armed, the first read of the
+// PIA's port A register goes through unchanged (the low nibble), then the high nibble is
+// put on the lines through the board's own data handler, for the second read. Nothing in
+// PinMAME is changed.
+
+static mem_read_handler shim_nib_orig;
+static const struct sndbrdIntf *shim_nib_intf;
+static int shim_nib_board;
+static int shim_nib_hi = -1;  // the high nibble still to hand over, or -1
+static int shim_nib_reads;    // port A reads since the last armed command
+
+static READ_HANDLER(shim_nib_r) {
+  data8_t v = shim_nib_orig(offset);
+  if ((offset & 3) == 0) {
+    shim_nib_reads++;
+    if (shim_nib_hi >= 0) {
+      shim_nib_intf->data_w(shim_nib_board, shim_nib_hi);
+      shim_nib_hi = -1;
+    }
+  }
+  return v;
+}
+
+// Puts the hook in front of the audio CPU's PIA (the read map entry at $0080) of `board`.
+// Call it from the emulation thread, between two frames. Returns 1 when hooked (or already
+// hooked), 0 when the board has no data handler or no audio CPU maps a PIA at $0080.
+int shim_nibble_hook(int board) {
+  int ii;
+  const struct sndbrdIntf *b = board_intf(board);
+  if (shim_nib_orig)
+    return 1;
+  if (!b || !b->data_w)
+    return 0;
+  for (ii = 0; ii < MAX_CPU; ii++) {
+    const struct Memory_ReadAddress *p;
+    if (!Machine->drv->cpu[ii].cpu_type || !(Machine->drv->cpu[ii].cpu_flags & CPU_AUDIO_CPU))
+      continue;
+    p = (const struct Memory_ReadAddress *)Machine->drv->cpu[ii].memory_read;
+    for (; p && !IS_MEMPORT_END(p); p++) {
+      if (IS_MEMPORT_MARKER(p) || p->start != 0x0080 || !p->handler)
+        continue;
+      shim_nib_orig = p->handler;
+      shim_nib_intf = b;
+      shim_nib_board = board;
+      shim_nib_hi = -1;
+      install_mem_read_handler(ii, p->start, p->end, shim_nib_r);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+// Sends `data` to a hooked board as the game does: the low nibble with the strobe (the
+// board's manual command), the high nibble right after the board's first read.
+void shim_nibble_cmd(int board, int data) {
+  shim_nib_reads = 0;
+  shim_nib_hi = (data >> 4) & 0x0f;
+  sndbrd_manCmd(board, data);
+}
+
+// How many times the board read its command lines since the last `shim_nibble_cmd`.
+int shim_nibble_reads(void) {
+  return shim_nib_reads;
+}

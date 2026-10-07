@@ -411,7 +411,8 @@ apart from isolated clicks. Measured with full sweeps (written files with raw sa
 | DCS | `55 AA EF 10` (level 29/31, `--dcs-volume`) | afm_113b `0186` (1 sample), cv_20h `03DE` (2 samples, a 77 ms click that ignores the master volume) | `FF`: afm 5 files (`0186` 68 samples), cv_20h 18 (its loop `0016` 575), mm_109c 24 (`01AB` 99), rs_l6 5 (`0240` 33) |
 | WPCS | `79 16 E9` (`--wpcs-volume`; the volume runs from `00`, silent, to `1F`, and the board ignores `20` and above) | none (tz_94h, 307 commands) | `17`: tz_94h's booms `A3` (65 samples) and `A4` (31); at `18` 123 and 53, at `1C` `A5` too, at `1F` 247, 105 and 17 samples |
 | Whitestar | `FE 11 FD` (level 30/31, `--whitestar-volume`) | xfiles `1F` (56 samples, a 50 ms click that ignores the master volume) | `FE 10 FD`: apollo13 `5C` 172 samples, `68` 13 (xfiles: only `1F`) |
-| System 11, Cheap Squeak / Turbo Cheap Squeak, Data East | no software volume stage: always full scale, which is the reference (`reference_volume: "full_scale (no volume stage)"`); on Data East the music level is set to its loudest, `20` | | |
+| System 11, Cheap Squeak / Turbo Cheap Squeak, Data East, Bally -32/-50 and Sounds Plus -51/-56 | no software volume stage: always full scale, which is the reference (`reference_volume: "full_scale (no volume stage)"`); on Data East the music level is set to its loudest, `20` | | |
+| Bally Squawk & Talk -61 | volume lines PinMAME does not emulate: always full scale (`reference_volume: "full_scale (volume lines not emulated in PinMAME)"`) | eballdlx: 5 speech files, 2 or 3 samples each, in PinMAME's own mix | |
 
 **Boards without a volume stage.** System 11 (`s11s`, `s11cs`, `s11js` in wmssnd.c) and
 Bally's Cheap Squeak and Turbo Cheap Squeak (`by45`, `byTCS` in by35snd.c) write their DACs,
@@ -421,6 +422,18 @@ has its master volume on a pot in the power junction box ("it was not done throu
 software"); its bytes `20`..`2F` are a music level the game drives (a music may fade it as
 it ends), which the tool sets to its loudest, `20`, before every command. These boards are
 always at full scale: that is their reference volume, and their factory offset is 0.
+
+**The early Bally boards** (by35snd.c). The -32/-50 (`by32`) has no sound CPU: one tone per
+command at one level, with its own decay. The Sounds Plus -51 and -56 (`sp51`) feed the
+AY-3-8910 (and the -56's MC3417 speech) straight to the mixer; their PIA's CB2 line is
+turned by PinMAME into a 75 % mute, but vikingb and xenon set it low once, at reset
+(`CRB = 34`), and never touch it again. The Squawk & Talk -61 (`snt`) has volume lines on
+its PIAs (port B bits 4-7 of the first for the sounds, of the second for the speech), set by
+commands: eballdlx $F915 maps `DF`..`EE` to the sound volume and `EF`..`FE` to the speech
+volume, 16 steps each. PinMAME stores those port writes and does nothing with them, so in
+emulation the board is at full scale whatever the game sends, and the game's own volume
+cannot be read back from the emulation: the reference is full scale, reported as
+`full_scale (volume lines not emulated in PinMAME)`.
 
 **WPCS** (tz_94h): a sweep of `79 vv ~vv` on three loud sounds (two booms and music `03`)
 gave silence at `00`, -2.5 dB from `0C` (the game's factory value) at `06`, then +0.8,
@@ -456,6 +469,10 @@ on the warm boot they send `55 AA 67 98` after 6-12 s.
 | Data East BSMT | none (hardware pot in the power box) | the music volume `20`..`2F` (the loudest, `20`, with the reference volume), then the stop `00` | `00` |
 | System 11 (WMSS11, 11C, 11J) | none (no volume stage) | none | `00` / `20` (11C) |
 | Bally Cheap Squeak (BY45), Turbo Cheap Squeak (BYTCS) | none (no volume stage) | none | `00` |
+| Bally Sounds Plus -51 (BY51) | none (no volume stage) | none | `1E` |
+| Bally Sounds Plus -56 (BY56, named BY51 by PinMAME) | none (no volume stage) | none | `05` |
+| Bally Squawk & Talk -61 (BYSNT) | its volume lines are not emulated | none | `05` |
+| Bally -32 / -50 (BY32) | none (no volume stage) | none | `0F` (unmeasured) |
 | Stern SAM | PCM1755 DAC attenuation, `FF` = 0 dB, -0.5 dB per step: the operator's volume setting (read, not driven) | none | none (static, see Stern SAM) |
 
 **DCS**: `55 AA vv ~vv` sets the master volume (`~vv` must be the complement, else the
@@ -513,6 +530,70 @@ for quiet after a reset is 7 s on `BYTCS` (`REBOOT_SECS`; with the old 4 s, and 
 reset as the only stop, the next command was swallowed). Defaults, `--max-secs 20
 --loop-max-secs 40`: spyhuntr 53 sounds (2 resets), motrdome 64 (5 resets), cityslck 133
 (7 blips, 10 recovered by the retry, no reset); no loop repeated exactly within 40 s.
+
+**The early Bally boards** (vikingb, xenon, eballdlx; read in their sound programs with a
+6800 disassembler, then measured). The game drives the board from the four lines it
+shares with its solenoids, plus "Sound E" (a fifth line) and a strobe (by35.c `pia1b_w`,
+`pia1cb2_w`); the board's interrupt handler reads the lines through the AY-3-8910's port A,
+inverted (by35snd.c `sp_8910a_r`). Every handler first silences the AY-3-8910, so a command
+cuts the sound before it.
+
+- **Sounds Plus -51** (BY51, vikingb): one read of five lines, so 32 commands; the byte
+  `xx` the game sends runs entry `~xx & 1F` of the program's table ($109B). PinMAME's
+  manual command sends it as is. Sweep `00`..`1F` (`00` is the table's last entry, a
+  sound). Stop `1E`: entry 1, which turns the background off ($12C9; entry 2, `1D`, turns
+  it on, and the program then loops on it, $12CD). After a reset the program waits with
+  its interrupts off for 7.0 s (a delay loop of 50 x 15661 x 8 cycles at 894886 Hz, $1013),
+  then clears its interrupt flag: a command sent meanwhile is lost. This is why 0.2.0 got
+  nothing out of these boards: with no known stop, every recording ended with a reset, and
+  the next command came 4 s later, into the delay loop. The wait after a reset is now 8 s
+  (`REBOOT_SECS`), and the stop makes resets rare.
+- **Sounds Plus -56** (`SNDBRD_BY56`, xenon), which PinMAME also names "BY51" (the same
+  interface, variant 1; the tool reports it as BY56): the handler reads the lines twice,
+  about 57 us apart, and makes a byte of the two nibbles ($F02E-$F078): the game puts the low
+  nibble on the lines with the strobe and the high one right after. The byte `xx` runs entry
+  `xx - 4` ($F0D5; `00`..`03` and `3C`..`FF` do nothing). PinMAME's manual command
+  (`sp51_manCmd_w`) leaves the same byte on the lines for both reads, so only the bytes
+  whose nibbles are equal reached the board. The C shim (`shim_nibble_hook`) puts a read
+  handler in front of the sound CPU's PIA (as it does for the SAM DAC): once a command is
+  armed, the first read of the PIA's port A goes through unchanged, then the high nibble is
+  put on the lines through the board's own data handler, for the second read. PinMAME is
+  not changed. xenon reads the lines a third time, after both nibbles, to clear the
+  interrupt (the log says how many reads the first command saw). Sweep `01`..`FF`. Stop
+  `05` (entry 1, which does nothing beyond the silencing). Same 7.0 s delay after a reset.
+  Speech: entries `24` and up (`28`..`3B`) play the MC3417 lines, some with the interrupts
+  off, so a stop waits for the end of the line.
+- **Squawk & Talk -61** (BYSNT, eballdlx): the same two reads, the same `xx - 4`; PinMAME's
+  manual command already hands the board the low nibble on the first read and the high one
+  on the second (`snt_8910a_r`). Sweep `01`..`DE`: from `DF` on the commands set the volume
+  lines (above). The interrupt handler rewrites its return address to the main loop
+  ($F6D7), so a command abandons whatever was playing. Stop `05`: entry 1, the background
+  off ($FC90). `06` (entry 2) turns the background on but returns straight to the main loop
+  ($FC8D), which only looks at the background flag after a command is done: alone, `06`
+  plays nothing; the tool sends `04` (entry 0, nothing) after it, as the game would send
+  its next sound (`command_sends`). The background then ramps up for more than an hour (its
+  step counter $60 goes up by one every 48 s or so, to `78`), so it never loops within a
+  search. Speech: entries `24`..`37` ($F99D) and `38`..`58` ($FB0B), commands `28`..`5C`,
+  53 lines on the TMS5200. After a reset the program tests its RAM and the AY-3-8910's
+  registers: back in its main loop 4.0 to 4.25 s later; the wait is 6 s.
+  The board's DAC is unsigned and keeps the last value a sound wrote; PinMAME's DAC passes
+  that on as a DC level (`UnsignedVolTable`, 0..32767, at a mixing level of 20: up to 6553
+  LSB). Raw, eballdlx's files started and ended on levels from 0 to 6553 LSB, a click in
+  AltSound, which plays a file from 0 and stops it at 0. On this board the files are
+  written DC-blocked (`DC_BLOCKED`, the `--dc-block` filter, as the board's AC-coupled
+  output), and a file that ends on a step of the held level ends once the filtered step
+  has decayed to silence (about 0.1 s) instead of in the middle of it; with `--dc-block`
+  every board's files end that way. Measured: the 84 files that are not cut at 2 minutes
+  start and end within 50 LSB of 0 (raw: 84 of 85 started or ended more than 256 LSB away).
+- **-32 / -50** (BY32): no sound CPU; `by32_manCmd_w` plays a tone from the 32-byte PROM.
+  Sweep `00`..`1F`; `xF` plays nothing, and `0F` mutes the tone at once (the strobe drop
+  in `by32_ctrl_w`), hence the stop. Not tried: no ROM at hand.
+
+What PinMAME hands AltSound on these machines is not these commands: `sndbrd_data_w`
+logs every write of the shared lines (by35.c `pia1b_w`, solenoids included), 4 bits at a
+time, and libaltsound pairs them two by two (its BY35 generation has no preprocessing). The
+packs' ids are the game's commands, as on the other boards; they do not match what
+VPinball would look up today.
 
 **SAM**: no sound board; the sounds are read from the image (see Stern SAM).
 
@@ -698,6 +779,8 @@ leaving out those that change the board's state (`commands_from` says what was s
   neither is swept.
 - WPCS: bytes 01..FF without the tempo/volume bytes of sounds.dat `wpcs:` (1E-2F, 60-72) and
   the prefixes 79 (volume) and 7A (16-bit commands).
+- Bally Sounds Plus -51 and -32/-50: bytes 00..1F (five lines). Squawk & Talk: 01..DE
+  (`DF`..`FF` are its volume commands). Sounds Plus -56: 01..FF (see "Per family").
 - Other boards: bytes 01..FF.
 
 **WPCS second bank**: sounds.dat writes the sounds of the `7A` bank with a filler byte in
@@ -892,6 +975,17 @@ Sound CPU state results (factory settings, the BSMT2000's own program; `--loop-m
 | cityslck (Turbo Cheap Squeak 2) | 10 | 7 | | 27.1 to 28.4 s | 0 / 0 | 100 %, -23.8 to -32.9 dB |
 | motrdome (Turbo Cheap Squeak) | 5 | 0 | | | | |
 | xfiles (Whitestar) | 40 | 5 (+ 3 test tones from the audio) | | 11.6 to 82 s | 9 / 16 | 93 to 100 %, -3.2 to -5.9 dB |
+| vikingb (Sounds Plus -51) | 4 | 0 (+ 3 short tone loops from the audio) | | | | |
+| xenon (Sounds Plus -56) | 2 | 0 (+ 1 from the audio) | | | | |
+| eballdlx (Squawk & Talk) | 1 | 0 | | | | |
+
+On the Bally Sounds Plus and Squawk & Talk boards (6802, 128 bytes of RAM, all in the
+state) the search runs, and finds what there is: vikingb's `06`, `07` and `08` repeat
+exactly in the audio (bodies of 0.048 to 0.125 s after a 0.9 s intro); its background
+`1D` follows a byte of RAM ($00) that does not come back within the search; xenon's `1A` repeats in the
+state every 2.600 s, but its cycles differ by -7.5 dB in the audio (probably the
+AY-3-8910's noise generator, which is in the chip, not in the state), so it is not taken; eballdlx's background
+(`06`) changes for more than an hour.
 
 A long loop is found with a longer search only: Twilight Zone `03` repeats after 271.9 s
 (the state every 16312 frames), Whirlwind `0121` and `0122` after 267.8 s, eight times the
@@ -1050,6 +1144,14 @@ Two rounds before:
   PinMAME's board table before starting and stops with an error naming the board. Machines
   with no sound board report that too. SAM sets never get there: they are read statically
   (see Stern SAM).
+- **A run that writes no sound fails**: when every command stayed silent (a board that
+  takes its commands some other way, as the early Bally boards did before their support),
+  the manifest is written for the diagnosis, no pack is, and the ROM is reported `FAILED:
+  no sound was recorded` (exit status 1).
+- **Early Bally boards**: the packs do not play in VPinball as they are (PinMAME hands
+  AltSound the raw writes of the lines the game shares with its solenoids, see "Per
+  family"); only one program per board was tried (vikingb, xenon, eballdlx), and the
+  -32/-50 not at all.
 - **Stern SAM**: the AltSound files do not play in PinMAME (no sound command); the scripts'
   volume ramps and the game's mixing are not reproduced; the factory volume is the DAC's,
   not verified against the operator setting; only acd_168h was checked.

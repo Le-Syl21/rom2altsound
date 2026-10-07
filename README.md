@@ -163,8 +163,12 @@ What rom2altsound gets out of each sound board family:
 | Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ | ❌ | ❌ | ❌ |
 | Stern SAM | ✅ ⁷ | ✅ ⁷ | ✅ ⁷ | ❌ | ❌ | ❌ |
 | Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ⁵ ¹⁰ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Bally Sounds Plus -51 (1979-1983) ¹² | ✅ ¹³ | ⚠️ ¹³ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Bally Sounds Plus -56, with speech (1980-1981) ¹² | ✅ ¹³ | ⚠️ ¹³ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Bally Squawk & Talk -61 (1981-1982) ¹² | ✅ ¹⁴ | ❌ ¹⁴ | ⚠️ ¹⁴ | ❌ | ❌ | ❌ |
+| Bally -32 / -50 (1978-1980) ¹² | ❔ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
-✅ verified, ⚠️ partial, ❌ not available. "Reference volume": every sound recorded at one
+✅ verified, ⚠️ partial, ❌ not available, ❔ untested. "Reference volume": every sound recorded at one
 loud volume set the way the game sets it, and the game's own (factory) volume read and
 reported. Where ducking, stops and channels are ❌, the pack has the defaults: DUCK 100,
 STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphonic.
@@ -222,6 +226,39 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
     2.4 dB at most), the tilts stop it; Whirlwind: 53 of 167 on a voice chip, none lowers
     the music, 11 sounds of the music board end it. Measured over one music: a sound can
     lower another music differently.
+12. **These packs do not play in VPinball as they are.** Their files are keyed by the
+    command the game sends (`0x1D`), but on these machines PinMAME hands AltSound
+    something else: every write of the four lines the game shares between its solenoids
+    and its sound board, 4 bits at a time, paired two by two. They are there to listen
+    to, edit and measure the sounds, and for an AltSound that would read these boards'
+    commands.
+13. Verified on Viking (7-digit conversion, -51: 30 sounds from its 32 commands) and Xenon
+    (-56: 49 sounds, 20 of them speech). The -51 takes five lines, commands `00`..`1F`;
+    the -56 takes a byte as two nibbles on four lines, which PinMAME's sound commander
+    cannot send: rom2altsound puts the high nibble on the lines once the board has read
+    the low one, from its own glue code (PinMAME is not changed). The stop is `1E` on the
+    -51 and `05` on the -56; after a reset these programs wait 7 s before they take a
+    command. Loops: Viking 3 of its 4 sounds that keep playing (exact, from the audio);
+    its background hum, `1D`, never repeats. Xenon 1 of 2; its other one, `1A`, repeats in
+    the sound processor every 2.6 s, but not in the audio (probably the AY-3-8910's noise,
+    which is not part of the processor's state). Sounds that do not loop are cut at 2
+    minutes (`--max-secs`). Each game has its own sound program: only these two were tried
+    (PinMAME knows 33 games on the -51, 5 on the -56).
+14. Verified on Eight Ball Deluxe: 85 sounds from 222 commands, 53 of them speech (the
+    TMS5200). `05` stops (it turns the background off); `06` turns the background on,
+    which the program starts once the next command is done, so `04`, a command that does
+    nothing, is sent after it. The background changes as it plays (it speeds up for more
+    than an hour) and does not loop: it is cut at 2 minutes. The board's DAC holds the
+    last level a sound left it at, which PinMAME passes on as DC (up to -14 dBFS), so
+    these files are written DC-blocked, as the board's AC-coupled output would be
+    (`dc_blocked_wav` in `manifest.json`). The board has volume lines, for the sounds and
+    for the speech, that the game sets with commands (`DF`..`FE`), but PinMAME does not
+    emulate them: the files are at full scale (`reference_volume: "full_scale (volume
+    lines not emulated in PinMAME)"`) and the game's own volume is not known. Five speech
+    lines touch full scale for 2 or 3 samples, in PinMAME's own mix. The -61B variant
+    (8 games) was not tried.
+15. No sound processor: one tone per command, `00`..`1F` swept, `0F` as the stop. Read in
+    PinMAME's code, not tried: no ROM at hand.
 
 ### Stern SAM
 
@@ -326,6 +363,9 @@ program, with the file's CRC) or `hle`. `--bsmt-hle` forces the older one.
   played a second time, which recovers them.
 - The volume is the one the game uses in attract mode, raised to a common reference level;
   a game that changes its volume during play is not followed.
+- **Early Bally** packs (Sounds Plus, Squawk & Talk, -32/-50) do not play in VPinball as
+  they are: PinMAME hands AltSound the solenoid and sound lines' raw writes, not the
+  game's commands (see note 12 under [Supported boards](#supported-boards)).
 - **Stern SAM** packs do not play in VPinball yet (see [Stern SAM](#stern-sam)). Only
   AC/DC LE 1.68 was checked: other SAM games may differ (a ROM in which no sample
   directory is found stops with an error).
@@ -517,8 +557,12 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 | Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ | ❌ | ❌ | ❌ |
 | Stern SAM | ✅ ⁷ | ✅ ⁷ | ✅ ⁷ | ❌ | ❌ | ❌ |
 | Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ⁵ ¹⁰ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Bally Sounds Plus -51 (1979-1983) ¹² | ✅ ¹³ | ⚠️ ¹³ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Bally Sounds Plus -56, avec voix (1980-1981) ¹² | ✅ ¹³ | ⚠️ ¹³ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Bally Squawk & Talk -61 (1981-1982) ¹² | ✅ ¹⁴ | ❌ ¹⁴ | ⚠️ ¹⁴ | ❌ | ❌ | ❌ |
+| Bally -32 / -50 (1978-1980) ¹² | ❔ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
-✅ vérifié, ⚠️ partiel, ❌ non disponible. « Volume de référence » : tous les sons sont
+✅ vérifié, ⚠️ partiel, ❌ non disponible, ❔ non testé. « Volume de référence » : tous les sons sont
 enregistrés à un même volume fort, réglé comme le jeu le règle, et le volume d'usine du jeu
 est lu et indiqué. Là où ducking, arrêts et voies sont à ❌, le pack a les valeurs par
 défaut : DUCK 100, STOP 0, la musique (boucles et noms « Music: ») sur la voie musique, le
@@ -581,6 +625,41 @@ reste joué en parallèle.
     l'arrêtent ; Whirlwind : 53 de 167 sur une puce des voix, aucun ne baisse la musique,
     11 sons de la carte musique la terminent. Mesuré sur une seule musique : un son peut
     baisser une autre musique autrement.
+12. **Ces packs ne se jouent pas tels quels dans VPinball.** Leurs fichiers portent la
+    commande que le jeu envoie (`0x1D`), mais sur ces machines PinMAME transmet autre
+    chose à AltSound : chaque écriture sur les quatre lignes que le jeu partage entre ses
+    bobines et sa carte son, 4 bits à la fois, regroupées deux par deux. Ils servent à
+    écouter, retoucher et mesurer les sons, et pour un AltSound qui lirait les commandes
+    de ces cartes.
+13. Vérifié sur Viking (conversion 7 chiffres, -51 : 30 sons pour ses 32 commandes) et
+    Xenon (-56 : 49 sons, dont 20 voix). La -51 prend cinq lignes, commandes `00`..`1F` ;
+    la -56 prend un octet en deux moitiés sur quatre lignes, ce que le commandeur de sons
+    de PinMAME ne sait pas envoyer : rom2altsound met la moitié haute sur les lignes dès
+    que la carte a lu la basse, depuis son propre code de liaison (PinMAME n'est pas
+    modifié). L'arrêt est `1E` sur la -51 et `05` sur la -56 ; après une remise à zéro,
+    ces programmes attendent 7 s avant de prendre une commande. Boucles : Viking 3 de ses
+    4 sons qui continuent (exactes, trouvées dans le son) ; son bourdonnement de fond,
+    `1D`, ne se répète jamais. Xenon 1 sur 2 ; l'autre, `1A`, se répète dans le processeur
+    son toutes les 2,6 s, mais pas dans le son (sans doute le bruit de l'AY-3-8910, qui ne
+    fait pas partie de l'état du processeur). Les sons qui ne bouclent pas sont coupés à 2
+    minutes (`--max-secs`). Chaque jeu a son propre programme son : seuls ces deux-là ont
+    été essayés (PinMAME connaît 33 jeux sur la -51, 5 sur la -56).
+14. Vérifié sur Eight Ball Deluxe : 85 sons pour 222 commandes, dont 53 voix (le TMS5200).
+    `05` arrête (il coupe le fond sonore) ; `06` allume le fond sonore, que le programme ne
+    lance qu'une fois la commande suivante terminée : `04`, une commande qui ne fait rien,
+    est donc envoyée après. Le fond sonore change en jouant (il accélère pendant plus d'une
+    heure) et ne boucle pas : il est coupé à 2 minutes. Le convertisseur (DAC) de la carte
+    garde le dernier niveau qu'un son lui a laissé, que PinMAME transmet comme une tension
+    continue (jusqu'à -14 dBFS) : ces fichiers sont donc écrits sans composante continue,
+    comme le serait la sortie de la carte, couplée par condensateur (`dc_blocked_wav` dans
+    `manifest.json`). La carte a des lignes de volume, pour les sons et pour les voix, que
+    le jeu règle par des commandes (`DF`..`FE`), mais PinMAME ne les émule pas : les
+    fichiers sont à pleine échelle (`reference_volume: "full_scale (volume lines not
+    emulated in PinMAME)"`) et le volume du jeu n'est pas connu. Cinq voix touchent la
+    pleine échelle sur 2 ou 3 échantillons, dans le mixage de PinMAME lui-même. La
+    variante -61B (8 jeux) n'a pas été essayée.
+15. Pas de processeur son : une tonalité par commande, `00`..`1F` balayées, `0F` comme
+    arrêt. Lu dans le code de PinMAME, pas essayé : aucune ROM sous la main.
 
 ### Stern SAM
 
@@ -693,6 +772,10 @@ programme de la puce, avec le CRC du fichier) ou `hle`. `--bsmt-hle` impose l'an
   est rejouée une seconde fois, ce qui les récupère.
 - Le volume est celui que le jeu utilise en mode attraction, monté à un niveau de
   référence commun ; un jeu qui change de volume en cours de partie n'est pas suivi.
+- Les packs des **premières Bally** (Sounds Plus, Squawk & Talk, -32/-50) ne se jouent
+  pas tels quels dans VPinball : PinMAME transmet à AltSound les écritures brutes des
+  lignes bobines et son, pas les commandes du jeu (voir la note 12 de
+  [Cartes son prises en charge](#cartes-son-prises-en-charge)).
 - Les packs **Stern SAM** ne se jouent pas encore dans VPinball (voir
   [Stern SAM](#stern-sam-1)). Seul AC/DC LE 1.68 a été vérifié : les autres jeux SAM
   peuvent différer (une ROM où aucun répertoire d'échantillons n'est trouvé s'arrête sur

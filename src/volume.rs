@@ -106,20 +106,44 @@ pub fn decode_de_music(board: i32, byte: u8, at: f64) -> Option<VolumeCmd> {
     })
 }
 
-/// Families without any software volume stage: their output is always at full scale,
-/// which is therefore their reference volume. Checked in PinMAME's board code: the System
-/// 11 boards (wmssnd.c `s11s`, `s11cs`, `s11js`) and Bally's Cheap Squeak and Turbo Cheap
-/// Squeak (by35snd.c `by45`, `byTCS`) write their DACs, CVSD and YM2151 directly, with no
-/// volume register and no `mixer_set_volume`; Data East's BSMT board (desound.c `de2s`)
-/// has its master volume on a pot in the power junction box ("it was not done through the
-/// software"), its bytes `20`..`2F` being a music level the game drives, set to the
-/// loudest (`20`) for the recordings. `family` is a label from `Extractor::family_label`.
-pub fn no_volume_stage(family: &str) -> bool {
-    family.starts_with("WMSS11") || matches!(family, "BY45" | "BYTCS" | "BSMT (Data East)")
+/// The manifest's `reference_volume` for a board whose output is always at full scale,
+/// which is therefore its reference volume, or None for a board with a volume the tool can
+/// set. `family` is a label from `Extractor::family_label`.
+///
+/// Checked in PinMAME's board code: the System 11 boards (wmssnd.c `s11s`, `s11cs`, `s11js`)
+/// and Bally's Cheap Squeak and Turbo Cheap Squeak (by35snd.c `by45`, `byTCS`) write their
+/// DACs, CVSD and YM2151 directly, with no volume register and no `mixer_set_volume`; Data
+/// East's BSMT board (desound.c `de2s`) has its master volume on a pot in the power
+/// junction box ("it was not done through the software"), its bytes `20`..`2F` being a
+/// music level the game drives, set to the loudest (`20`) for the recordings. The early
+/// Bally boards: the -32/-50 (`by32`) plays its tone at one level with its own decay; the
+/// Sounds Plus -51 and -56 (`sp51`) leave the AY-3-8910 and the speech chip at their level
+/// (the PIA's CB2 line, which PinMAME turns into a 75 % mute, stays low: vikingb and xenon
+/// set it once, at reset).
+///
+/// The Squawk & Talk -61 has volume lines on its PIAs (four bits for the sounds, four for
+/// the speech, by35snd.c "Sound volume", "Speech volume"), which the game sets with
+/// commands (eballdlx `DF`..`FE`), but PinMAME does not emulate them: in emulation it is at
+/// full scale whatever the game sends.
+pub fn full_scale(family: &str) -> Option<&'static str> {
+    if family.starts_with("WMSS11")
+        || matches!(
+            family,
+            "BY45" | "BYTCS" | "BSMT (Data East)" | "BY32" | "BY51" | "BY56"
+        )
+    {
+        Some(FULL_SCALE)
+    } else if family == "BYSNT" {
+        Some(FULL_SCALE_NOT_EMULATED)
+    } else {
+        None
+    }
 }
 
 /// The manifest's `reference_volume` for a board without a volume stage.
 pub const FULL_SCALE: &str = "full_scale (no volume stage)";
+/// ...and for a board whose volume stage PinMAME does not emulate.
+pub const FULL_SCALE_NOT_EMULATED: &str = "full_scale (volume lines not emulated in PinMAME)";
 
 /// Why a family never reports a volume, for the summary.
 pub fn none_reason(family: &str) -> &'static str {
@@ -132,6 +156,10 @@ pub fn none_reason(family: &str) -> &'static str {
         "BSMT (Data East)" => "Data East sets the master volume with a hardware pot",
         f if f.starts_with("WMSS11") => "System 11 sound boards have no volume stage",
         "BY45" | "BYTCS" => "Cheap Squeak boards have no volume stage",
+        "BY32" | "BY51" | "BY56" => "the early Bally sound boards have no volume stage",
+        "BYSNT" => {
+            "the Squawk & Talk's volume lines are not emulated in PinMAME (its commands DF..FE)"
+        }
         _ => "no known volume command for this board family",
     }
 }
@@ -187,11 +215,17 @@ mod tests {
             "BY45",
             "BYTCS",
             "BSMT (Data East)",
+            "BY32",
+            "BY51",
+            "BY56",
+            "BYSNT",
         ] {
-            assert!(no_volume_stage(f), "{f}");
+            assert!(full_scale(f).is_some(), "{f}");
         }
+        assert_eq!(full_scale("BY51"), Some(FULL_SCALE));
+        assert_eq!(full_scale("BYSNT"), Some(FULL_SCALE_NOT_EMULATED));
         for f in ["DCS", "WPCS", "BSMT", "AT91"] {
-            assert!(!no_volume_stage(f), "{f}");
+            assert!(full_scale(f).is_none(), "{f}");
         }
     }
 

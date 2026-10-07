@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- **The early Bally sound boards** (0 sounds before): Sounds Plus -51 (Viking: 30 sounds
+  from its 32 commands, 3 exact loops), Sounds Plus -56 with speech (Xenon: 49 sounds, 20
+  of them speech) and Squawk & Talk -61 (Eight Ball Deluxe: 85 sounds, 53 of them speech
+  on the TMS5200). Each board's stop was found in its sound program (`1E`, `05`, `05`),
+  and after a reset the tool waits for the program's power-up delay (7 s on Sounds Plus,
+  4 s of self-test on Squawk & Talk), which swallowed every command before. The -56 takes a
+  byte as two nibbles: the C glue hands the board the high one after it read the low one
+  (PinMAME is not changed). Squawk & Talk: its background (`06`) is started with the
+  command the game would send next, its files are DC-blocked (its DAC holds DC levels up to
+  -14 dBFS, which clicked), and its volume lines, which PinMAME does not emulate, are
+  reported as such. The -32/-50 is swept too, untested (no ROM). These packs do not play in
+  VPinball as they are: PinMAME hands AltSound the raw writes of the lines the game shares
+  with its solenoids, not its commands.
+- **A run that writes no sound now fails** (`FAILED: no sound was recorded`, exit status 1,
+  no pack) instead of reporting OK.
+
 ## 0.2.0 (2026-10-07)
 
 - **A page to listen to the pack**: `index.html` in each ROM folder plays every sound

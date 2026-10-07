@@ -41,8 +41,8 @@ folder that VPinball's AltSound plugin reads as is: drop it as
 <table folder>/altsound/<rom>/.
 
 Supported boards: Williams/Bally DCS, WPC (WPC89/WPCS), System 11, Data East
-(BSMT), Sega/Stern Whitestar and Bally Cheap Squeak / Turbo Cheap Squeak. Stern
-SAM has no sound board: its sounds are read from the ROM image (every sound, every
+(BSMT), Sega/Stern Whitestar, Bally Cheap Squeak / Turbo Cheap Squeak and the
+early Bally boards (Sounds Plus -51/-56, Squawk & Talk -61). Stern SAM has no sound board: its sounds are read from the ROM image (every sound, every
 song as one file, at full scale); its AltSound files, keyed by the game's sound
 calls, do not play in PinMAME today (SAM sends no sound command).
 
@@ -505,6 +505,15 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
     }
     x.write_manifest();
     summary(&job.rom, &x, wall.elapsed().as_secs_f64());
+    let counts = x.counts();
+    if counts.written == 0 {
+        // Nothing to pack: a run where every command stayed silent is a failure, not a
+        // pack (the board was not driven, or only silent commands were asked for).
+        return Err(format!(
+            "no sound was recorded: {} command(s) tried, {} with sound, none written (manifest.json kept for diagnosis)",
+            counts.tried, counts.with_sound
+        ));
+    }
     if !cli.no_altsound {
         let r = altsound::write_pack(&job.out, &x.results, cli.merge_twins, cli.intro_loop_secs)?;
         println!(

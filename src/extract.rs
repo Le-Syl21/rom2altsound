@@ -117,6 +117,18 @@ const QUIET_AFTER_RESET_SECS: f64 = 4.0;
 ///   the games send at power-up and between sounds. A reset is the worst stop there: the TCS
 ///   program then runs its ROM and RAM self-test (about 5 s on cityslck) before it takes
 ///   commands again, which swallowed the next command (see `REBOOT_SECS`).
+///
+/// The early Bally boards, read in their sound programs (their interrupt handler silences
+/// the AY-3-8910 before every command, so any command cuts the previous sound; these stop
+/// the background sound too):
+/// - BY51 (Sounds Plus -51): the board reads the five command lines inverted, so the
+///   game's byte `xx` runs entry `~xx & 1F` of the program's table; `1E` runs entry 1,
+///   which turns the background sound off (vikingb, $12C9).
+/// - BY56 (Sounds Plus -56) and BYSNT (Squawk & Talk -61): the game's byte `xx` runs entry
+///   `xx - 4`; `05` runs entry 1, the background sound off (xenon: an empty entry, the
+///   program has no background sound; eballdlx $FC90).
+/// - BY32 (-32/-50, no sound CPU): `0F` (low nibble F) only drops the strobe, which mutes
+///   the tone at once (by35snd.c `by32_ctrl_w`). Not measured: no ROM at hand.
 const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("WMSS11", &[0x00]),
     ("WMSS11C", &[0x20]),
@@ -124,10 +136,36 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("BSMT", &[0x00]),
     ("BY45", &[0x00]),
     ("BYTCS", &[0x00]),
+    ("BY51", &[0x1E]),
+    ("BY56", &[0x05]),
+    ("BYSNT", &[0x05]),
+    ("BY32", &[0x0F]),
 ];
-/// Boards that take this long after a reset before they take commands again, silently
-/// (the Turbo Cheap Squeak self-test): the wait for quiet after a reset is at least this.
-const REBOOT_SECS: &[(&str, f64)] = &[("BYTCS", 7.0)];
+/// Boards that take this long after a reset before they take commands again, silently: the
+/// wait for quiet after a reset is at least this.
+/// - BYTCS: the Turbo Cheap Squeak's ROM and RAM self-test.
+/// - BY51 and BY56: the Sounds Plus program waits 7.0 s after a reset with its interrupts
+///   off (a delay loop of 50 x 15661 x 8 cycles at 894886 Hz, vikingb $1013, xenon $F013),
+///   and drops the command that came meanwhile.
+/// - BYSNT: the Squawk & Talk program tests its RAM and the AY-3-8910's registers (eballdlx:
+///   back in its main loop 4.0 to 4.25 s after the reset).
+const REBOOT_SECS: &[(&str, f64)] = &[("BYTCS", 7.0), ("BY51", 8.0), ("BY56", 8.0), ("BYSNT", 6.0)];
+/// Boards whose files are always written DC-blocked (10 Hz high-pass, `--dc-block`). The
+/// Squawk & Talk's DAC is unsigned and holds the last value a sound wrote, which PinMAME
+/// passes on as a DC level (0 to 6553 LSB at its mixing level, -14 dBFS): raw, eballdlx's
+/// files started and ended on held levels up to 6553 LSB (a click in AltSound, which
+/// starts and stops a file from 0), where the board's output is AC-coupled.
+const DC_BLOCKED: &[&str] = &["BYSNT"];
+/// `SNDBRD_BY56` is `SNDBRD_TYPE(5, 1)`: the BY51 interface, variant 1 (wpc/sndbrd.h).
+const BY56_SUBTYPE: c_int = 1;
+/// Squawk & Talk bytes from here on set its volume lines (eballdlx: `DF`..`EE` the sounds',
+/// `EF`..`FE` the speech's, 16 steps each, $F915), which PinMAME does not emulate: the sweep
+/// stops before.
+const BYSNT_LAST: u8 = 0xDE;
+/// Squawk & Talk: the background sound on (entry 2), and entry 0, which does nothing (see
+/// `command_sends`).
+const BYSNT_BACKGROUND_ON: u8 = 0x06;
+const BYSNT_NOOP: u8 = 0x04;
 /// WPCS bytes that change the board's state instead of playing a sound (sounds.dat `wpcs:`):
 /// tempo, DAC and FM volumes, the master volume prefix 79 and the 16-bit prefix 7A.
 const WPCS_STATE: &[std::ops::RangeInclusive<u8>] = &[0x1E..=0x2F, 0x60..=0x72, 0x79..=0x7A];
@@ -1432,6 +1470,10 @@ impl Extractor {
         if let Some(s) = self.sender.pop_front() {
             let board = match s {
                 Send::Wait(_) => unreachable!(),
+                Send::Byte(board, byte) if self.families[(board & 1) as usize] == "BY56" => {
+                    unsafe { ffi::shim_nibble_cmd(board, byte) };
+                    Some(board)
+                }
                 Send::Byte(board, byte) => {
                     unsafe { ffi::sndbrd_manCmd(board, byte) };
                     Some(board)
@@ -1717,6 +1759,16 @@ impl Extractor {
         }
     }
 
+    /// The files are written DC-blocked (as an AC-coupled output): with `--dc-block`, and
+    /// always on the boards whose DAC holds DC levels that would click (`DC_BLOCKED`).
+    fn dc_blocked_files(&self) -> bool {
+        self.opts.dc_block
+            || self
+                .families
+                .iter()
+                .any(|f| DC_BLOCKED.contains(&f.as_str()))
+    }
+
     fn sets_own_volume(&self) -> bool {
         !matches!(self.opts.volume, VolumeInit::Game)
     }
@@ -1758,8 +1810,10 @@ impl Extractor {
                 let label = self.family_label(b);
                 let v = match self.our_master(b) {
                     Some(bytes) => hex(&bytes),
-                    None if volume::no_volume_stage(&label) => volume::FULL_SCALE.into(),
-                    None => "none: recorded at the game's own volume".into(),
+                    None => match volume::full_scale(&label) {
+                        Some(full) => full.into(),
+                        None => "none: recorded at the game's own volume".into(),
+                    },
                 };
                 (b, v)
             })
@@ -1941,6 +1995,23 @@ impl Extractor {
                 return self.fail(format!(
                     "sound board {b} ({typestr}) has no manual command handler in PinMAME: nothing can be driven"
                 ));
+            }
+        }
+        for b in self.board_list() {
+            if self.families[b as usize] == "BY56" {
+                let hooked = unsafe { ffi::shim_nibble_hook(b) } != 0;
+                if !hooked {
+                    return self.fail(format!(
+                        "sound board {b} (BY56): its command port could not be hooked: commands cannot be sent as two nibbles"
+                    ));
+                }
+                eprintln!("  board {b} (BY56): commands sent as two nibbles, low then high");
+            }
+            let family = &self.families[b as usize];
+            if DC_BLOCKED.contains(&family.as_str()) {
+                eprintln!(
+                    "  board {b} ({family}): files written DC-blocked (its DAC holds DC levels)"
+                );
             }
         }
         self.stop = self.stop_sends();
@@ -3218,7 +3289,7 @@ impl Extractor {
             (sends, board)
         } else {
             let b = if mask == 2 { 1 } else { 0 };
-            (board_sends(mask, b, &self.wpcs_bank(b, &e.bytes)), b)
+            (command_sends(mask, b, &self.wpcs_bank(b, &e.bytes)), b)
         };
         let bytes = if mask == 3 {
             e.bytes.clone()
@@ -3265,9 +3336,24 @@ impl Extractor {
             }
             (None, _) => 0..0,
         };
+        let all_blocked = dc_block(&rec.samples, ch, &rec.start_idle, self.rate);
+        let mut frames = frames;
+        if self.dc_blocked_files() && rec.found.is_none() && !frames.is_empty() {
+            // A DC-blocked file that ends on a step of the held level (the Squawk & Talk's
+            // DAC keeps its last value) ends once the blocked step has decayed to silence,
+            // not in the middle of it.
+            let total = rec.samples.len() / ch;
+            while frames.end < total
+                && all_blocked[frames.end * ch..(frames.end + 1) * ch]
+                    .iter()
+                    .any(|x| x.abs() > f64::from(SILENCE))
+            {
+                frames.end += 1;
+            }
+        }
         let range = frames.start * ch..frames.end * ch;
         let raw = rec.samples[range.clone()].to_vec();
-        let blocked = dc_block(&rec.samples, ch, &rec.start_idle, self.rate)[range].to_vec();
+        let blocked = all_blocked[range].to_vec();
         let (peak, rms) = levels(&blocked);
         let clipped_samples = raw
             .iter()
@@ -3310,6 +3396,18 @@ impl Extractor {
                 self.rate,
             );
         }
+        if self.pass == Pass::Main
+            && self.results.is_empty()
+            && self.families[(rec.cmd.board_no & 1) as usize] == "BY56"
+        {
+            // The two-nibble protocol needs two reads of the command lines per command
+            // (xenon reads them a third time, after both nibbles, to clear the interrupt).
+            let reads = unsafe { ffi::shim_nibble_reads() };
+            eprintln!(
+                "  board {} (BY56): the first command's lines were read {reads} time(s) (at least 2 needed; xenon: 3)",
+                rec.cmd.board_no
+            );
+        }
         let a = self.analyze(&rec);
         match self.pass {
             Pass::VolumeCheck => self.finish_check(rec, a, ended_by),
@@ -3328,7 +3426,7 @@ impl Extractor {
         let file =
             (!a.raw.is_empty() && !a.blip).then(|| format!("{}-{}.wav", rec.cmd.id, self.opts.rom));
         let rounded: Vec<i16>;
-        let samples = if self.opts.dc_block {
+        let samples = if self.dc_blocked_files() {
             rounded = a
                 .blocked
                 .iter()
@@ -3638,7 +3736,7 @@ impl Extractor {
             loudness: self.loudness_report(),
             stop: stop.join(" "),
             board_resets: self.board_resets,
-            dc_blocked_wav: self.opts.dc_block,
+            dc_blocked_wav: self.dc_blocked_files(),
             dcs: self.dcs_report(),
             mix_check: self.mix_report.as_ref(),
             sounds: &self.results,
@@ -3681,8 +3779,12 @@ fn board_mask() -> u8 {
     unsafe { (ffi::sndbrd_exists(0) != 0) as u8 | (((ffi::sndbrd_exists(1) != 0) as u8) << 1) }
 }
 
+/// The board's type string, PinMAME's own, except for the Sounds Plus -56 (`SNDBRD_BY56`),
+/// which PinMAME also names "BY51" but which takes its commands as two nibbles.
 fn board_typestr(board: c_int) -> Option<String> {
-    ffi::cstr(unsafe { ffi::sndbrd_typestr(board) })
+    let t = ffi::cstr(unsafe { ffi::sndbrd_typestr(board) })?;
+    let by56 = t == "BY51" && unsafe { ffi::shim_board_type(board) } & 0xFF == BY56_SUBTYPE;
+    Some(if by56 { "BY56".into() } else { t })
 }
 
 /// The board number that goes with each byte: on two-board machines the commander sends
@@ -3759,6 +3861,18 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>) {
                     "board {b} ({typestr}): bytes 01..{BSMT_LAST:02X} (00 = stop; FC..FF start two-byte commands, FE xx FD = volume)"
                 ),
             ),
+            // Five command lines (four data lines and "Sound E"): 32 commands, 00 included
+            // (the program's last entry). The board reads no other bit.
+            "BY51" | "BY32" => (
+                (0..=0x1Fu8).map(|c| vec![c]).collect(),
+                format!("board {b} ({typestr}): bytes 00..1F (five command lines; 1E/0F = stop)"),
+            ),
+            "BYSNT" => (
+                (1..=BYSNT_LAST).map(|c| vec![c]).collect(),
+                format!(
+                    "board {b} (BYSNT): bytes 01..{BYSNT_LAST:02X} (05 = stop; DF..FF set the board's volume lines, which PinMAME does not emulate)"
+                ),
+            ),
             "WPCS" => (
                 (1..=0xFFu8)
                     .filter(|c| !WPCS_STATE.iter().any(|r| r.contains(c)))
@@ -3785,7 +3899,7 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>) {
                 name: String::new(),
                 board: typestr.clone(),
                 board_no: b,
-                sends: board_sends(mask, b, &bytes),
+                sends: command_sends(mask, b, &bytes),
                 slot: None,
                 alt: None,
                 check: None,
@@ -3793,6 +3907,19 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>) {
         }
     }
     (v, notes)
+}
+
+/// A sound command for one board: `board_sends`, plus what the board needs to play it.
+/// Squawk & Talk: `06` turns the background sound on, but the program only starts it once
+/// the next command is done (eballdlx: `06` returns straight to the main loop, $FC8D, which
+/// only checks the background flag after a command); `04` (entry 0, which does nothing) is
+/// sent after it, as the game sends its next sound.
+fn command_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
+    let mut v = board_sends(mask, board, bytes);
+    if bytes == [BYSNT_BACKGROUND_ON] && board_typestr(board).as_deref() == Some("BYSNT") {
+        v.extend(board_sends(mask, board, &[BYSNT_NOOP]));
+    }
+    v
 }
 
 /// Looks for the loop in what was recorded so far (from the first sound on). On DCS, the

@@ -110,6 +110,10 @@ unsafe extern "C" {
     ) -> c_int;
     pub fn shim_cpu_read(cpu: c_int, addr: c_uint, len: c_uint, out: *mut u8) -> c_int;
     pub fn shim_cpu_reg(cpu: c_int, reg: c_int) -> c_uint;
+    pub fn shim_board_type(board: c_int) -> c_int;
+    pub fn shim_nibble_hook(board: c_int) -> c_int;
+    pub fn shim_nibble_cmd(board: c_int, data: c_int);
+    pub fn shim_nibble_reads() -> c_int;
     pub static mut shim_log_min_level: c_int;
     pub fn shim_log(level: c_int, format: *const c_char, args: *mut c_void, user: *mut c_void);
 }
