@@ -179,8 +179,8 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
    AltSound keeps the music and one voice channel exclusive; see Limits.
 2. Verified on Twilight Zone (302 of its 307 commands, named from sounds.dat) and on
    The Addams Family (taf_l5, no sounds.dat section: the raw sweep, second bank `7A xx`
-   included, wrote 268 sounds, 15 of its 33 musics with an exact loop; 8 files clip at the
-   reference volume `79 16 E9`, measured on Twilight Zone).
+   included, wrote 268 sounds, 15 of its 33 musics with an exact loop; 6 effects still
+   clip at the reference volume `79 14 EB`, 8 did at `79 16 E9`).
 3. The music also plays from the BSMT2000's own sample streams, which the state of the
    board's processor does not hold (see 5): few loops are found. X-Files: 5 of its 40
    musics (and its 3 test tones, sample-exact); Apollo 13 and the Data East games tried
@@ -205,10 +205,12 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
    setting (verified: the coin door's volume buttons move it 1 dB per press, and the game
    writes the new value at its next power-up). **The pack does not play in VPinball
    today**: SAM sends no sound command, so PinMAME has nothing to hand to AltSound.
-8. Recorded at `79 16 E9` (the master volume runs from `00` to `1F`, the board ignores
-   `20` and above), the loudest at which no Twilight Zone file clips; from `17` up its
-   booms clip. The game's factory volume, `79 0C F3`, is 1.7 dB quieter
-   (`factory_offset_db`, measured on 5 sounds played again at it).
+8. Recorded at `79 14 EB`, level 20 (the master volume runs from `00` to `1F`, the board
+   ignores `20` and above): two steps below the loudest at which no Twilight Zone file
+   clips (`16`; from `17` up its booms clip), because at `16` eight of The Addams Family's
+   effects clipped. A slight loss of resolution is better than clipping. The game's
+   factory volume, `79 0C F3` (level 12), is 1.5 dB quieter (`factory_offset_db`, measured
+   on 5 sounds played again at it). `--wpcs-volume` sets another level.
 9. With the BSMT2000's own program (see [The BSMT2000 program](#the-bsmt2000-program)) the
    real chip runs: ADPCM sounds come out exactly, without clipping, and Monopoly gains 43
    sounds. Without it, PinMAME's older emulation of the chip is used.
@@ -577,7 +579,7 @@ reste joué en parallèle.
 2. Vérifié sur Twilight Zone (302 de ses 307 commandes, nommées d'après sounds.dat) et sur
    The Addams Family (taf_l5, sans section sounds.dat : le balayage brut, deuxième banque
    `7A xx` comprise, a écrit 268 sons, dont 15 de ses 33 musiques avec une boucle exacte ;
-   8 fichiers saturent au volume de référence `79 16 E9`, mesuré sur Twilight Zone).
+   6 effets saturent encore au volume de référence `79 14 EB`, 8 saturaient à `79 16 E9`).
 3. La musique est aussi jouée par les flux d'échantillons propres au BSMT2000, que l'état
    du processeur de la carte ne contient pas (voir 5) : peu de boucles sont trouvées.
    X-Files : 5 de ses 40 musiques (et ses 3 sons de test, à l'échantillon près) ; Apollo 13
@@ -604,10 +606,13 @@ reste joué en parallèle.
    volume de la porte le déplacent de 1 dB par appui, et le jeu écrit la nouvelle valeur
    à la mise sous tension suivante). **Le pack ne se joue pas dans VPinball aujourd'hui** : une SAM n'envoie aucune commande de son, donc
    PinMAME n'a rien à transmettre à AltSound.
-8. Enregistré à `79 16 E9` (le volume général va de `00` à `1F`, la carte ignore `20` et
-   au-delà), le plus fort auquel aucun fichier de Twilight Zone ne sature ; à partir de
-   `17`, ses explosions saturent. Le volume d'usine du jeu, `79 0C F3`, est 1,7 dB plus bas
-   (`factory_offset_db`, mesuré sur 5 sons rejoués à ce volume).
+8. Enregistré à `79 14 EB`, niveau 20 (le volume général va de `00` à `1F`, la carte
+   ignore `20` et au-delà) : deux crans sous le plus fort auquel aucun fichier de Twilight
+   Zone ne sature (`16` ; à partir de `17`, ses explosions saturent), car à `16` huit
+   effets de The Addams Family saturaient. Mieux vaut une légère perte de qualité qu'une
+   saturation. Le volume d'usine du jeu, `79 0C F3` (niveau 12), est 1,5 dB plus bas
+   (`factory_offset_db`, mesuré sur 5 sons rejoués à ce volume). `--wpcs-volume` choisit
+   un autre niveau.
 9. Avec le programme du BSMT2000 (voir [Le programme du BSMT2000](#le-programme-du-bsmt2000)),
    c'est la vraie puce qui tourne : les sons ADPCM sortent exacts, sans saturation, et
    Monopoly gagne 43 sons. Sans lui, PinMAME utilise son ancienne émulation de la puce.

@@ -415,7 +415,7 @@ apart from isolated clicks. Measured with full sweeps (written files with raw sa
 | family | volume | clipped files at that volume | one step louder |
 |---|---|---|---|
 | DCS | `55 AA EF 10` (level 29/31, `--dcs-volume`) | afm_113b `0186` (1 sample), cv_20h `03DE` (2 samples, a 77 ms click that ignores the master volume) | `FF`: afm 5 files (`0186` 68 samples), cv_20h 18 (its loop `0016` 575), mm_109c 24 (`01AB` 99), rs_l6 5 (`0240` 33) |
-| WPCS | `79 16 E9` (`--wpcs-volume`; the volume runs from `00`, silent, to `1F`, and the board ignores `20` and above) | none (tz_94h, 307 commands) | `17`: tz_94h's booms `A3` (65 samples) and `A4` (31); at `18` 123 and 53, at `1C` `A5` too, at `1F` 247, 105 and 17 samples |
+| WPCS | `79 14 EB` (level 20, `--wpcs-volume`; the volume runs from `00`, silent, to `1F`, and the board ignores `20` and above) | tz_94h: none (307 commands; also none at `15` and `16`). taf_l5: 6 effects, `C7` 4837 samples, `D3` 1211, `D4` 431, `CD` 135, `C6` 89, `A1` 58 | `16`: taf_l5 8 effects (`C7` 6305, `A1` 3128, `82` 2511, `D3` 1659, `D4` 588, `8D` 345, `CD` 176, `C6` 108); `17`: tz_94h's booms `A3` (65 samples) and `A4` (31); at `18` 123 and 53, at `1C` `A5` too, at `1F` 247, 105 and 17 samples |
 | Whitestar | `FE 11 FD` (level 30/31, `--whitestar-volume`) | xfiles `1F` (56 samples, a 50 ms click that ignores the master volume) | `FE 10 FD`: apollo13 `5C` 172 samples, `68` 13 (xfiles: only `1F`) |
 | System 11, Cheap Squeak / Turbo Cheap Squeak, Data East, Bally -32/-50 and Sounds Plus -51/-56 | no software volume stage: always full scale, which is the reference (`reference_volume: "full_scale (no volume stage)"`); on Data East the music level is set to its loudest, `20` | | |
 | Bally Squawk & Talk -61 | volume lines PinMAME does not emulate: always full scale (`reference_volume: "full_scale (volume lines not emulated in PinMAME)"`) | eballdlx: 5 speech files, 2 or 3 samples each, in PinMAME's own mix | |
@@ -450,8 +450,15 @@ the program turns a digital pot (`wpcs_volume_w`, one step per write, the mixer 
 `15` and `16`, and the booms `A3` and `A4` clipped at `17` and `18` (then `A5` too at
 `1C`): they start on the level the DAC was left at by the sound before (Twilight Zone's
 DAC holds its last value, 9291 LSB before `A3` at `1F`), so a boom that fits alone can
-clip in the ROM's order. The reference is `79 16 E9`; the factory offset (the game's
-`79 0C F3`) is -1.7 dB (5 files, spread 0.0 dB).
+clip in the ROM's order. `16` was the reference until The Addams Family (taf_l5, raw
+sweep): at `16` eight of its effects clipped, on DAC levels of 2500 to 9600 LSB held from
+the sound before. The reference is two steps lower, `79 14 EB` (level 20), a slight loss
+of resolution being better than clipping: there `82` and `8D` are clean, `A1` drops from
+3128 clipped samples to 58, and the four loudest (`C7`, `D3`, `D4`, `CD`, peaks up to
++1.4 dBFS DC-blocked: they overshoot whatever level they start from) still clip with
+about a quarter fewer samples, as do `C6` (89); tz_94h's booms `A3`, `A4` and `A5` peak at
+-1.5, -3.8 and -3.1 dBFS. The factory offset (the game's `79 0C F3`, level 12) is -1.5 dB
+(tz_94h 3 files, taf_l5 5 files, spread 0.0 dB; it was -1.7 dB at `16`).
 
 **WPCS command pacing** (taf_l5): the game writes the bytes of a multi-byte command (`79 vv
 ~vv`, `7A xx`) to the board back to back, within the same frame. The Addams Family's sound
@@ -480,7 +487,7 @@ on the warm boot they send `55 AA 67 98` after 6-12 s.
 |---|---|---|---|
 | DCS (WPC) | `55 AA vv ~vv`, level = (vv - 7) / 8, 8..31 (`67` = 12) | none | `00 00` |
 | DCS channel mix | `55 AB..B0 vv ~vv` (rs_l6 fades `55 AB` FF to 07 and back to FF at boot) | none | |
-| WPCS | `79 vv ~vv`, `vv` 00..1F (20 and above ignored): the game's is read (tz_94h `79 0C F3`), the reference `79 16 E9` is sent once | none | `00` |
+| WPCS | `79 vv ~vv`, `vv` 00..1F (20 and above ignored): the game's is read (tz_94h `79 0C F3`), the reference `79 14 EB` is sent once | none | `00` |
 | Whitestar BSMT (Sega/Stern) | `FE xx FD`, level = 2F - xx, 0..31 | the master volume (ours with the factory settings, else the game's `FE xx FD`, which it re-sends every 0.5 s) | `00` |
 | Data East BSMT | none (hardware pot in the power box) | the music volume `20`..`2F` (the loudest, `20`, with the reference volume), then the stop `00` | `00` |
 | System 11 (WMSS11, 11C, 11J) | none (no volume stage) | none | `00` / `20` (11C) |
@@ -778,7 +785,13 @@ flight, the longest a 17.7-minute song).
 They come from PinMAME's `release/sounds.dat`: the sections whose header starts with the game
 name or the parent name (afm_113b uses `afm_113:`). The generic `dcs:` / `wpcs:` sections
 supply the stop command. If a game has no section, the tool sweeps raw commands instead,
-leaving out those that change the board's state (`commands_from` says what was swept):
+leaving out those that change the board's state (`commands_from` says what was swept).
+Each board's sweep is made of one or more ranges (WPCS: its single bytes, then the `7A`
+bank), printed before the run with how many commands each holds, and again in the summary
+with what came out of it, as in
+`sweep board 0 (WPCS): bank 7A00..7AFF: 137 with sound, 119 silent (last sound 7A88)`;
+`manifest.json` has the same in `sweep` (per range: `board`, `family`, `range`,
+`commands`, `tried`, `with_sound`, `silent`, `written`, `last_sound`):
 
 - DCS: the populated tracks of the ROM's own track catalog (`src/dcsrom.rs`, layout from
   mjrgh's DCSExplorer: catalog in U2 at $3000/$4000/$6000, track index pointer at +$40,
@@ -1064,7 +1077,8 @@ At the top level: `mode` (`factory` or `normal`), `factory` (vpm, saved nvram pa
 cold boot report), the boards, `boot` (length, what ended it, every byte per board as
 `seconds:byte`), `factory_volume` (factory mode) or `game_volume` (the last command per board
 and kind: master, DCS channel, Data East music), `volume_init` (what the files were recorded
-at), `volume_replays`, `refreshed_before_each_command`, `commands_from`, `counts` (tried,
+at), `volume_replays`, `refreshed_before_each_command`, `commands_from`, `sweep` (raw
+sweep only, see Commands), `counts` (tried,
 with_sound, written, blips, no_sound, loops, loops_exact_dcs_catalog, loops_exact_audio,
 loops_unresolved, not_clean, clipped (written files only), retried,
 recovered_by_retry, ignores_master_volume), `loudness`, the `stop` actually sent,

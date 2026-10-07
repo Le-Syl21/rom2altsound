@@ -100,7 +100,7 @@ struct Cli {
     /// PinMAME directory (no nvram) so that the game runs its factory reset and writes its
     /// nvram, then warm from that nvram; the volume the game sets (its factory volume) is
     /// noted and every sound is recorded at the reference volume (the loudest master volume
-    /// that does not clip: DCS 55 AA EF 10, Whitestar FE 11 FD, WPCS 79 16 E9). The dB offset to the
+    /// that does not clip: DCS 55 AA EF 10, Whitestar FE 11 FD, WPCS 79 14 EB). The dB offset to the
     /// factory volume goes in the manifest
     #[arg(long)]
     no_factory: bool,
@@ -121,7 +121,7 @@ struct Cli {
     #[arg(long, conflicts_with_all = ["factory_volume", "no_factory", "no_volume_init", "cold_boot_only"], value_parser = parse_whitestar)]
     whitestar_volume: Option<u8>,
     /// The WPCS reference volume byte, sent as `79 vv ~vv` (00 = silent, 1F = the loudest;
-    /// the board ignores 20 and above) [default: 16]
+    /// the board ignores 20 and above) [default: 14]
     #[arg(long, conflicts_with_all = ["factory_volume", "no_factory", "no_volume_init", "cold_boot_only"], value_parser = parse_hex_byte)]
     wpcs_volume: Option<u8>,
     /// Minimum emulated boot time before halting the game CPUs; the boot then lasts until
@@ -575,11 +575,12 @@ const DCS_REFERENCE: u8 = 0xEF;
 /// Whitestar `FE 11 FD` (level 30/31): at `FE 10 FD`, apollo13 `5C` clipped 172 samples and
 /// `68` 13; at `FE 11`, nothing but xfiles' click `1F`, which ignores the master volume.
 const WHITESTAR_REFERENCE: u8 = 0x11;
-/// WPCS `79 vv ~vv` (`vv` 00..1F; the board ignores 20 and above): `79 16 E9`. A full
+/// WPCS `79 vv ~vv` (`vv` 00..1F; the board ignores 20 and above): `79 14 EB`. A full
 /// sweep of tz_94h clipped no file at 14, 15 and 16; at 17, 18, 1C and 1F its booms `A3`
 /// and `A4` (and `A5` from 1C) clipped 31 to 247 samples, on the DC level the DAC was left
-/// at by the sound before.
-const WPCS_REFERENCE: u8 = 0x16;
+/// at by the sound before. At 16, eight taf_l5 effects clipped (82, 8D, A1, C6, C7, CD, D3,
+/// D4): 14 keeps a margin, a slight loss of resolution being better than clipping.
+const WPCS_REFERENCE: u8 = 0x14;
 
 /// The first half of `--factory`: wipe this ROM's nvram and cfg from the private vpm, boot
 /// it cold in a child process (libpinmame runs one machine per process) until the game has
@@ -705,6 +706,9 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
     );
     for n in x.commands_from() {
         println!("  commands: {n}");
+    }
+    for r in x.sweep_results() {
+        println!("  {}", r.line());
     }
     for r in x.refreshed() {
         println!("  before every command: {r}");

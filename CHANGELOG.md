@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- **WPCS reference volume lowered to level 20, `79 14 EB`** (was 22, `79 16 E9`, tuned on
+  Twilight Zone): at 22 eight effects of The Addams Family clipped (`82`, `8D`, `A1`,
+  `C6`, `C7`, `CD`, `D3`, `D4`). A slight loss of resolution is better than clipping. At 20
+  `82` and `8D` are clean and `A1` is down from 3128 clipped samples to 58; `C7`, `D3`,
+  `D4`, `CD` and `C6` overshoot full scale on their own and still clip, with about a
+  quarter fewer samples. Twilight Zone's booms still do not clip. The factory offset is
+  now -1.5 dB (was -1.7). `--wpcs-volume 16` gives the old level back.
+- **Raw sweeps say what each range gave** (issue #1, suggested by dekay): when a game has
+  no sounds.dat section, one line per board and range before the run (what will be tried)
+  and in the final summary (what came out of it), e.g.
+  `sweep board 0 (WPCS): bank 7A00..7AFF: 137 with sound, 119 silent (last sound 7A88)`,
+  for every board family; `manifest.json` has the same in `sweep`.
+
 ## 0.2.1 (2026-10-07)
 
 - **The early Bally sound boards** (0 sounds before): Sounds Plus -51 (Viking: 30 sounds
