@@ -6,7 +6,7 @@
 
 **rom2altsound turns a pinball ROM's sounds into an AltSound pack for Visual Pinball.**
 
-> **0.1.0, the first release.** The packs it writes play in VPinball (Stern SAM packs
+> **0.2.0.** The packs it writes play in VPinball (Stern SAM packs
 > not yet, see [Stern SAM](#stern-sam)); please report what you find (see
 > [Help and feedback](#help-and-feedback)). What is in it: [CHANGELOG.md](CHANGELOG.md).
 
@@ -355,7 +355,7 @@ The release binaries embed PinMAME, so they are distributed under PinMAME's term
 
 **rom2altsound transforme les sons d'une ROM de flipper en pack AltSound pour Visual Pinball.**
 
-> **0.1.0, la première version.** Les packs qu'il écrit se jouent dans VPinball (pas
+> **0.2.0.** Les packs qu'il écrit se jouent dans VPinball (pas
 > encore ceux des Stern SAM, voir [Stern SAM](#stern-sam-1)) ; merci de signaler ce que
 > vous trouvez (voir [Aide et retours](#aide-et-retours)). Son contenu (en anglais) :
 > [CHANGELOG.md](CHANGELOG.md).

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-10-07)
 
 - **A page to listen to the pack**: `index.html` in each ROM folder plays every sound
   from disk, in any browser, offline, with what the manifest says about it (name, length,
