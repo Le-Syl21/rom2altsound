@@ -673,6 +673,60 @@ file (see AltSound pack).
   period failed on the audio (`audio`, with a note). The program period is only a hint:
   1993 ROMs read opcodes 04 and 06 differently (not modelled), type 3 tracks are not
   modelled, and the board may hold a deferred track left by an earlier command (below).
+- **Sound CPU state** (`method: "sequencer-state"`, every board but DCS,
+  `src/seqstate.rs`, `src/seqloop.rs`). On these boards the audio of a music never repeats
+  sample-exactly: the music is a program on the sound CPU, a sequencer that walks its score
+  at each tick of a timer interrupt, and the ticks are not locked to the chips' sample
+  clocks, so each note of the next cycle starts a little off (Twilight Zone `02`: the same
+  notes 55 to 91 samples later than one 47.2 s cycle before) and the FM oscillators are at
+  other phases (the two cycles differ by -15 to -19 dB). Nothing from outside causes it:
+  the game CPUs are halted for the whole extraction, and with the volume sent only once
+  after the boot (the hidden `--no-refresh`, instead of before every command) the music of
+  apollo13 (`06`, `0A`), xfiles (`01`, `04`), gnr_300 (`01`, `04`) and btmn_106 (`03`,
+  `08`) still did not repeat sample-exactly within 240 s, with the BSMT2000's own program.
+  What does repeat is the
+  sequencer's state. At the end of every emulated frame the shim reads the audio CPUs'
+  registers and RAM (the entries of the CPU's read map that are plain RAM, `MRA_RAM`, read
+  straight from the CPU's memory region: no handler runs; 8 KB on WPCS and BSMT boards, 4
+  + 8 KB on System 11, 128 bytes on Cheap Squeak), and keeps the bytes that change. A loop
+  of that state is looked for on the bytes that carry the music's position, leaving out
+  the registers and the stack (where the CPU happened to be when the frame ended), the
+  free-running counters (bytes that only count up, or down: Twilight Zone has one 16-bit
+  tick counter per voice) and the bytes that change in most frames (tick countdowns: at a
+  frame boundary their value depends on where the frame fell between two ticks).
+  Candidate periods are how far back the state of a group of those bytes was last entered
+  (8 interleaved groups, so that a byte with a clock of its own only hides the period from
+  its group); a period holds when, from some frame to the end, at least 99.8 % of the
+  bytes equal the same byte one period later, give or take a frame (the period is rarely a
+  whole number of frames), over at least one period and 20 s (two cycles in the
+  recording). A value held for a single frame is a working variable caught mid-update and
+  is not compared (apollo13 `06`: `13 13 0E 13 13`, one frame in 15 on some bytes). Of two
+  neighbouring periods, the one with the most frames exactly equal one period later wins.
+  The period that holds on every byte comes first; one that leaves out up to 2 bytes (and
+  5 % of them) that keep a clock of their own (whirl_l3 `0121`: two bytes counting down
+  over several cycles) is only taken at `--loop-max-secs`, once every period of the whole
+  state up to half the recording has had its chance (with 4 bytes left out, a 1.88 s bar
+  of Twilight Zone `02` passed for its 47.2 s loop).
+
+  The audio must then follow the state: per half second, over a cycle and at least 20 s,
+  the lag within one frame (and 48 samples) of the state's period that best maps the
+  audio onto itself; 75 % of these lags must agree with their median (within 100 samples)
+  and the median residual must be at most -3 dB. On the BSMT boards the 6809's state can
+  repeat while the audio does not (xfiles `04` every 41.0 s: the residual about 0 dB, 60 %
+  of the lags agree), as the music also lies in the BSMT2000's own sample streams; there
+  the audio follows every other state cycle (82.05 s: 99 % of the lags agree, -3.8 dB).
+  The cut is then where the two cycles differ least: the 512-sample window (at its half
+  second's lag, refined within 8 samples where it carries signal) with the least squared
+  difference, looked for in the first 10 s of the cycle first and taken there when it is
+  at least 30 dB below the music around it, then over the whole cycle; within it, the
+  sample where the two cycles are closest. The body is that lag long, a whole number of
+  samples. `loop.sequencer_state` in the manifest: `period_frames`, `repeats_from_frame`,
+  `byte_share`, `own_clock_bytes`, `mask` (the bytes that changed and those left out by
+  kind), `cycle_residual_db`, `lag_agreement`; `residual_db` is the cut window's. A state
+  loop the audio did not follow is named in `loop_unresolved`. The audio method is tried
+  first, so the loops it finds (the BSMT test tones) stay sample-exact.
+  `rom2altsound seq-scan <dump> [<raw.wav>]` runs the finder on a recording dumped with
+  `R2A_SEQ_DUMP=<dir>` (every loop search writes `<id>.seq` and `<id>.raw.wav` there).
 - **No loop**: a sound still playing at `--loop-max-secs` (or past its DCS period's check)
   is cut at `--max-secs` as before (`ended_by: "max"`), with `loop_unresolved` saying why.
 
@@ -717,6 +771,26 @@ btmn_106 ADPCM files).
 
 `rom2altsound loop-scan [--hint SECS | --hint-frames F] <wav>...` runs the detector on
 existing files (one line per file, with the seam).
+
+Sound CPU state results (factory settings, the BSMT2000's own program; `--loop-max-secs`
+240 s by default, 600 s for the second count; seam `error` in LSB):
+
+| ROM | musics | from the state | with 600 s | periods | seam error (median / worst) | audio: lags agreeing, cycles apart |
+|---|---|---|---|---|---|---|
+| tz_94h (WPCS) | 45 | 26 | 31 | 2.5 to 272 s | 1 / 50 | 75 to 100 %, -3.8 to -16.8 dB |
+| whirl_l3 (System 11) | 22 | 14 | 17 | 20.6 to 268 s | 1 / 11 | 83 to 100 %, -8.0 to -17.3 dB |
+| spyhuntr (Cheap Squeak) | 2 | 2 | | 19.0 s | 0 / 0 | 100 %, -15 to -16 dB |
+| cityslck (Turbo Cheap Squeak 2) | 10 | 7 | | 27.1 to 28.4 s | 0 / 0 | 100 %, -23.8 to -32.9 dB |
+| motrdome (Turbo Cheap Squeak) | 5 | 0 | | | | |
+| xfiles (Whitestar) | 40 | 5 (+ 3 test tones from the audio) | | 11.6 to 82 s | 9 / 16 | 93 to 100 %, -3.2 to -5.9 dB |
+
+A long loop is found with a longer search only: Twilight Zone `03` repeats after 271.9 s
+(the state every 16312 frames), Whirlwind `0121` and `0122` after 267.8 s, eight times the
+33.5 s cycle of the rest of their state (two bytes count the cycles). On motrdome a byte
+of the music's state changes up to four frames off from one cycle to the next, which the
+one-frame tolerance does not accept (four frames made the other boards' periods come out a
+frame off). On the BSMT boards five more xfiles musics had a state loop that the audio did
+not follow, and apollo13, gnr_300 and btmn_106 (two musics each) none at all.
 
 ### Loudness
 

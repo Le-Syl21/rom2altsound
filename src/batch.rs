@@ -122,6 +122,7 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
         ("--no-altsound", cli.no_altsound),
         ("--merge-twins", cli.merge_twins),
         ("--check-ducking", cli.check_ducking),
+        ("--no-refresh", cli.no_refresh),
         ("--bsmt-hle", cli.bsmt_hle),
     ] {
         if on {

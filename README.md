@@ -37,7 +37,9 @@ level and loop yourself, sound by sound. rom2altsound does it all in one go:
 - **clean files**: each sound starts from silence, with the silence before and after trimmed;
 - **one reference volume** for the whole ROM, set the same way the game sets it, loud but
   without clipping, so every sound keeps its level relative to the others;
-- **exact loops**, found in the audio and, on DCS boards, in the sound program of the ROM itself;
+- **exact loops**, found in the audio and, on DCS boards, in the sound program of the ROM
+  itself; on the older boards, one cycle of the music's score, found in the state of the
+  board's processor;
 - **a ready AltSound pack**, not just a pile of WAV files;
 - it runs **many times faster than real time** (an AFM ROM takes about 2 minutes).
 
@@ -138,11 +140,11 @@ What rom2altsound gets out of each sound board family:
 |---|---|---|---|---|---|---|
 | Williams/Bally WPC DCS (1993-1999) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ¹ |
 | Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ⚠️ ⁸ | ❌ | ❌ | ❌ |
-| Williams System 11 | ✅ | ⚠️ ³ | ✅ ⁴ | ❌ | ❌ | ❌ |
-| Data East (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
-| Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ | ❌ | ❌ | ❌ |
+| Williams System 11 | ✅ | ⚠️ ⁵ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Data East (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
+| Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ | ❌ | ❌ | ❌ |
 | Stern SAM | ✅ ⁷ | ✅ ⁷ | ✅ ⁷ | ❌ | ❌ | ❌ |
-| Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ¹⁰ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ⁵ ¹⁰ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
 ✅ verified, ⚠️ partial, ❌ not available. "Reference volume": every sound recorded at one
 loud volume set the way the game sets it, and the game's own (factory) volume read and
@@ -155,12 +157,20 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
    AltSound keeps the music and one voice channel exclusive; see Limits.
 2. Verified on Twilight Zone (302 of its 307 commands, named from sounds.dat). The
    earlier WPC89 sound board was not tested.
-3. Found in the audio only; this board does not replay a sound sample-exactly.
+3. The music also plays from the BSMT2000's own sample streams, which the state of the
+   board's processor does not hold (see 5): few loops are found. X-Files: 5 of its 40
+   musics (and its 3 test tones, sample-exact); Apollo 13 and the Data East games tried
+   (Guns N' Roses, Batman): none. The others are cut at 2 minutes (`--max-secs`).
 4. No software volume stage: the output is always at full scale, which is then the
    reference (`reference_volume: "full_scale (no volume stage)"` in `manifest.json`).
    Checked in PinMAME's board code: nothing on these boards scales the sound.
-5. The music never repeats exactly (Twilight Zone: none of its 45 music tracks within
-   4 minutes): it is cut at 2 minutes (`--max-secs`).
+5. The audio of a music never repeats sample-exactly on these boards, but the music's
+   program does: its loop is found in the state of the board's processor, checked on the
+   audio, and the file holds one cycle of the score, cut where two cycles differ least
+   (a seam of a few LSB). Twilight Zone: 26 of its 45 musics within the default 4 minutes,
+   31 with `--loop-max-secs 600` (`03` loops after 4.5 minutes); Whirlwind: 14 of 22,
+   17 with `--loop-max-secs 600`. A music that does not loop within the search is cut at
+   2 minutes (`--max-secs`).
 6. The master volume is a knob in the power box, not in the software. The bytes `20`..`2F`
    are a music level the game drives (a music can fade it): the files are recorded at its
    loudest, `20`.
@@ -179,8 +189,9 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
 10. Verified on Spy Hunter (Cheap Squeak: 53 sounds), Motordome (Turbo Cheap Squeak: 64)
     and City Slicker (Turbo Cheap Squeak 2: 133), with no option to add. The stop between
     sounds is `00`; a music it does not stop is ended by a sound board reset, after which
-    the tool waits out the Turbo Cheap Squeak's 5 s self-test. No music of the three
-    repeated exactly within 40 s (they are cut at `--max-secs`).
+    the tool waits out the Turbo Cheap Squeak's 5 s self-test. Music loops (see 5): Spy
+    Hunter 2 of 2, City Slicker 7 of 10; none of Motordome's 5, whose program keeps a few
+    bytes that drift against the music.
 
 ### Stern SAM
 
@@ -258,9 +269,14 @@ program, with the file's CRC) or `hle`. `--bsmt-hle` forces the older one.
   (mono, 16-bit, 44.1 kHz). The intro + one cycle file, with its loop points, is kept
   next to it for when libaltsound can loop part of a file, and for other players. Thanks
   to deadmanworking for spotting it.
-- **Data East and Whitestar music never repeats exactly** (the board's timing drifts a
-  little), so it cannot be looped without a seam: those tracks are cut at 2 minutes
-  (`--max-secs`). They are on the music channel, so the next music replaces them.
+- **On the boards older than DCS, a music's loop is one cycle of its score**, not a
+  sample-exact repetition: the chips never replay a cycle sample for sample (the
+  sequencer's ticks are not locked to their sample clocks), so the cut is placed where the
+  two cycles differ least, and the next cycle is a slightly different take of the same
+  notes. A long loop needs a longer search (`--loop-max-secs 600`). **Most Data East and
+  Whitestar music is still cut at 2 minutes** (`--max-secs`): its loop is not in the
+  processor's state. Those tracks are on the music channel, so the next music replaces
+  them.
 - **Twins**: some ROMs contain the same sound under two or more commands (Attack from Mars
   lists every sound effect twice). On DCS the reason is the board's channels: each command
   has a home channel, and a new command on a channel cuts what was playing there. Attack
@@ -344,7 +360,8 @@ par son. rom2altsound fait tout d'un coup :
 - **un seul volume de référence** pour toute la ROM, réglé comme le jeu le règle, fort mais
   sans saturer, pour que chaque son garde son niveau par rapport aux autres ;
 - **des boucles exactes**, trouvées dans le son et, sur les cartes DCS, dans le programme
-  sonore de la ROM elle-même ;
+  sonore de la ROM elle-même ; sur les cartes plus anciennes, un cycle de la partition de
+  la musique, trouvé dans l'état du processeur de la carte ;
 - **un pack AltSound prêt**, pas seulement un tas de fichiers WAV ;
 - il tourne **bien plus vite que le temps réel** (une ROM d'Attack from Mars prend environ 2 minutes).
 
@@ -446,11 +463,11 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 |---|---|---|---|---|---|---|
 | Williams/Bally WPC DCS (1993-1999) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ¹ |
 | Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ⚠️ ⁸ | ❌ | ❌ | ❌ |
-| Williams System 11 | ✅ | ⚠️ ³ | ✅ ⁴ | ❌ | ❌ | ❌ |
-| Data East (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
-| Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ | ❌ | ❌ | ❌ |
+| Williams System 11 | ✅ | ⚠️ ⁵ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Data East (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
+| Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ | ❌ | ❌ | ❌ |
 | Stern SAM | ✅ ⁷ | ✅ ⁷ | ✅ ⁷ | ❌ | ❌ | ❌ |
-| Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ¹⁰ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ⁵ ¹⁰ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
 ✅ vérifié, ⚠️ partiel, ❌ non disponible. « Volume de référence » : tous les sons sont
 enregistrés à un même volume fort, réglé comme le jeu le règle, et le volume d'usine du jeu
@@ -464,12 +481,21 @@ reste joué en parallèle.
    Limites.
 2. Vérifié sur Twilight Zone (302 de ses 307 commandes, nommées d'après sounds.dat). La
    carte son WPC89, plus ancienne, n'a pas été testée.
-3. Trouvées dans le son seulement ; cette carte ne rejoue pas un son à l'échantillon près.
+3. La musique est aussi jouée par les flux d'échantillons propres au BSMT2000, que l'état
+   du processeur de la carte ne contient pas (voir 5) : peu de boucles sont trouvées.
+   X-Files : 5 de ses 40 musiques (et ses 3 sons de test, à l'échantillon près) ; Apollo 13
+   et les jeux Data East essayés (Guns N' Roses, Batman) : aucune. Les autres sont coupées à
+   2 minutes (`--max-secs`).
 4. Aucun étage de volume logiciel : la sortie est toujours à pleine échelle, qui est donc
    la référence (`reference_volume: "full_scale (no volume stage)"` dans `manifest.json`).
    Vérifié dans le code des cartes de PinMAME : rien sur ces cartes ne règle le niveau.
-5. La musique ne se répète jamais exactement (Twilight Zone : aucun de ses 45 morceaux en
-   4 minutes) : elle est coupée à 2 minutes (`--max-secs`).
+5. Le son d'une musique ne se répète jamais à l'échantillon près sur ces cartes, mais son
+   programme, si : sa boucle est trouvée dans l'état du processeur de la carte, vérifiée sur
+   le son, et le fichier contient un cycle de la partition, coupé là où deux cycles
+   diffèrent le moins (un raccord de quelques LSB). Twilight Zone : 26 de ses 45 musiques
+   dans les 4 minutes par défaut, 31 avec `--loop-max-secs 600` (`03` boucle au bout de
+   4 min 30) ; Whirlwind : 14 sur 22, 17 avec `--loop-max-secs 600`. Une musique qui ne
+   boucle pas pendant la recherche est coupée à 2 minutes (`--max-secs`).
 6. Le volume général est un bouton dans le boîtier d'alimentation, pas dans le logiciel.
    Les octets `20`..`2F` sont un niveau de musique piloté par le jeu (une musique peut le
    baisser en finissant) : les fichiers sont enregistrés à son plus fort, `20`.
@@ -490,8 +516,9 @@ reste joué en parallèle.
     et City Slicker (Turbo Cheap Squeak 2 : 133), sans option à ajouter. L'arrêt entre deux
     sons est `00` ; une musique qu'il n'arrête pas est coupée par une remise à zéro de la
     carte son, après quoi l'outil attend la fin de l'autotest de 5 s de la Turbo Cheap Squeak.
-    Aucune musique des trois ne s'est répétée exactement en 40 s (elles sont coupées à
-    `--max-secs`).
+    Boucles de musique (voir 5) : Spy Hunter 2 sur 2, City Slicker 7 sur 10 ; aucune des 5
+    de Motordome, dont le programme garde quelques octets qui dérivent par rapport à la
+    musique.
 
 ### Stern SAM
 
@@ -575,10 +602,15 @@ programme de la puce, avec le CRC du fichier) ou `hle`. `--bsmt-hle` impose l'an
   26 Mo (mono, 16 bits, 44,1 kHz). Le fichier intro + un cycle, avec ses points de
   boucle, est gardé à côté, pour le jour où libaltsound saura faire boucler une partie de
   fichier, et pour d'autres lecteurs. Merci à deadmanworking de l'avoir repéré.
-- **La musique Data East et Whitestar ne se répète jamais exactement** (le rythme de la
-  carte dérive un peu), on ne peut donc pas la faire boucler sans raccord : ces morceaux
-  sont coupés à 2 minutes (`--max-secs`). Ils sont sur la voie musique, la musique
-  suivante les remplace.
+- **Sur les cartes plus anciennes que DCS, la boucle d'une musique est un cycle de sa
+  partition**, pas une répétition à l'échantillon près : les puces ne rejouent jamais un
+  cycle échantillon pour échantillon (les pas du séquenceur ne sont pas calés sur leur
+  horloge), alors la coupe est placée là où les deux cycles diffèrent le moins, et le cycle
+  suivant est une prise un peu différente des mêmes notes. Une longue boucle demande une
+  recherche plus longue (`--loop-max-secs 600`). **La plupart des musiques Data East et
+  Whitestar restent coupées à 2 minutes** (`--max-secs`) : leur boucle n'est pas dans
+  l'état du processeur. Ces morceaux sont sur la voie musique, la musique suivante les
+  remplace.
 - **Jumeaux** : certaines ROM contiennent le même son sous deux commandes ou plus (Attack
   from Mars liste chaque effet sonore deux fois). Sur DCS, la raison vient des voies de la
   carte : chaque commande a sa voie, et une nouvelle commande sur une voie coupe ce qui y

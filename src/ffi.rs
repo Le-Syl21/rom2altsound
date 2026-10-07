@@ -95,6 +95,15 @@ unsafe extern "C" {
     pub fn shim_sam_hook_dac() -> c_int;
     pub fn shim_sam_dac_count() -> c_int;
     pub fn shim_sam_dac_get(i: c_int, at: *mut f64, reg: *mut u8, val: *mut u8) -> c_int;
+    pub fn shim_audio_cpu(i: c_int) -> c_int;
+    pub fn shim_cpu_ram_ranges(
+        cpu: c_int,
+        start: *mut c_uint,
+        end: *mut c_uint,
+        max: c_int,
+    ) -> c_int;
+    pub fn shim_cpu_read(cpu: c_int, addr: c_uint, len: c_uint, out: *mut u8) -> c_int;
+    pub fn shim_cpu_reg(cpu: c_int, reg: c_int) -> c_uint;
     pub static mut shim_log_min_level: c_int;
     pub fn shim_log(level: c_int, format: *const c_char, args: *mut c_void, user: *mut c_void);
 }

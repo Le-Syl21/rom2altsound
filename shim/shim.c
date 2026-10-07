@@ -4,6 +4,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 #include "driver.h"
 #include "cpuexec.h"
 #include "wpc/sndbrd.h"
@@ -171,4 +172,61 @@ int shim_sam_dac_get(int i, double *at, unsigned char *reg, unsigned char *val) 
   *reg = shim_sam_dac_log[i].reg;
   *val = shim_sam_dac_log[i].val;
   return 1;
+}
+
+// ---------------------------------------------------------------------------------------
+// Sound CPU state, for finding where a music loops (the sequencer's state repeats).
+//
+// The state of the audio CPUs is their registers and their RAM: the RAM ranges are the
+// entries of the CPU's own read map whose handler is the static RAM handler (MRA_RAM), so
+// that reading them has no side effect (no latch, no I/O register). 8-bit data buses only
+// (the sound CPUs of every board but DCS).
+
+// The i-th audio CPU (CPU_AUDIO_CPU flag) with an 8-bit data bus, or -1.
+int shim_audio_cpu(int i) {
+  int ii;
+  for (ii = 0; ii < MAX_CPU; ii++)
+    if (Machine->drv->cpu[ii].cpu_type && (Machine->drv->cpu[ii].cpu_flags & CPU_AUDIO_CPU)
+        && cpunum_databus_width(ii) == 8 && i-- == 0)
+      return ii;
+  return -1;
+}
+
+// The RAM ranges of a CPU's read map, as inclusive [start, end] pairs. Returns how many
+// there are (only the first `max` are stored).
+int shim_cpu_ram_ranges(int cpu, unsigned *start, unsigned *end, int max) {
+  const struct Memory_ReadAddress *p;
+  int n = 0;
+  if (cpu < 0 || cpu >= MAX_CPU)
+    return 0;
+  p = (const struct Memory_ReadAddress *)Machine->drv->cpu[cpu].memory_read;
+  if (!p)
+    return 0;
+  for (; !IS_MEMPORT_END(p); p++) {
+    if (IS_MEMPORT_MARKER(p) || p->handler != MRA_RAM)
+      continue;
+    if (n < max) {
+      start[n] = p->start;
+      end[n] = p->end;
+    }
+    n++;
+  }
+  return n;
+}
+
+// Reads `len` bytes of a CPU's RAM from `addr` (RAM ranges only, see above). Static RAM
+// lives in the CPU's own memory region at its address (memory.c: `rambase` is
+// `memory_region(REGION_CPU1 + cpunum)`, and MRA_RAM reads `cpu_bankbase[STATIC_RAM][address]`).
+// Returns 0 when the range is outside the region (nothing is read).
+int shim_cpu_read(int cpu, unsigned addr, unsigned len, unsigned char *out) {
+  const unsigned char *base = memory_region(REGION_CPU1 + cpu);
+  if (!base || (size_t)addr + len > memory_region_length(REGION_CPU1 + cpu))
+    return 0;
+  memcpy(out, base + addr, len);
+  return 1;
+}
+
+// A CPU register (the CPU core's own numbering, 1 = PC on the 6800/6809 families).
+unsigned shim_cpu_reg(int cpu, int reg) {
+  return cpunum_get_reg(cpu, reg);
 }

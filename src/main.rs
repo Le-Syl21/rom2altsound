@@ -12,6 +12,8 @@ mod looping;
 mod loudness;
 mod sam;
 mod sampack;
+mod seqloop;
+mod seqstate;
 mod soundsdat;
 mod volume;
 mod zipread;
@@ -199,6 +201,10 @@ struct Cli {
     /// times (Minus when negative), print the DAC writes and save the nvram
     #[arg(long, hide = true, value_name = "N", allow_negative_numbers = true)]
     sam_volume_test: Option<i32>,
+    /// Diagnostic: send the volume (and, on Data East, the music volume and stop) once
+    /// after the boot instead of before every command
+    #[arg(long, hide = true)]
+    no_refresh: bool,
     /// Internal: extract the single ROM given in this process; --roms is its directory and
     /// --out its own folder (libpinmame runs one machine per process)
     #[arg(long, hide = true)]
@@ -286,6 +292,8 @@ fn main() {
         Some("dcs-effects") => return ducking::dcs_effects(std::env::args().skip(2).collect()),
         Some("duck-fit") => return ducking::duck_fit(std::env::args().skip(2).collect()),
         Some("drift-check") => return ducking::drift_check(std::env::args().skip(2).collect()),
+        Some("seq-scan") => return seqloop::scan_cli(std::env::args().skip(2).collect()),
+        Some("seq-audio") => return seqloop::audio_cli(std::env::args().skip(2).collect()),
         _ => {}
     }
     let cli = Cli::parse();
@@ -423,6 +431,7 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             check_ducking: cli.check_ducking,
             dump_region: cli.dump_sound_region.clone(),
             verbose: cli.verbose,
+            no_refresh: cli.no_refresh,
             bsmt,
         },
         dat,
@@ -614,7 +623,7 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
     let c = x.counts();
     let boot = x.boot_report();
     println!(
-        "{rom}: {} command(s) tried, {} with sound, {} written, {} blip(s), {} silent, {} loop(s) ({} exact cycles from the DCS catalog, {} from the audio, {} cut at --max-secs), {} retried ({} recovered); {:.1} s of audio; {:.1} s emulated in {:.1} s wall (x{:.1} real time); boot {:.1} s ({}); {} board reset(s), {} not clean, {} written file(s) clipped",
+        "{rom}: {} command(s) tried, {} with sound, {} written, {} blip(s), {} silent, {} loop(s) ({} exact cycles from the DCS catalog, {} from the audio, {} from the sound CPU's state, {} cut at --max-secs), {} retried ({} recovered); {:.1} s of audio; {:.1} s emulated in {:.1} s wall (x{:.1} real time); boot {:.1} s ({}); {} board reset(s), {} not clean, {} written file(s) clipped",
         c.tried,
         c.with_sound,
         c.written,
@@ -623,6 +632,7 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
         c.loops,
         c.loops_exact_dcs_catalog,
         c.loops_exact_audio,
+        c.loops_sequencer_state,
         c.loops_unresolved,
         c.retried,
         c.recovered_by_retry,

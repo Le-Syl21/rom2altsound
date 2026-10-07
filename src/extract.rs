@@ -23,7 +23,7 @@ use serde::Serialize;
 use crate::loudness::{self, Aggregate, FileLoudness};
 use crate::soundsdat::{Entry, SoundsDat};
 use crate::volume::{self, VolumeCmd};
-use crate::{dcsrom, ducking, ffi, looping};
+use crate::{dcsrom, ducking, ffi, looping, seqloop, seqstate};
 
 /// A sample within this many LSB of the idle level is digital silence: the upstream mixer
 /// adds +/-1 LSB TPDF dither.
@@ -52,6 +52,13 @@ const LATE_LOOP_CHECK_SECS: f64 = 10.0;
 /// A DCS track whose program loops is recorded until the audio can confirm that loop
 /// (`looping::HINT_CONFIRM_MAX_SECS`), up to this long, even past `loop_max_secs`.
 const LOOP_HINT_MAX_SECS: f64 = 900.0;
+/// Shortest loop looked for in the sound CPU's state (shorter ones are left to the audio,
+/// which finds the test tones' 0.068 s exactly).
+const STATE_MIN_PERIOD_SECS: f64 = 1.0;
+/// A state period that left bytes out (`seqloop::StateLoop::own_clock`) is only taken when
+/// this share of the audio's lags agree (Twilight Zone `18`, "Clock Chaos": 2.83 s with one
+/// byte left out, 75 % of the lags agreeing, a cut 184 s in).
+const OWN_CLOCK_LAG_AGREE: f64 = 0.9;
 /// DCS frame length: 240 samples at 31250 Hz.
 const DCS_FRAME_SECS: f64 = 240.0 / 31250.0;
 /// `--check-ducking`: when the other command is sent over the music, the fit's window, the
@@ -187,6 +194,8 @@ pub struct Options {
     /// `dcs-effects` diagnostic.
     pub dump_region: Option<PathBuf>,
     pub verbose: bool,
+    /// Diagnostic: the refresh goes out once, after the boot, not before every command.
+    pub no_refresh: bool,
     /// Which BSMT2000 emulation PinMAME will pick (reported if the machine has the chip).
     pub bsmt: crate::bsmtfw::Status,
 }
@@ -309,6 +318,10 @@ struct Recording {
     found: Option<LoopFound>,
     /// Why a recording that reached the cap has no loop.
     unresolved: Option<String>,
+    /// The sound CPUs' state at the end of each frame (`seqstate`), while looking for a loop.
+    seq: seqloop::StateLog,
+    /// A scratch snapshot.
+    snap: Vec<u8>,
 }
 
 /// Looking for one cycle of a sound that keeps playing.
@@ -316,6 +329,8 @@ struct LoopSearch {
     /// DCS: what the track program does, and the period it predicts.
     dcs: Option<DcsTrack>,
     hint: Option<Hint>,
+    /// The last state loop the audio did not confirm, for `loop_unresolved`.
+    state_note: Option<String>,
     /// Recording frames (since the command) of the next analysis, and the last one.
     next_check: u64,
     cap: u64,
@@ -333,6 +348,28 @@ struct LoopFound {
     l: looping::Loop,
     method: &'static str,
     note: Option<String>,
+    state: Option<SequencerState>,
+}
+
+/// A loop found in the sound CPU's state (`seqloop`): how the state repeats and how well
+/// the audio follows it.
+#[derive(Clone, Serialize)]
+pub struct SequencerState {
+    /// The state's period, in emulated frames, and the frame (from the first sound) from
+    /// which it repeats.
+    pub period_frames: usize,
+    pub repeats_from_frame: usize,
+    /// Share of the compared state bytes equal one period later (+/- a frame).
+    pub byte_share: f64,
+    /// Bytes left out because they keep a clock of their own.
+    pub own_clock_bytes: usize,
+    /// What was compared: the bytes that changed, and those left out by kind.
+    pub mask: seqloop::MaskReport,
+    /// The audio one cycle apart: the median residual over the cycle (each half second at
+    /// its own best lag), the share of half seconds whose lag agrees with the median, and
+    /// the residual in the window of the cut (`residual_db`).
+    pub cycle_residual_db: f64,
+    pub lag_agreement: f64,
 }
 
 /// What a DCS track's program does (`dcsrom::track_run`), from a silent board.
@@ -371,7 +408,10 @@ pub struct LoopInfo {
     /// of samples (the body is then that many cycles, which is; `period_*` are the body's).
     pub cycles: u32,
     /// "dcs-catalog": the period of the DCS track program (`dcs_track`), confirmed on the
-    /// audio. "audio": found in the audio alone (`looping`).
+    /// audio. "audio": found in the audio alone (`looping`). "sequencer-state": the period
+    /// at which the sound CPU's state repeats (`sequencer_state`), where the audio repeats
+    /// musically but not sample-exactly; the body is cut where the two cycles differ least
+    /// (`residual_db` is theirs in that window).
     pub method: &'static str,
     /// 1 minus the worst window's residual-to-signal ratio when one cycle is compared with
     /// the next (`residual_db`): 0.999 at -60 dB, 0.968 at -30 dB (the acceptance limit),
@@ -385,6 +425,8 @@ pub struct LoopInfo {
     pub seam: SeamInfo,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dcs_track: Option<DcsTrack>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sequencer_state: Option<SequencerState>,
     /// dcs-catalog: the period the audio alone gives on the same recording (a cross-check;
     /// null when the recording holds too few cycles for it).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -417,6 +459,7 @@ impl LoopInfo {
                 body_max_step: 0,
             },
             dcs_track: None,
+            sequencer_state: None,
             audio_period_samples: None,
             note: None,
         }
@@ -646,6 +689,8 @@ pub struct Counts {
     /// Loops written as one exact cycle, by method, and loops cut at `max_secs`.
     pub loops_exact_dcs_catalog: usize,
     pub loops_exact_audio: usize,
+    /// Loops whose cycle is the sound CPU's (`sequencer-state`): musical, not sample-exact.
+    pub loops_sequencer_state: usize,
     pub loops_unresolved: usize,
     pub not_clean: usize,
     /// Written files with clipped samples.
@@ -898,6 +943,8 @@ pub struct Extractor {
     reset_before_pass: bool,
     /// The loudness of each written file, by result index.
     loud: Vec<Option<FileLoudness>>,
+    /// Where the sound CPUs' state is read (not on DCS).
+    probe: Option<seqstate::Probe>,
     pub done: bool,
     pub error: Option<String>,
 }
@@ -968,6 +1015,7 @@ impl Extractor {
             duck_sound: None,
             reset_before_pass: false,
             loud: Vec::new(),
+            probe: None,
             done: false,
             error: None,
         }
@@ -1110,6 +1158,13 @@ impl Extractor {
             loops_exact_audio: written()
                 .filter(|s| s.loop_info.as_ref().is_some_and(|l| l.method == "audio"))
                 .count(),
+            loops_sequencer_state: written()
+                .filter(|s| {
+                    s.loop_info
+                        .as_ref()
+                        .is_some_and(|l| l.method == "sequencer-state")
+                })
+                .count(),
             loops_unresolved: written().filter(|s| s.loop_unresolved.is_some()).count(),
             not_clean: r.iter().filter(|s| !s.clean_start).count(),
             clipped: written().filter(|s| s.clipped_samples > 0).count(),
@@ -1220,6 +1275,13 @@ impl Extractor {
                     rec.last_loud_end = rec.frames;
                 }
             }
+        }
+        if let (Phase::Record(rec), Some(p)) = (&mut self.phase, &self.probe)
+            && rec.search.is_some()
+        {
+            rec.snap.clear();
+            p.snapshot(&mut rec.snap);
+            rec.seq.push(&rec.snap, rec.frames);
         }
         self.t += frames;
         self.step();
@@ -1391,7 +1453,8 @@ impl Extractor {
                         .is_some_and(|s| rec.frames >= s.next_check || rec.frames >= s.cap);
                 if check_due {
                     let (ch, rate) = (self.channels.max(1), self.rate);
-                    rec.found = loop_check(rec, ch, rate).map(|f| {
+                    let origin = self.probe.as_ref().map(|p| &p.origin[..]);
+                    rec.found = loop_check(rec, ch, rate, origin).map(|f| {
                         let len = (rec.frames - rec.first_loud.unwrap_or(0)) as usize;
                         LoopFound {
                             l: looping::whole_cycles(f.l, rate, len),
@@ -1669,6 +1732,10 @@ impl Extractor {
         }
         self.volume_replays += u32::from(!self.refresh.is_empty());
         v.extend(self.refresh.iter().copied());
+        if self.opts.no_refresh {
+            // Once, before the first command.
+            self.refresh.clear();
+        }
         if let Some(alt) = self.queue.front().and_then(|c| c.alt.as_ref()) {
             v.extend(alt.sends.iter().copied());
         }
@@ -1753,6 +1820,12 @@ impl Extractor {
             eprintln!("  before every command: {l}");
         }
         self.read_dcs_programs();
+        if self.dcs_board.is_none() {
+            self.probe = seqstate::Probe::new();
+            if let Some(p) = &self.probe {
+                eprintln!("  sound CPU state: {} bytes ({})", p.len, p.describe());
+            }
+        }
         self.main_cmds = self.build_commands();
         self.queue = self.main_cmds.clone().into();
         eprintln!("{} command(s) to extract", self.queue.len());
@@ -2483,6 +2556,8 @@ impl Extractor {
             search,
             found: None,
             unresolved: None,
+            seq: Default::default(),
+            snap: Vec::new(),
         }));
     }
 
@@ -2543,6 +2618,7 @@ impl Extractor {
         LoopSearch {
             dcs,
             hint,
+            state_note: None,
             next_check: self.secs(FIRST_LOOP_CHECK_SECS),
             cap,
         }
@@ -2771,6 +2847,17 @@ impl Extractor {
     }
 
     fn finish(&mut self, rec: Recording, ended_by: &'static str) {
+        if let (Some(dir), Some(p)) = (std::env::var_os("R2A_SEQ_DUMP"), &self.probe)
+            && !rec.seq.at.is_empty()
+        {
+            dump_state(
+                std::path::Path::new(&dir),
+                &rec,
+                p,
+                self.channels,
+                self.rate,
+            );
+        }
         let a = self.analyze(&rec);
         match self.pass {
             Pass::VolumeCheck => self.finish_check(rec, a, ended_by),
@@ -2935,6 +3022,7 @@ impl Extractor {
                 body_max_step: seam.max,
             },
             dcs_track,
+            sequencer_state: found.state.clone(),
             audio_period_samples,
             note: found.note.clone(),
         }
@@ -3107,6 +3195,33 @@ impl Extractor {
     }
 }
 
+/// `R2A_SEQ_DUMP`: the recording's sound CPU state (`seqloop::read_dump`) and its raw audio.
+fn dump_state(dir: &std::path::Path, rec: &Recording, p: &seqstate::Probe, ch: usize, rate: u32) {
+    let s = rec.seq.dense();
+    let mut out = b"SEQ2".to_vec();
+    out.extend_from_slice(&(p.len as u32).to_le_bytes());
+    out.extend_from_slice(&(s.at.len() as u32).to_le_bytes());
+    out.extend_from_slice(&rec.first_loud.unwrap_or(0).to_le_bytes());
+    for &(cpu, addr) in &p.origin {
+        out.extend_from_slice(&cpu.to_le_bytes());
+        out.extend_from_slice(&addr.to_le_bytes());
+    }
+    let mut row = s.first.clone();
+    for k in 0..s.at.len() {
+        for (j, &c) in s.cols.iter().enumerate() {
+            row[c] = s.frame(k)[j];
+        }
+        out.extend_from_slice(&s.at[k].to_le_bytes());
+        out.extend_from_slice(&row);
+    }
+    let path = dir.join(format!("{}.seq", rec.cmd.id));
+    if let Err(e) = std::fs::write(&path, out) {
+        eprintln!("cannot write {}: {e}", path.display());
+    }
+    let wav = dir.join(format!("{}.raw.wav", rec.cmd.id));
+    let _ = write_wav(&wav, &rec.samples, ch.max(1) as u16, rate);
+}
+
 fn board_mask() -> u8 {
     unsafe { (ffi::sndbrd_exists(0) != 0) as u8 | (((ffi::sndbrd_exists(1) != 0) as u8) << 1) }
 }
@@ -3229,27 +3344,126 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>) {
 /// track program's period is tried first once the recording is long enough to confirm it;
 /// a period the audio alone gives is taken when there is no program period, when it
 /// divides it, or once the program's period failed on the audio.
-fn loop_check(rec: &Recording, ch: usize, rate: u32) -> Option<LoopFound> {
-    let search = rec.search.as_ref()?;
+fn loop_check(
+    rec: &mut Recording,
+    ch: usize,
+    rate: u32,
+    origin: Option<&seqloop::Origin>,
+) -> Option<LoopFound> {
     let first = rec.first_loud? as usize;
     let x = looping::mono(&rec.samples[first * ch..], ch);
+    if let Some(found) = audio_loop(rec, &x, rate) {
+        return Some(found);
+    }
+    let origin = origin.filter(|_| rec.search.as_ref().is_some_and(|s| s.dcs.is_none()))?;
+    let at_cap = rec.search.as_ref().is_some_and(|s| rec.frames >= s.cap);
+    let (found, note) = state_loop(rec, &x, rate, origin, at_cap);
+    if let Some(search) = rec.search.as_mut()
+        && note.is_some()
+    {
+        search.state_note = note;
+    }
+    found
+}
+
+/// The loop in the sound CPU's state (`seqloop`), confirmed on the audio, from the first
+/// sound on (`x`). The note says why a state loop was not taken. A period that leaves out
+/// a byte with a clock of its own is only taken at the cap (`at_cap`), once every period
+/// of the whole state up to half the recording has had its chance.
+fn state_loop(
+    rec: &Recording,
+    x: &[f32],
+    rate: u32,
+    origin: &seqloop::Origin,
+    at_cap: bool,
+) -> (Option<LoopFound>, Option<String>) {
+    let first = rec.first_loud.unwrap_or(0);
+    let s = rec.seq.dense();
+    let n = s.at.len();
+    if n < 3 {
+        return (None, None);
+    }
+    let spf = ((s.at[n - 1] - s.at[0]) as f64 / (n - 1) as f64).max(1.0);
+    let fps = rate as f64 / spf;
+    let from = s.at.iter().position(|&t| t > first).unwrap_or(0);
+    let (keep, mask) = seqloop::mask(&s, origin, from);
+    let min = (STATE_MIN_PERIOD_SECS * fps) as usize;
+    let confirm = (looping::CONFIRM_SECS * fps) as usize;
+    let at = |k: usize| s.at[k].saturating_sub(first) as usize;
+    let secs = |v: usize| v as f64 / rate as f64;
+    let mut note = None;
+    for l in seqloop::find(&s, &keep, from, min, confirm)
+        .into_iter()
+        .filter(|l| l.own_clock == 0 || at_cap)
+    {
+        let lag0 = (s.at[l.start + l.period] - s.at[l.start]) as usize;
+        let confirm_samples = (looping::CONFIRM_SECS * rate as f64) as usize;
+        let Some(c) = seqloop::cut(
+            x,
+            rate,
+            at(l.start),
+            lag0,
+            spf.ceil() as usize,
+            confirm_samples,
+        ) else {
+            continue;
+        };
+        // A period that left bytes out is weaker evidence: the audio must agree more.
+        if !c.confirmed() || l.own_clock > 0 && c.lag_agreement < OWN_CLOCK_LAG_AGREE {
+            note.get_or_insert(format!(
+                "the sound CPU's state repeats every {:.3} s from {:.3} s, but the audio does not follow it (cycles {:.1} dB apart, {:.0}% of the lags agree)",
+                secs(lag0),
+                secs(at(l.start)),
+                c.cycle_residual_db,
+                100.0 * c.lag_agreement
+            ));
+            continue;
+        }
+        let state = SequencerState {
+            period_frames: l.period,
+            own_clock_bytes: l.own_clock,
+            repeats_from_frame: l.start - from,
+            byte_share: round3(l.byte_share * 1000.0) / 1000.0,
+            mask,
+            cycle_residual_db: round2(c.cycle_residual_db),
+            lag_agreement: round3(c.lag_agreement),
+        };
+        let found = LoopFound {
+            l: seqloop::as_loop(&s, &l, &c, first),
+            method: "sequencer-state",
+            note: Some(format!(
+                "the sound CPU's state repeats every {} frames; the audio is not sample-exact (cycles {:.1} dB apart): the cut is where they differ least",
+                l.period, c.cycle_residual_db
+            )),
+            state: Some(state),
+        };
+        return (Some(found), None);
+    }
+    (None, note)
+}
+
+/// The audio loop (`looping`): on DCS, the track program's period first.
+fn audio_loop(rec: &Recording, x: &[f32], rate: u32) -> Option<LoopFound> {
+    let search = rec.search.as_ref()?;
     let hint = search.hint.as_ref();
     if let Some(h) = hint
         && rec.frames >= h.ready_at
-        && let Some(l) = looping::find(&x, rate, Some(h.period))
+        && let Some(l) = looping::find(x, rate, Some(h.period))
     {
         return Some(LoopFound {
             l,
             method: "dcs-catalog",
             note: None,
+            state: None,
         });
     }
-    let l = looping::find(&x, rate, None)?;
+    let l = looping::find(x, rate, None)?;
     let Some(h) = hint else {
         return Some(LoopFound {
             l,
             method: "audio",
             note: None,
+            state: None,
         });
     };
     let cycles = h.period / l.period_exact;
@@ -3261,6 +3475,7 @@ fn loop_check(rec: &Recording, ch: usize, rate: u32) -> Option<LoopFound> {
             l,
             method: "dcs-catalog",
             note: None,
+            state: None,
         })
     } else if divides {
         Some(LoopFound {
@@ -3271,6 +3486,7 @@ fn loop_check(rec: &Recording, ch: usize, rate: u32) -> Option<LoopFound> {
             )),
             l,
             method: "audio",
+            state: None,
         })
     } else if rec.frames >= h.ready_at {
         Some(LoopFound {
@@ -3280,6 +3496,7 @@ fn loop_check(rec: &Recording, ch: usize, rate: u32) -> Option<LoopFound> {
             )),
             l,
             method: "audio",
+            state: None,
         })
     } else {
         // Wait until the program's period can be checked.
@@ -3294,6 +3511,9 @@ fn unresolved_reason(search: &LoopSearch, frames: u64, rate: u32) -> String {
         frames as f64 / rate as f64,
         looping::CONFIRM_SECS
     );
+    if let Some(n) = &search.state_note {
+        reason += &format!("; {n}");
+    }
     if let Some(d) = &search.dcs {
         match (d.program, d.period_frames) {
             ("loops", Some(p)) => {
@@ -3634,11 +3854,14 @@ mod tests {
             search: Some(LoopSearch {
                 dcs: None,
                 hint: hint.map(|(period, ready_at)| Hint { period, ready_at }),
+                state_note: None,
                 next_check: 0,
                 cap: u64::MAX,
             }),
             found: None,
             unresolved: None,
+            seq: Default::default(),
+            snap: Vec::new(),
         }
     }
 
@@ -3646,14 +3869,20 @@ mod tests {
     fn loop_check_methods() {
         let p = 3.0 * 44100.0 + 0.4;
         // No program period: the audio's.
-        let f = loop_check(&looping_recording(p, 30.0, None), 1, 44100).expect("loop");
+        let f = loop_check(&mut looping_recording(p, 30.0, None), 1, 44100, None).expect("loop");
         assert_eq!((f.method, f.l.period), ("audio", p.round() as usize));
         // The program's period, once the recording can confirm it.
-        let f = loop_check(&looping_recording(p, 30.0, Some((p, 0))), 1, 44100).expect("loop");
+        let f = loop_check(
+            &mut looping_recording(p, 30.0, Some((p, 0))),
+            1,
+            44100,
+            None,
+        )
+        .expect("loop");
         assert_eq!((f.method, f.l.period), ("dcs-catalog", p.round() as usize));
         // A program period of two cycles, not yet checkable: the audio's divides it.
-        let r = looping_recording(p, 30.0, Some((2.0 * p, u64::MAX)));
-        let f = loop_check(&r, 1, 44100).expect("loop");
+        let mut r = looping_recording(p, 30.0, Some((2.0 * p, u64::MAX)));
+        let f = loop_check(&mut r, 1, 44100, None).expect("loop");
         assert_eq!(f.method, "audio");
         assert!(
             f.note.as_deref().unwrap_or("").contains("2 times"),
@@ -3661,11 +3890,11 @@ mod tests {
             f.note
         );
         // A program period the audio contradicts: wait for it to be checkable...
-        let r = looping_recording(p, 30.0, Some((1.7 * p, u64::MAX)));
-        assert!(loop_check(&r, 1, 44100).is_none());
+        let mut r = looping_recording(p, 30.0, Some((1.7 * p, u64::MAX)));
+        assert!(loop_check(&mut r, 1, 44100, None).is_none());
         // ...and once it failed, take the audio's.
-        let r = looping_recording(p, 30.0, Some((1.7 * p, 0)));
-        let f = loop_check(&r, 1, 44100).expect("loop");
+        let mut r = looping_recording(p, 30.0, Some((1.7 * p, 0)));
+        let f = loop_check(&mut r, 1, 44100, None).expect("loop");
         assert!(
             f.note.as_deref().unwrap_or("").contains("does not hold"),
             "{:?}",
