@@ -114,6 +114,7 @@ unsafe extern "C" {
     pub fn shim_nibble_hook(board: c_int) -> c_int;
     pub fn shim_nibble_cmd(board: c_int, data: c_int);
     pub fn shim_nibble_reads() -> c_int;
+    pub fn shim_data_burst(board: c_int, bytes: *const u8, n: c_int) -> c_int;
     pub static mut shim_log_min_level: c_int;
     pub fn shim_log(level: c_int, format: *const c_char, args: *mut c_void, user: *mut c_void);
 }

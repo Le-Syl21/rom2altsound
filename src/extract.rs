@@ -100,6 +100,13 @@ const QUIET_SECS: f64 = 0.5;
 const QUIET_MAX_SECS: f64 = 10.0;
 /// After a board reset the board reboots and may play its boot sound ~2 s later.
 const QUIET_AFTER_RESET_SECS: f64 = 4.0;
+/// A board that is still not silent after this many waits for quiet in a row (each ending
+/// in a board reset), with no command played in between, ends the run with an error instead
+/// of resetting it forever. What keeps it playing is then something sent between commands
+/// (the master volume, the refresh), or a stop that does not work on this board: 0.2.0 reset
+/// taf_l5's board for ever, its program playing the master volume's level byte 0C as music
+/// (see `board_sends`).
+const MAX_STOP_FAILURES: u32 = 3;
 /// Stop commands for families that have no section in sounds.dat, measured on whirl_l3
 /// (System 11B, one WMSS11 + one WMSS11C board):
 /// - WMSS11: the game sends 00 at power-up; 00 cuts a looping sound within 0.6 s.
@@ -301,6 +308,10 @@ enum Send {
     /// `sndbrd_data_w(board, byte)`: the game CPU's own entry point, for single bytes on
     /// boards whose manual handler only takes pairs (WPCS).
     Data(c_int, c_int),
+    /// The first `n` bytes, written to the board's data port back to back, as the game CPU
+    /// sends a multi-byte command (`shim_data_burst`): WPCS boards whose program drops the
+    /// prefix of a command when its next byte comes a frame later (see `board_sends`).
+    Burst(c_int, [u8; 4], u8),
     /// Reset every sound board (control-port reset or audio CPU reset line).
     Reset,
     /// Scenario (`--only 0x000C+2.5+0x0390`): wait this many seconds (in milliseconds)
@@ -1015,6 +1026,9 @@ pub struct Extractor {
     /// Emulated time, in sample frames since the first audio callback.
     pub t: u64,
     silent_run: u64,
+    /// Waits for quiet that ran out in a row, with no command played in between (see
+    /// `MAX_STOP_FAILURES`).
+    stop_failures: u32,
     /// Per-channel idle (DC) level, see `track_idle_level`.
     idle: Vec<i32>,
     phase: Phase,
@@ -1128,6 +1142,7 @@ impl Extractor {
             refresh_labels: Vec::new(),
             dirty: false,
             board_resets: 0,
+            stop_failures: 0,
             boot_log: Vec::new(),
             boot_pairs: Default::default(),
             last_novel: 0,
@@ -1482,6 +1497,10 @@ impl Extractor {
                     unsafe { ffi::sndbrd_data_w(board, byte) };
                     Some(board)
                 }
+                Send::Burst(board, bytes, n) => {
+                    unsafe { ffi::shim_data_burst(board, bytes.as_ptr(), c_int::from(n)) };
+                    Some(board)
+                }
                 Send::Reset => {
                     self.reset_boards();
                     None
@@ -1560,8 +1579,16 @@ impl Extractor {
                         self.dirty = true;
                         self.on_quiet(false, true);
                     } else {
+                        self.stop_failures += 1;
+                        if self.stop_failures >= MAX_STOP_FAILURES {
+                            let n = self.stop_failures;
+                            return self.fail(format!(
+                                "the board is still not silent after {n} waits for quiet in a row ({QUIET_MAX_SECS} s each, each followed by a board reset): something sent between two commands keeps it playing (try --no-volume-init, or another --stop)"
+                            ));
+                        }
                         eprintln!(
-                            "  warning: the stop command did not silence the board within {QUIET_MAX_SECS} s: resetting the board(s)"
+                            "  warning: the stop command did not silence the board within {QUIET_MAX_SECS} s: resetting the board(s) ({}/{MAX_STOP_FAILURES})",
+                            self.stop_failures
                         );
                         self.sender.clear();
                         self.sender.push_back(Send::Reset);
@@ -3014,6 +3041,7 @@ impl Extractor {
             self.done = true;
             return;
         };
+        self.stop_failures = 0;
         let what = match (self.pass, &cmd.alt) {
             (Pass::Retry, _) => format!("{} (retry)", cmd.id),
             (Pass::VolumeCheck, Some(a)) => {
@@ -3692,6 +3720,7 @@ impl Extractor {
             .map(|s| match s {
                 Send::Byte(b, v) => format!("manCmd({b},{v:02X})"),
                 Send::Data(b, v) => format!("data_w({b},{v:02X})"),
+                Send::Burst(b, v, n) => format!("data_w({b},{})", hex(&v[..*n as usize])),
                 Send::Reset => "board reset".into(),
                 Send::Wait(ms) => format!("wait {ms} ms"),
             })
@@ -3807,14 +3836,24 @@ fn addressed(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
 /// in `sndbrd_manCmd`, and `wpcs_manCmd_w` writes both bytes of the pair to the board. A
 /// single-byte command therefore goes through `sndbrd_data_w`, the path the WPC game CPU
 /// itself uses (wpc.c `WPC_SND_DATA`), instead of being padded with a byte that the board
-/// would also execute (00 is "Reset Sound System").
+/// would also execute (00 is "Reset Sound System"). A longer one goes out in one burst, as
+/// the game writes it: The Addams Family's program (taf_l5) does not wait for the next byte
+/// of `79 vv ~vv` a frame later (with 4 frames between the bytes, and with 1, it played the
+/// level byte `0C`, a music, which no stop silenced); Twilight Zone's does.
 fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
     let double = unsafe { ffi::shim_board_flags(board) } & ffi::SNDBRD_DOUBLECMD != 0;
-    if double && bytes.len() % 2 == 1 {
-        let t = target(mask, board);
-        bytes.iter().map(|&b| Send::Data(t, b as c_int)).collect()
-    } else {
-        addressed(mask, board, bytes)
+    let t = target(mask, board);
+    match bytes {
+        _ if !double => addressed(mask, board, bytes),
+        [b] => vec![Send::Data(t, *b as c_int)],
+        _ => bytes
+            .chunks(4)
+            .map(|c| {
+                let mut v = [0u8; 4];
+                v[..c.len()].copy_from_slice(c);
+                Send::Burst(t, v, c.len() as u8)
+            })
+            .collect(),
     }
 }
 
@@ -3873,13 +3912,17 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>) {
                     "board {b} (BYSNT): bytes 01..{BYSNT_LAST:02X} (05 = stop; DF..FF set the board's volume lines, which PinMAME does not emulate)"
                 ),
             ),
+            // The second bank, `7A xx`, holds most of the voices and effects on some games
+            // (taf_l5: 137 sounds, 7A00..7A88; Twilight Zone: 142 sounds.dat entries): all
+            // 256 are swept, the empty ones end as no_sound within `no_sound_secs`.
             "WPCS" => (
                 (1..=0xFFu8)
                     .filter(|c| !WPCS_STATE.iter().any(|r| r.contains(c)))
                     .map(|c| vec![c])
+                    .chain((0..=0xFFu8).map(|x| vec![0x7A, x]))
                     .collect(),
                 format!(
-                    "board {b} (WPCS): bytes 01..FF without tempo/volume/prefix bytes 1E-2F, 60-72, 79, 7A"
+                    "board {b} (WPCS): bytes 01..FF without tempo/volume/prefix bytes 1E-2F, 60-72, 79, 7A, then the second bank 7A00..7AFF"
                 ),
             ),
             _ => (

@@ -91,7 +91,9 @@ are in a C shim.
    reference one with the factory settings, else the game's when it kept re-sending it during boot;
    see the per-family notes).
 6. For each command, it sends one byte per `sndbrd_manCmd` call every 4th frame, as in
-   `snd_cmd.c` `playCmd`, except on DCS: one byte per frame (see DCS below). Two-board
+   `snd_cmd.c` `playCmd`, except on DCS: one byte per frame (see DCS below), and on WPCS,
+   where the bytes of a command go out back to back, as the game sends them (see WPCS
+   below). Two-board
    machines take (board, byte) pairs. Recording starts with the frame after the first byte.
    It ends when no sound started `--no-sound-secs` (1.5 s) after the last byte
    (`ended_by: "no_sound"`, no file), after 2 s of emulated silence (`"silence"`), once one
@@ -106,7 +108,11 @@ are in a C shim.
    by pulsing the audio CPUs' reset line), waits for 4 s of silence, and sends the volume
    again since a reset loses it: our `--dcs-volume`, or else the game's own last volume
    commands, byte for byte (`volume_replays` in the manifest). If even that fails, the next
-   file is marked `clean_start: false`. Nothing is only reported on stderr.
+   file is marked `clean_start: false`. Nothing is only reported on stderr. A board that
+   is still not silent after 3 waits for quiet in a row with no command played in between
+   (each ending in a reset) ends the run with an error instead of being reset forever:
+   what keeps it playing is then something sent between two commands (the volume, the
+   refresh), or a stop that does not work there (`--no-volume-init`, `--stop`).
 8. Retry pass: every command that played nothing (`no_sound`) is played once more, after
    the stop, the volume and the refresh; the result says `retried: true` (and, if it played
    then, holds the second try).
@@ -447,6 +453,16 @@ DAC holds its last value, 9291 LSB before `A3` at `1F`), so a boom that fits alo
 clip in the ROM's order. The reference is `79 16 E9`; the factory offset (the game's
 `79 0C F3`) is -1.7 dB (5 files, spread 0.0 dB).
 
+**WPCS command pacing** (taf_l5): the game writes the bytes of a multi-byte command (`79 vv
+~vv`, `7A xx`) to the board back to back, within the same frame. The Addams Family's sound
+program (`tafu18l1.rom`) does not wait a frame for the next byte: with 4 frames (67 ms)
+between them, and still with 1 frame (17 ms), `79 0C F3` played `0C`, a music, which no
+stop then silenced (0.2.0 reset the board after every wait, and the volume it sent again
+after the reset started the music again, forever). Twilight Zone's program waits. So a
+WPCS command of several bytes goes out in one burst (`shim_data_burst`: the board's data
+handler, 12 timeslices between the bytes, as PinMAME's `wpcs_manCmd_w` sends its pairs); a
+single byte goes through `sndbrd_data_w`, as before.
+
 Whitestar's top step is not like the others: `FE 10` is 4.8 dB above `FE 11` (apollo13
 offsets to the factory `FE 2C`: -37.4 dB from `FE 10`, -32.6 dB from `FE 11`, i.e. about
 1.2 dB per level below). The DCS steps measure about 1.3 dB.
@@ -778,7 +794,10 @@ leaving out those that change the board's state (`commands_from` says what was s
   xfiles), and `FC xx` starts a loop for every `xx` on apollo13, gnr_300 and xfiles alike, so
   neither is swept.
 - WPCS: bytes 01..FF without the tempo/volume bytes of sounds.dat `wpcs:` (1E-2F, 60-72) and
-  the prefixes 79 (volume) and 7A (16-bit commands).
+  the prefixes 79 (volume) and 7A (second bank), then the second bank itself,
+  `7A00`..`7AFF` (ids `0x7Axx`), where most voices and effects of some games are (taf_l5:
+  137 sounds, `7A00`..`7A88`). All 256 are swept, the empty ones ending as `no_sound` after
+  1.5 s: the program's own table of the bank was not read for its length.
 - Bally Sounds Plus -51 and -32/-50: bytes 00..1F (five lines). Squawk & Talk: 01..DE
   (`DF`..`FF` are its volume commands). Sounds Plus -56: 01..FF (see "Per family").
 - Other boards: bytes 01..FF.

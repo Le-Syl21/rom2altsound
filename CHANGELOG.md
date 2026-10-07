@@ -17,6 +17,16 @@
   with its solenoids, not its commands.
 - **A run that writes no sound now fails** (`FAILED: no sound was recorded`, exit status 1,
   no pack) instead of reporting OK.
+- **WPCS games without a sounds.dat section** (The Addams Family, issue #1): the raw sweep
+  now also plays the second bank, `7A00`..`7AFF` (keyed `0x7Axx`), where most of their
+  voices and effects are.
+- WPCS: a command of several bytes (`79 vv ~vv`, `7A xx`) is written to the board back to
+  back, as the game writes it. The Addams Family's sound program took the volume's level
+  byte, sent a frame later, for a music of its own, which no stop silenced: 0.2.0 reset its
+  board after every command and never got anywhere.
+- A board that stays loud after 3 stops and resets in a row, with no command played in
+  between, now ends the run with an error instead of being reset forever.
+- README: PinMAME's sound commander opens with F4, not F6.
 
 ## 0.2.0 (2026-10-07)
 

@@ -313,3 +313,22 @@ void shim_nibble_cmd(int board, int data) {
 int shim_nibble_reads(void) {
   return shim_nib_reads;
 }
+
+// Writes the bytes of one multi-byte command to a board's data port the way the game CPU
+// does: back to back, with only a few timeslices between them (as `wpcs_manCmd_w` does for
+// its pairs), instead of one byte per frame. The board's data handler is called directly:
+// `sndbrd_data_w` defers each write to a timer, so several writes in a row would overwrite
+// each other in the latch before the sound CPU reads it. Returns 0 if the board has no
+// data handler.
+int shim_data_burst(int board, const unsigned char *bytes, int n) {
+  const struct sndbrdIntf *b = board_intf(board);
+  int i, j;
+  if (!b || !b->data_w)
+    return 0;
+  for (i = 0; i < n; i++) {
+    if (i > 0)
+      for (j = 0; j < 12; j++) run_one_timeslice();
+    b->data_w(board, bytes[i]);
+  }
+  return 1;
+}

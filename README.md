@@ -29,7 +29,7 @@ ROM image instead (see [Stern SAM](#stern-sam)).
 
 ### Why not PinMAME's own sound dump?
 
-PinMAME can record its output while you play sounds by hand (the sound commander, F6).
+PinMAME can record its output while you play sounds by hand (the sound commander, F4).
 That gives one long recording, or one file per sound at best, that you then cut, name,
 level and loop yourself, sound by sound. rom2altsound does it all in one go:
 
@@ -177,8 +177,10 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
    sounds, loops and volume also on Cirqus Voltaire, Medieval Madness and Red & Ted's
    Road Show.
    AltSound keeps the music and one voice channel exclusive; see Limits.
-2. Verified on Twilight Zone (302 of its 307 commands, named from sounds.dat). The
-   earlier WPC89 sound board was not tested.
+2. Verified on Twilight Zone (302 of its 307 commands, named from sounds.dat) and on
+   The Addams Family (taf_l5, no sounds.dat section: the raw sweep, second bank `7A xx`
+   included, wrote 268 sounds, 15 of its 33 musics with an exact loop; 8 files clip at the
+   reference volume `79 16 E9`, measured on Twilight Zone).
 3. The music also plays from the BSMT2000's own sample streams, which the state of the
    board's processor does not hold (see 5): few loops are found. X-Files: 5 of its 40
    musics (and its 3 test tones, sample-exact); Apollo 13 and the Data East games tried
@@ -420,7 +422,7 @@ l'image de la ROM (voir [Stern SAM](#stern-sam-1)).
 ### Pourquoi pas l'enregistrement de PinMAME ?
 
 PinMAME sait enregistrer sa sortie pendant que l'on joue les sons à la main (le commandeur
-de sons, touche F6). On obtient un long enregistrement, ou au mieux un fichier par son,
+de sons, touche F4). On obtient un long enregistrement, ou au mieux un fichier par son,
 qu'il faut ensuite découper, nommer, mettre au bon niveau et faire boucler soi-même, son
 par son. rom2altsound fait tout d'un coup :
 
@@ -572,8 +574,10 @@ reste joué en parallèle.
    Mars ; sons, boucles et volume aussi sur Cirqus Voltaire, Medieval Madness et
    Red & Ted's Road Show. AltSound ne garde exclusives que la musique et une voie de voix ; voir
    Limites.
-2. Vérifié sur Twilight Zone (302 de ses 307 commandes, nommées d'après sounds.dat). La
-   carte son WPC89, plus ancienne, n'a pas été testée.
+2. Vérifié sur Twilight Zone (302 de ses 307 commandes, nommées d'après sounds.dat) et sur
+   The Addams Family (taf_l5, sans section sounds.dat : le balayage brut, deuxième banque
+   `7A xx` comprise, a écrit 268 sons, dont 15 de ses 33 musiques avec une boucle exacte ;
+   8 fichiers saturent au volume de référence `79 16 E9`, mesuré sur Twilight Zone).
 3. La musique est aussi jouée par les flux d'échantillons propres au BSMT2000, que l'état
    du processeur de la carte ne contient pas (voir 5) : peu de boucles sont trouvées.
    X-Files : 5 de ses 40 musiques (et ses 3 sons de test, à l'échantillon près) ; Apollo 13
