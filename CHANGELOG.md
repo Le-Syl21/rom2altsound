@@ -2,13 +2,20 @@
 
 ## Unreleased
 
-- **WPCS reference volume lowered to level 20, `79 14 EB`** (was 22, `79 16 E9`, tuned on
-  Twilight Zone): at 22 eight effects of The Addams Family clipped (`82`, `8D`, `A1`,
-  `C6`, `C7`, `CD`, `D3`, `D4`). A slight loss of resolution is better than clipping. At 20
-  `82` and `8D` are clean and `A1` is down from 3128 clipped samples to 58; `C7`, `D3`,
-  `D4`, `CD` and `C6` overshoot full scale on their own and still clip, with about a
-  quarter fewer samples. Twilight Zone's booms still do not clip. The factory offset is
-  now -1.5 dB (was -1.7). `--wpcs-volume 16` gives the old level back.
+- **WPCS and System 11: no sound starts on the previous one's DC level any more.** Their
+  sound programs leave the DAC on the last value a sound wrote, which PinMAME mixes as a
+  DC level (the real boards' outputs are AC-coupled): every file of The Addams Family
+  started on one (up to 14216 LSB), and so did 187 of Whirlwind's 189 (up to 10251), a
+  click in AltSound, and `A1` clipped on it. Before each command the DAC is now parked at
+  code 0, its power-on level in PinMAME: 0 files of taf_l5, tz_94h or whirl_l3 start
+  more than 256 LSB away from 0, and clipping no longer depends on the order of the sweep.
+- **WPCS reference volume lowered to level 7, `79 07 F8`** (was 22, `79 16 E9`, in 0.2.1).
+  Even with the DAC parked, five effects of The Addams Family (`C6`, `C7`, `CD`, `D3`,
+  `D4`) clip on their own at the game's own level 12 and above (`C7`: 4857 samples at
+  20, 3492 at 18, 63 at 12), and `CD` still at 8 (2 samples); at 7 no file of taf_l5 or
+  tz_94h clips. A slight loss of resolution is better than clipping. The files are now 2.0 dB
+  below the game's factory volume (factory offset +2.0 dB, was -1.7). `--wpcs-volume 16`
+  gives the old level back.
 - **Raw sweeps say what each range gave** (issue #1, suggested by dekay): when a game has
   no sounds.dat section, one line per board and range before the run (what will be tried)
   and in the final summary (what came out of it), e.g.

@@ -98,6 +98,7 @@ unsafe extern "C" {
     pub fn shim_sound_region(len: *mut c_uint) -> *const u8;
     pub fn shim_game_gen() -> u64;
     pub fn shim_has_bsmt2000() -> c_int;
+    pub fn shim_dac_park() -> c_int;
     pub fn shim_sam_hook_dac() -> c_int;
     pub fn shim_sam_dac_count() -> c_int;
     pub fn shim_sam_dac_get(i: c_int, at: *mut f64, reg: *mut u8, val: *mut u8) -> c_int;

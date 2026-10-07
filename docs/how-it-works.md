@@ -400,7 +400,7 @@ a player may have changed. So the user's nvram/cfg are never used:
    (louder ones are the volume check's suspects), at least 1 s long and not clipped: loud,
    so that they stay far above the silence threshold at a low factory volume. These replays
    are measured, never written. `factory_offset_db` is the median of their level moves
-   (factory `level_lufs` minus reference `level_lufs`, negative); `factory_offset` in the
+   (factory `level_lufs` minus reference `level_lufs`: negative where the reference is louder, positive on WPCS, recorded below its factory volume); `factory_offset` in the
    manifest lists the files, both levels, the move and the spread. Boards without a master
    volume (Data East, System 11) record at their only level: offset 0.
    `loudness.as_shipped` is the loudness report shifted by the offset: what the files
@@ -415,7 +415,7 @@ apart from isolated clicks. Measured with full sweeps (written files with raw sa
 | family | volume | clipped files at that volume | one step louder |
 |---|---|---|---|
 | DCS | `55 AA EF 10` (level 29/31, `--dcs-volume`) | afm_113b `0186` (1 sample), cv_20h `03DE` (2 samples, a 77 ms click that ignores the master volume) | `FF`: afm 5 files (`0186` 68 samples), cv_20h 18 (its loop `0016` 575), mm_109c 24 (`01AB` 99), rs_l6 5 (`0240` 33) |
-| WPCS | `79 14 EB` (level 20, `--wpcs-volume`; the volume runs from `00`, silent, to `1F`, and the board ignores `20` and above) | tz_94h: none (307 commands; also none at `15` and `16`). taf_l5: 6 effects, `C7` 4837 samples, `D3` 1211, `D4` 431, `CD` 135, `C6` 89, `A1` 58 | `16`: taf_l5 8 effects (`C7` 6305, `A1` 3128, `82` 2511, `D3` 1659, `D4` 588, `8D` 345, `CD` 176, `C6` 108); `17`: tz_94h's booms `A3` (65 samples) and `A4` (31); at `18` 123 and 53, at `1C` `A5` too, at `1F` 247, 105 and 17 samples |
+| WPCS | `79 07 F8` (level 7, `--wpcs-volume`; the volume runs from `00`, silent, to `1F`, and the board ignores `20` and above; the DAC is parked at code 0 before each sound) | tz_94h: none (307 commands). taf_l5: none (472 commands) | `08`: taf_l5 `CD` (2 samples); at `0C`, the game's own volume, 5 effects (`C7` 63, `C6` 21, `D3` 19, `CD` 17, `D4` 10); at `14` (the reference until then) `C7` 4698, `D3` 1213, `D4` 420, `CD` 148, `C6` 80 |
 | Whitestar | `FE 11 FD` (level 30/31, `--whitestar-volume`) | xfiles `1F` (56 samples, a 50 ms click that ignores the master volume) | `FE 10 FD`: apollo13 `5C` 172 samples, `68` 13 (xfiles: only `1F`) |
 | System 11, Cheap Squeak / Turbo Cheap Squeak, Data East, Bally -32/-50 and Sounds Plus -51/-56 | no software volume stage: always full scale, which is the reference (`reference_volume: "full_scale (no volume stage)"`); on Data East the music level is set to its loudest, `20` | | |
 | Bally Squawk & Talk -61 | volume lines PinMAME does not emulate: always full scale (`reference_volume: "full_scale (volume lines not emulated in PinMAME)"`) | eballdlx: 5 speech files, 2 or 3 samples each, in PinMAME's own mix | |
@@ -451,14 +451,31 @@ the program turns a digital pot (`wpcs_volume_w`, one step per write, the mixer 
 `1C`): they start on the level the DAC was left at by the sound before (Twilight Zone's
 DAC holds its last value, 9291 LSB before `A3` at `1F`), so a boom that fits alone can
 clip in the ROM's order. `16` was the reference until The Addams Family (taf_l5, raw
-sweep): at `16` eight of its effects clipped, on DAC levels of 2500 to 9600 LSB held from
-the sound before. The reference is two steps lower, `79 14 EB` (level 20), a slight loss
-of resolution being better than clipping: there `82` and `8D` are clean, `A1` drops from
-3128 clipped samples to 58, and the four loudest (`C7`, `D3`, `D4`, `CD`, peaks up to
-+1.4 dBFS DC-blocked: they overshoot whatever level they start from) still clip with
-about a quarter fewer samples, as do `C6` (89); tz_94h's booms `A3`, `A4` and `A5` peak at
--1.5, -3.8 and -3.1 dBFS. The factory offset (the game's `79 0C F3`, level 12) is -1.5 dB
-(tz_94h 3 files, taf_l5 5 files, spread 0.0 dB; it was -1.7 dB at `16`).
+sweep): at `16` eight of its effects clipped, then six at `14` (level 20).
+
+Two causes. First, the board's program leaves its DAC (an AD7524, 8 bits, `DAC_0_data_w`)
+on the last value a sound wrote, and PinMAME maps the DAC unsigned (code 0 = output 0,
+`UnsignedVolTable`): the held value is a DC level in the mix, on which the next sound
+starts. At `14` all 268 taf_l5 files started more than 256 LSB away from 0 (up to 14216
+LSB), and `A1` clipped 56 samples on it (`82`, `8D` and `A1` do not clip alone). The real
+board's output is AC-coupled, so the held level never reached the speaker. So before each
+sound the tool parks the DAC at code 0, its power-on level in PinMAME (`shim_dac_park`,
+when the idle level is off 0, then the usual wait for quiet so that the step is not
+recorded); the program never reads its DAC back. Then 0 of 268 taf_l5 files and 0 of 302
+tz_94h files start more than 256 LSB away from 0 (62 and 21 LSB at most), and the
+clipping no longer depends on the order of the sweep. Second, five taf_l5 effects (`C6`,
+`C7`, `CD`, `D3`, `D4`) clip on their own: they play on the DAC around its mid code, whose
+DC level (8750 LSB at `14`) adds to the voice and the music. Clipped samples, DAC parked,
+per level: `14` `C7` 4857 / `D3` 1227 / `D4` 414 / `CD` 89 / `C6` 79; `13` 3695 / 738 /
+275 / 65 / 54; `12` 3492 / 807 / 313 / 57 / 116; `11` 2259 / 440 / 166 / 45 / 42; `10`
+1258 / 237 / 112 / 41 / 38; `0E` 411 / 85 / 39 / 24 / 39; `0C` (the game's own level) 63 /
+19 / 10 / 17 / 21; `0A` `C6` 5, `CD` 4, `D4` 4; `08` `CD` 2; `07` none. The reference is
+`79 07 F8` (level 7), the loudest level at which no file of either ROM clips: full sweeps
+at `07` clip no file of taf_l5 (472 commands) or tz_94h (307), loudest true peaks -1.6 and
+-4.0 dBTP. It is 2.0 dB below the game's factory volume (`79 0C F3`, level 12) and 3.5 dB
+below `14`, a loss of resolution that is better than clipping. The factory offset is
+therefore positive, +2.0 dB (tz_94h and taf_l5 5 files each, spread 0.04 dB; it was -1.5
+dB at `14`).
 
 **WPCS command pacing** (taf_l5): the game writes the bytes of a multi-byte command (`79 vv
 ~vv`, `7A xx`) to the board back to back, within the same frame. The Addams Family's sound
@@ -487,7 +504,7 @@ on the warm boot they send `55 AA 67 98` after 6-12 s.
 |---|---|---|---|
 | DCS (WPC) | `55 AA vv ~vv`, level = (vv - 7) / 8, 8..31 (`67` = 12) | none | `00 00` |
 | DCS channel mix | `55 AB..B0 vv ~vv` (rs_l6 fades `55 AB` FF to 07 and back to FF at boot) | none | |
-| WPCS | `79 vv ~vv`, `vv` 00..1F (20 and above ignored): the game's is read (tz_94h `79 0C F3`), the reference `79 14 EB` is sent once | none | `00` |
+| WPCS | `79 vv ~vv`, `vv` 00..1F (20 and above ignored): the game's is read (tz_94h `79 0C F3`), the reference `79 07 F8` is sent once; the DAC is parked at code 0 before each command | none | `00` |
 | Whitestar BSMT (Sega/Stern) | `FE xx FD`, level = 2F - xx, 0..31 | the master volume (ours with the factory settings, else the game's `FE xx FD`, which it re-sends every 0.5 s) | `00` |
 | Data East BSMT | none (hardware pot in the power box) | the music volume `20`..`2F` (the loudest, `20`, with the reference volume), then the stop `00` | `00` |
 | System 11 (WMSS11, 11C, 11J) | none (no volume stage) | none | `00` / `20` (11C) |
@@ -828,9 +845,20 @@ On two-board machines the id is `board<<8 | byte`, so `0x0105` means byte 05 on 
 ### Silence
 
 The upstream mixer adds +/-1 LSB TPDF dither, so a sample within 2 LSB of the idle level counts
-as silence. The idle level is not always 0: System 11 boards hold their DAC at a constant level
-(whirl_l3 idles at +2056, and +6264 or +10248 after some sounds). Each frame whose span stays
-within the dither updates the per-channel idle level. All decisions use emulated time.
+as silence. The idle level is not always 0: WPCS and System 11 boards hold their DAC on the
+last value a sound wrote (whirl_l3 idled at +2056, and +6264 or +10248 after some sounds).
+Each frame whose span stays within the dither updates the per-channel idle level. All
+decisions use emulated time.
+
+On those boards the DACs are parked at code 0 before each command (`shim_dac_park`: every
+DAC of the machine's `DAC_data_w`, PinMAME's unsigned 8-bit DAC, where code 0 is output 0
+and the level the DAC powers up at), then the tool waits for quiet once more, so that no
+sound starts on the level the one before left (the real boards' outputs are AC-coupled:
+that level never reached the speaker). Measured on whirl_l3 (`--max-secs 10`): 187 of its
+189 files started more than 256 LSB away from 0 (up to 10251 LSB), none do now (158 LSB
+at most); the same 189 files and 219 blips, all files -17.71 then -17.70 LUFS. On taf_l5
+(WPCS) see Reference volume. The Data East games have no DAC (gnr_300 and trek_201 files
+start within 8 LSB of 0 without it).
 
 ### Trimming
 
@@ -1234,9 +1262,11 @@ Two rounds before:
   The clipping is at the output only (levels follow the volume step for step), so a lower
   `--dcs-volume` gives the same sound without distortion. Clipped files are counted in the
   summary and flagged per file in the manifest.
-- **WAVs keep the emulated DC** of System 11 DACs (whirl_l3 idles at 2056, 4015, 10248...
-  depending on the last sound) unless `--dc-block` is given. Real machines AC-couple their
-  output; PinMAME does not model that. The levels in the manifest are always DC-blocked.
+- **WAVs keep the emulated DC** of a DAC within a sound (a sound that ends on a DAC value
+  ends on that level: 61 of taf_l5's files, 53 of whirl_l3's) unless `--dc-block` is given;
+  the sounds no longer start on the previous sound's level (the DAC is parked at code 0
+  before each command, see Silence). Real machines AC-couple their output; PinMAME does
+  not model that. The levels in the manifest are always DC-blocked.
 - **WPCS (DOUBLECMD) boards**: `sndbrd_manCmd` only acts on byte pairs and `wpcs_manCmd_w`
   writes both bytes to the board, so padding a one-byte command would also send `00` ("Reset
   Sound System"). One-byte commands (all of sounds.dat's WPCS entries, and the stop `00`)

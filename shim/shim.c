@@ -332,3 +332,19 @@ int shim_data_burst(int board, const unsigned char *bytes, int n) {
   }
   return 1;
 }
+
+// ---------------------------------------------------------------------------------------
+// Parks the machine's 8-bit DACs (dac.c, unsigned `DAC_data_w`) at code 0, their power-on
+// level in PinMAME (`DAC_sh_start` sets every output to 0), where they add no DC to the
+// mix. The boards' programs leave a DAC on the last value a sound wrote and never read it
+// back. Returns how many DACs were parked. DAC_sh_start numbers the DACs of the machine's
+// last DAC entry only (`n_chips = intf->num`), hence the last entry's count.
+int shim_dac_park(void) {
+  int ii, n = 0;
+  for (ii = 0; ii < MAX_SOUND; ii++)
+    if (Machine->drv->sound[ii].sound_type == SOUND_DAC)
+      n = ((const struct DACinterface *)Machine->drv->sound[ii].sound_interface)->num;
+  for (ii = 0; ii < n; ii++)
+    DAC_data_w(ii, 0);
+  return n;
+}

@@ -107,6 +107,14 @@ const QUIET_AFTER_RESET_SECS: f64 = 4.0;
 /// taf_l5's board for ever, its program playing the master volume's level byte 0C as music
 /// (see `board_sends`).
 const MAX_STOP_FAILURES: u32 = 3;
+/// Board families whose DACs (PinMAME's unsigned 8-bit DACs) are parked at code 0 before
+/// each command (`park_dac`). Their programs leave the DAC on the last value a sound wrote:
+/// a DC level in the mix, which the real boards' AC-coupled outputs never passed on. WPCS
+/// (taf_l5): up to 14216 LSB, every file started on it and `A1` clipped on it. System 11
+/// (whirl_l3): up to 10251 LSB, 187 of 189 files started more than 256 LSB away from 0.
+fn parks_dac(family: &str) -> bool {
+    family == "WPCS" || family.starts_with("WMSS11")
+}
 /// Stop commands for families that have no section in sounds.dat, measured on whirl_l3
 /// (System 11B, one WMSS11 + one WMSS11C board):
 /// - WMSS11: the game sends 00 at power-up; 00 cuts a looping sound within 0.6 s.
@@ -1147,6 +1155,8 @@ pub struct Extractor {
     duck_sound: Option<(Vec<f64>, f64)>,
     /// Reset the boards before the next command (the start of the ducking check).
     reset_before_pass: bool,
+    /// The DAC was parked at code 0 for the next command (`parks_dac`).
+    dac_parked: bool,
     /// The loudness of each written file, by result index.
     loud: Vec<Option<FileLoudness>>,
     /// Where the sound CPUs' state is read (not on DCS).
@@ -1227,6 +1237,7 @@ impl Extractor {
             duck_music: None,
             duck_sound: None,
             reset_before_pass: false,
+            dac_parked: false,
             loud: Vec::new(),
             probe: None,
             mixer: Vec::new(),
@@ -1811,7 +1822,28 @@ impl Extractor {
                 return;
             }
         }
+        if !self.dac_parked && self.park_dac() {
+            let mut q = self.quiet(false);
+            (q.then_volume, q.then_pre) = (false, false);
+            self.phase = Phase::Quiet(q);
+            return;
+        }
         self.next_command();
+    }
+
+    /// Boards whose 8-bit DAC holds the last value a sound wrote (`parks_dac`):
+    /// sets it back to code 0, its power-on level in PinMAME, before the next command, so
+    /// that no sound starts on the DC level the one before left. The sound programs never
+    /// read their DAC back. Returns true when it moved the output (then the caller waits
+    /// for quiet again, so the step is not in the recording).
+    fn park_dac(&mut self) -> bool {
+        self.dac_parked = true;
+        if !self.families.iter().any(|f| parks_dac(f))
+            || self.idle.iter().all(|&dc| dc.abs() <= 2 * SILENCE as i32)
+        {
+            return false;
+        }
+        unsafe { ffi::shim_dac_park() > 0 }
     }
 
     /// Sends the stop command and waits for silence.
@@ -3135,6 +3167,7 @@ impl Extractor {
             return;
         };
         self.stop_failures = 0;
+        self.dac_parked = false;
         let what = match (self.pass, &cmd.alt) {
             (Pass::Retry, _) => format!("{} (retry)", cmd.id),
             (Pass::VolumeCheck, Some(a)) => {
