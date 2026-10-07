@@ -77,6 +77,12 @@ unsafe extern "C" {
     /// src/libpinmame/video.c: when 0 the emulation runs as fast as the host allows.
     pub static mut throttle: c_int;
 
+    /// src/sound/mixer.c: the mixer's channels (one per chip output, `MIXER_MAX_CHANNELS`),
+    /// by name ("YM2151 #0 Ch1", "DAC #0", "HC55516 #0"...), and their mixing level (0..100).
+    pub fn mixer_get_name(ch: c_int) -> *const c_char;
+    pub fn mixer_get_mixing_level(ch: c_int) -> c_int;
+    pub fn mixer_set_mixing_level(ch: c_int, level: c_int);
+
     /// src/wpc/sndbrd.c
     pub fn sndbrd_exists(board: c_int) -> c_int;
     pub fn sndbrd_typestr(board: c_int) -> *const c_char;
@@ -137,6 +143,19 @@ pub fn is_data_east() -> bool {
 /// True when the machine has a BSMT2000 sound chip (only valid while the emulation runs).
 pub fn has_bsmt2000() -> bool {
     unsafe { shim_has_bsmt2000() != 0 }
+}
+
+/// `MIXER_MAX_CHANNELS` (src/sound/mixer.h).
+pub const MIXER_MAX_CHANNELS: c_int = 25;
+
+/// The mixer's channels in use: (number, name, mixing level).
+pub fn mixer_channels() -> Vec<(c_int, String, c_int)> {
+    (0..MIXER_MAX_CHANNELS)
+        .filter_map(|ch| {
+            let name = cstr(unsafe { mixer_get_name(ch) })?;
+            Some((ch, name, unsafe { mixer_get_mixing_level(ch) }))
+        })
+        .collect()
 }
 
 /// Converts a nullable C string to an owned `String`.

@@ -4,11 +4,13 @@
 //! emulated hardware (halt lines, sound board latches) between two frames, exactly
 //! where PinMAME's own sound commander does it.
 //!
-//! Four passes: every command once; then every command that played nothing once more
+//! The passes: every command once; then every command that played nothing once more
 //! (`retried`); then the files far louder than the ROM's median are played again at
 //! another master volume, to find the ones that ignore it (`ignores_master_volume`); then,
 //! when the files are recorded at the reference volume, a few of them are played again at
-//! the game's factory volume, to measure the offset between the two (`factory_offset`).
+//! the game's factory volume, to measure the offset between the two (`factory_offset`); on
+//! WPCS and System 11 boards, every sound again with only one chip heard (the chips pass,
+//! `MixInfo`); on DCS, `--check-ducking`.
 //!
 //! In the first two passes, a sound that keeps playing is analysed as it records, until one
 //! exact cycle of its loop is confirmed (`looping`, and on DCS the track program's own period
@@ -71,6 +73,28 @@ const DUCK_CHECK_MARGIN_SECS: f64 = 0.06;
 const DUCK_CHECK_MAX_HOLD_SECS: f64 = 6.0;
 const DUCK_CHECK_TOLERANCE_DB: f64 = 0.5;
 const DUCK_CHECK_BEFORE_MAX_DB: f64 = 0.1;
+/// Chips pass (WPCS, System 11): the mixer channels of the music chip and of the voice chip
+/// (PinMAME's names: "YM2151 #0 Ch1", "HC55536 #0"), how much of a command's level must
+/// come from the voice chip for it to be a voice line, the longest voice take, and when
+/// the command is sent over the music, the envelope window, the longest stretch of the
+/// command measured, and the thresholds: the music is ducked when its level drops by at
+/// least `MIX_DUCK_MIN_DB` while the command plays, stopped when it is `MIX_STOP_DB` down
+/// once the command has ended; a command that raises the music chip's level by
+/// `MIX_FM_MIN_DB` plays on it itself (its ducking cannot be told from its own sound).
+const FM_CHIP: &str = "YM2151";
+const VOICE_CHIP: &str = "HC555";
+const VOICE_SHARE_DB: f64 = -6.0;
+const VOICE_TAKE_MAX_SECS: f64 = 2.5;
+const MIX_AT_SECS: f64 = 2.0;
+const MIX_WIN_SECS: f64 = 0.1;
+const MIX_DURING_MAX_SECS: f64 = 6.0;
+const MIX_AFTER_SECS: (f64, f64) = (0.3, 1.3);
+const MIX_DUCK_MIN_DB: f64 = -1.5;
+/// The music's own drift between two takes is measured from this far into them up to the
+/// command.
+const MIX_BEFORE_FROM_SECS: f64 = 0.3;
+const MIX_STOP_DB: f64 = -20.0;
+const MIX_FM_MIN_DB: f64 = 1.5;
 /// Between two commands: required silence, and how long we wait for it at most.
 const QUIET_SECS: f64 = 0.5;
 const QUIET_MAX_SECS: f64 = 10.0;
@@ -196,6 +220,10 @@ pub struct Options {
     pub verbose: bool,
     /// Diagnostic: the refresh goes out once, after the boot, not before every command.
     pub no_refresh: bool,
+    /// Diagnostic: mute every mixer channel whose name does not contain this.
+    pub solo: Option<String>,
+    /// WPCS and System 11: run the chips pass (`MixInfo`).
+    pub chip_check: bool,
     /// Which BSMT2000 emulation PinMAME will pick (reported if the machine has the chip).
     pub bsmt: crate::bsmtfw::Status,
 }
@@ -253,6 +281,9 @@ enum Pass {
     VolumeCheck,
     /// A few files again at the game's factory volume (`VolumeInit::Reference` only).
     FactoryOffset,
+    /// WPCS and System 11: each written sound again with only the voice chip heard, and
+    /// over the music with only the music chip heard (`MixInfo`).
+    Chips,
     /// DCS, `--check-ducking`: the music with one command per duck depth on top.
     DuckCheck,
 }
@@ -287,6 +318,11 @@ enum TakeKind {
     /// The sound of check `n` alone, then the music with that sound on top.
     Sound(usize),
     Mixed(usize),
+    /// Chips pass: the command with only the voice chip heard; the music with only the
+    /// music chip heard, alone and with the command `MIX_AT_SECS` in.
+    ChipVoice,
+    MixMusic,
+    MixWith,
 }
 
 /// Another master volume for the volume check.
@@ -557,6 +593,42 @@ pub struct SoundInfo {
     /// the level changes (ducks) and stops it applies to the other channels.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dcs: Option<dcsrom::CommandEffects>,
+    /// WPCS and System 11: which chip the sound plays on and what it does to the music,
+    /// measured with the other chips muted (the chips pass).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mix: Option<MixInfo>,
+}
+
+/// What a sound does on a board without track programs, measured by chip (the mixer's
+/// channels muted but one chip): the share of its level from the voice chip, and the
+/// music chip's level under it, against the music alone.
+#[derive(Clone, Default, Serialize)]
+pub struct MixInfo {
+    /// The command with only the voice chip heard, against the whole command (dB): about 0
+    /// for a voice line, far below for a sound without speech.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voice_db: Option<f64>,
+    /// "voice" (a voice line: most of its level is the voice chip), "fm" (it plays on the
+    /// music chip too), "other" (DAC).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chip: Option<&'static str>,
+    /// The music chip's level, against the music alone (dB; median of `MIX_WIN_SECS`
+    /// windows): before the command (the drift between two takes of the music, which are
+    /// not sample-exact on these chips), then while it plays and once it has ended,
+    /// relative to before; and the smallest move told from the drift.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub music_before_db: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub music_noise_db: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub music_during_db: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub music_after_db: Option<f64>,
+    /// The music was lowered by this much while the command played (not for a sound that
+    /// plays on the music chip itself), or stopped by it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ducks_music_db: Option<f64>,
+    pub stops_music: bool,
 }
 
 #[cfg(test)]
@@ -589,6 +661,7 @@ impl SoundInfo {
             idle_level: 0,
             onset: Some(0.01),
             dcs: Some(dcs),
+            mix: None,
         }
     }
 }
@@ -774,6 +847,9 @@ struct Manifest<'a> {
     dc_blocked_wav: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     dcs: Option<DcsReport<'a>>,
+    /// WPCS and System 11: the chips pass.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mix_check: Option<&'a MixReport>,
     sounds: &'a [SoundInfo],
 }
 
@@ -853,6 +929,24 @@ pub struct DuckCheck {
     pub windows: usize,
     pub diff_db: Option<f64>,
     pub mismatch: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// The chips pass (WPCS, System 11): what was measured, on which music.
+#[derive(Clone, Default, Serialize)]
+pub struct MixReport {
+    /// The music played under every command, with only the music chip heard.
+    pub music: String,
+    pub channels: String,
+    pub sent_at_s: f64,
+    pub window_s: f64,
+    /// Sounds measured, and what they turned out to be.
+    pub measured: usize,
+    pub voice_lines: usize,
+    pub on_music_chip: usize,
+    pub ducking: usize,
+    pub stopping: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
@@ -946,6 +1040,11 @@ pub struct Extractor {
     loud: Vec<Option<FileLoudness>>,
     /// Where the sound CPUs' state is read (not on DCS).
     probe: Option<seqstate::Probe>,
+    /// The mixer's channels as the boot left them: (number, name, mixing level).
+    mixer: Vec<(c_int, String, c_int)>,
+    /// Chips pass: the report, and the music take (music chip alone, envelope in dB).
+    mix_report: Option<MixReport>,
+    mix_music: Option<Vec<f64>>,
     pub done: bool,
     pub error: Option<String>,
 }
@@ -1017,6 +1116,9 @@ impl Extractor {
             reset_before_pass: false,
             loud: Vec::new(),
             probe: None,
+            mixer: Vec::new(),
+            mix_report: None,
+            mix_music: None,
             done: false,
             error: None,
         }
@@ -1287,6 +1389,13 @@ impl Extractor {
         self.t += frames;
         self.step();
         self.tick_sender();
+        if self.done && !self.mixer.is_empty() {
+            // PinMAME saves the mixing levels in the machine's cfg when it stops, and the
+            // next boot starts from them: leave them as the boot found them.
+            for (ch, _, level) in std::mem::take(&mut self.mixer) {
+                unsafe { ffi::mixer_set_mixing_level(ch, level) };
+            }
+        }
     }
 
     /// Some boards idle at a constant non-zero level (whirl_l3 sits at +2056 after its boot
@@ -1789,6 +1898,24 @@ impl Extractor {
         }
         let halted = unsafe { ffi::shim_halt_game_cpus(1) };
         eprintln!("halted {halted} game CPU(s)");
+        let mixer = ffi::mixer_channels();
+        self.mixer = mixer.clone();
+        eprintln!(
+            "  mixer: {}",
+            mixer
+                .iter()
+                .map(|(ch, n, l)| format!("{ch} {n} ({l})"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        if let Some(solo) = &self.opts.solo {
+            for (ch, name, _) in &mixer {
+                if !name.contains(solo.as_str()) {
+                    unsafe { ffi::mixer_set_mixing_level(*ch, 0) };
+                }
+            }
+            eprintln!("  mixer: only the channels named *{solo}* are heard");
+        }
         // The halt can fall between a Whitestar `FE xx` and the `FD` that completes it (the
         // game sends them in different frames); the board would then swallow everything.
         for b in self.board_list() {
@@ -1936,6 +2063,13 @@ impl Extractor {
                     }
                 }
                 Pass::FactoryOffset => {
+                    self.pass = Pass::Chips;
+                    self.queue = self.chip_commands().into();
+                    if let Some(n) = self.mix_report.as_ref().and_then(|r| r.note.as_ref()) {
+                        eprintln!("chips: {n}");
+                    }
+                }
+                Pass::Chips => {
                     self.pass = Pass::DuckCheck;
                     self.queue = self.duck_check_commands().into();
                     // The main pass leaves state on a DCS board that the stop does not clear
@@ -2236,6 +2370,284 @@ impl Extractor {
         })
     }
 
+    /// Hears only the mixer channels whose name contains `chip` (all of them with None):
+    /// the others at mixing level 0, as the boot left them otherwise.
+    fn solo(&self, chip: Option<&str>) {
+        for (ch, name, level) in &self.mixer {
+            let keep = chip.is_none_or(|c| name.contains(c))
+                && self.opts.solo.as_deref().is_none_or(|s| name.contains(s));
+            unsafe { ffi::mixer_set_mixing_level(*ch, if keep { *level } else { 0 }) };
+        }
+    }
+
+    pub fn mix_report(&self) -> Option<&MixReport> {
+        self.mix_report.as_ref()
+    }
+
+    /// The chips pass (WPCS and System 11 boards, with a music chip and a voice chip): per
+    /// written sound that is not a loop, the sound with only the voice chip heard; then
+    /// the loudest music loop with only the music chip heard, alone and with each of those
+    /// sounds sent `MIX_AT_SECS` in.
+    fn chip_commands(&mut self) -> Vec<Cmd> {
+        let families_ok = self.board_list().all(|b| {
+            let f = self.families[b as usize].as_str();
+            f == "WPCS" || f.starts_with("WMSS11")
+        });
+        let has = |c: &str| self.mixer.iter().any(|(_, n, _)| n.contains(c));
+        if !self.opts.chip_check || !families_ok || !has(FM_CHIP) || !has(VOICE_CHIP) {
+            return Vec::new();
+        }
+        let mut report = MixReport {
+            channels: self
+                .mixer
+                .iter()
+                .map(|(_, n, l)| format!("{n} ({l})"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            sent_at_s: MIX_AT_SECS,
+            window_s: MIX_WIN_SECS,
+            ..Default::default()
+        };
+        let sounds: Vec<usize> = (0..self.results.len().min(self.main_cmds.len()))
+            .filter(|&i| {
+                let s = &self.results[i];
+                s.file.is_some() && !s.looping_or_truncated && s.onset.is_some()
+            })
+            .collect();
+        let music = (0..self.results.len().min(self.main_cmds.len()))
+            .filter(|&i| {
+                let s = &self.results[i];
+                s.file.is_some() && s.looping_or_truncated
+            })
+            .max_by(|&a, &b| {
+                let l = |i: usize| self.results[i].lufs.unwrap_or(-99.0);
+                l(a).total_cmp(&l(b))
+            });
+        let mut cmds = Vec::new();
+        for &i in &sounds {
+            let s = &self.results[i];
+            let mut c = self.main_cmds[i].clone();
+            c.slot = Some(i);
+            c.check = Some(DuckTake {
+                kind: TakeKind::ChipVoice,
+                secs: s.onset.unwrap_or(0.0) + s.duration.min(VOICE_TAKE_MAX_SECS) + 0.3,
+            });
+            cmds.push(c);
+        }
+        match music {
+            Some(m) => {
+                report.music = self.results[m].id.clone();
+                let music_cmd = self.main_cmds[m].clone();
+                let mut longest: f64 = 0.0;
+                for &i in &sounds {
+                    let s = &self.results[i];
+                    let secs = MIX_AT_SECS
+                        + s.onset.unwrap_or(0.0)
+                        + s.duration.min(MIX_DURING_MAX_SECS)
+                        + MIX_AFTER_SECS.1
+                        + 0.3;
+                    longest = longest.max(secs);
+                    let mut c = music_cmd.clone();
+                    c.id = format!("{}+{MIX_AT_SECS}+{}", music_cmd.id, s.id);
+                    c.name = s.name.clone();
+                    c.slot = Some(i);
+                    c.sends.push(Send::Wait((MIX_AT_SECS * 1000.0) as u32));
+                    c.sends.extend(self.main_cmds[i].sends.iter().copied());
+                    c.check = Some(DuckTake {
+                        kind: TakeKind::MixWith,
+                        secs,
+                    });
+                    cmds.push(c);
+                }
+                let mut alone = music_cmd;
+                alone.slot = Some(m);
+                alone.check = Some(DuckTake {
+                    kind: TakeKind::MixMusic,
+                    secs: longest,
+                });
+                // The music alone goes first, before the takes it is compared with.
+                let at = sounds.len();
+                cmds.insert(at, alone);
+                report.note = Some(format!(
+                    "{} sound(s): each with only the voice chip ({VOICE_CHIP}*) heard, then over the music {} with only the music chip ({FM_CHIP}*) heard, sent {MIX_AT_SECS} s in",
+                    sounds.len(),
+                    report.music
+                ));
+            }
+            None => {
+                report.note = Some(format!(
+                    "{} sound(s) with only the voice chip heard; no music loop written to play under them: ducking and stops not measured",
+                    sounds.len()
+                ));
+            }
+        }
+        self.mix_report = Some(report);
+        cmds
+    }
+
+    /// A chips pass recording: its measures go into the sound's `mix`.
+    fn finish_chip_take(&mut self, rec: Recording, a: Analysis) {
+        let (Some(take), Some(i)) = (rec.cmd.check, rec.cmd.slot) else {
+            return;
+        };
+        let (ch, rate) = (self.channels.max(1), self.rate);
+        let x = ducking::mono(&a.blocked, ch);
+        match take.kind {
+            TakeKind::ChipVoice => {
+                // Against the written file, over the same stretch of time from the command:
+                // the file starts at the whole sound's onset, which the voice chip's own
+                // sound may follow (a sound that starts on the DAC).
+                let (onset, dur) = {
+                    let r = &self.results[i];
+                    (r.onset.unwrap_or(0.0), r.duration.min(VOICE_TAKE_MAX_SECS))
+                };
+                let (from, n) = ((onset * rate as f64) as usize, (dur * rate as f64) as usize);
+                let voice: Vec<f64> = {
+                    let blocked = dc_block(&rec.samples, ch, &rec.start_idle, rate);
+                    let m = ducking::mono(&blocked, ch);
+                    (from..from + n)
+                        .map(|k| m.get(k).copied().unwrap_or(0.0))
+                        .collect()
+                };
+                let full = self.results[i].file.as_ref().and_then(|f| {
+                    let mut r = hound::WavReader::open(self.opts.out_dir.join(f)).ok()?;
+                    let raw: Vec<i16> = r.samples::<i16>().filter_map(Result::ok).collect();
+                    let blocked = dc_block(
+                        &raw[..(n * ch).min(raw.len())],
+                        ch,
+                        &vec![raw.first().map_or(0, |&v| v as i32); ch],
+                        rate,
+                    );
+                    Some(ducking::mono(&blocked, ch))
+                });
+                let rms = |v: &[f64]| {
+                    (!v.is_empty()).then(|| {
+                        10.0 * (v.iter().map(|s| s * s).sum::<f64>() / v.len() as f64)
+                            .max(1e-12)
+                            .log10()
+                    })
+                };
+                let voice_db = match (rms(&voice), full.as_deref().and_then(rms)) {
+                    (Some(v), Some(f)) => Some(round2((v - f).max(-99.0))),
+                    (None, Some(_)) => Some(-99.0),
+                    _ => None,
+                };
+                let mix = self.results[i].mix.get_or_insert_with(Default::default);
+                mix.voice_db = voice_db;
+                if voice_db.is_some_and(|v| v >= VOICE_SHARE_DB) {
+                    mix.chip = Some("voice");
+                } else if mix.chip.is_none() {
+                    mix.chip = Some("other");
+                }
+                eprintln!(
+                    " voice chip {}  [{}]",
+                    voice_db.map_or("n/a".into(), |v| format!("{v:+.1} dB")),
+                    mix.chip.unwrap_or("?")
+                );
+            }
+            TakeKind::MixMusic => {
+                let env = envelope_db(&x, rate, MIX_WIN_SECS);
+                eprintln!(" {:.1} s of music", env.len() as f64 * MIX_WIN_SECS);
+                self.mix_music = Some(env);
+            }
+            TakeKind::MixWith => {
+                let Some(music) = self.mix_music.as_ref() else {
+                    return;
+                };
+                let env = envelope_db(&x, rate, MIX_WIN_SECS);
+                let s = &self.results[i];
+                let music_onset = rec.first_loud.map_or(0.0, |f| f as f64 / rate as f64);
+                // The command went out MIX_AT_SECS after the music's first byte; the takes
+                // start at the music's first sound.
+                let t0 = MIX_AT_SECS - music_onset + s.onset.unwrap_or(0.0);
+                let dur = s.duration;
+                let gain = |from: f64, to: f64| {
+                    let (a, b) = (
+                        (from / MIX_WIN_SECS).ceil() as usize,
+                        (to / MIX_WIN_SECS) as usize,
+                    );
+                    // The take is trimmed at its last sound: past it, silence.
+                    let mut g: Vec<f64> = (a..b.min(music.len()))
+                        .filter(|&w| music[w] > -70.0)
+                        .map(|w| env.get(w).copied().unwrap_or(-120.0) - music[w])
+                        .collect();
+                    g.sort_by(f64::total_cmp);
+                    let med = *g.get(g.len() / 2)?;
+                    // Spread: the median absolute deviation, as a standard deviation.
+                    let mut dev: Vec<f64> = g.iter().map(|v| (v - med).abs()).collect();
+                    dev.sort_by(f64::total_cmp);
+                    let sd = 1.4826 * dev[dev.len() / 2];
+                    Some((med, sd, g.len()))
+                };
+                // Before the command: the two takes of the music differ by the chip's own
+                // drift (FM replays are not sample-exact), which sets how small a duck can be
+                // told from it.
+                let before = gain(MIX_BEFORE_FROM_SECS, t0 - MIX_WIN_SECS);
+                let during = gain(t0, t0 + dur.min(MIX_DURING_MAX_SECS));
+                let after = (dur <= MIX_DURING_MAX_SECS)
+                    .then(|| gain(t0 + dur + MIX_AFTER_SECS.0, t0 + dur + MIX_AFTER_SECS.1))
+                    .flatten();
+                let base = before.map_or(0.0, |b| b.0);
+                let rel = |g: Option<(f64, f64, usize)>| g.map(|g| round2(g.0 - base));
+                // A move within this of 0 is the drift: 2.5 standard errors of the medians.
+                let noise = match (before, during) {
+                    (Some(b), Some(d)) => {
+                        2.5 * 1.25 * (b.1.powi(2) / b.2 as f64 + d.1.powi(2) / d.2 as f64).sqrt()
+                    }
+                    _ => f64::INFINITY,
+                };
+                let (during, after) = (rel(during), rel(after));
+                let mix = self.results[i].mix.get_or_insert_with(Default::default);
+                mix.music_before_db = before.map(|b| round2(b.0));
+                mix.music_noise_db = noise.is_finite().then(|| round2(noise));
+                mix.music_during_db = during;
+                mix.music_after_db = after;
+                let fm = during.is_some_and(|d| d >= MIX_FM_MIN_DB.max(noise));
+                if fm && mix.chip != Some("voice") {
+                    mix.chip = Some("fm");
+                }
+                mix.stops_music = after.is_some_and(|a| a <= MIX_STOP_DB);
+                mix.ducks_music_db = during.filter(|&d| {
+                    !fm && d <= -(MIX_DUCK_MIN_DB.abs().max(noise)) && !mix.stops_music
+                });
+                eprintln!(
+                    " music {} while it plays, {} after (drift +/-{:.1} dB){}{}",
+                    during.map_or("n/a".into(), |d| format!("{d:+.1} dB")),
+                    after.map_or("n/a".into(), |d| format!("{d:+.1} dB")),
+                    noise,
+                    if mix.stops_music {
+                        "  STOPS THE MUSIC"
+                    } else {
+                        ""
+                    },
+                    if fm {
+                        "  (plays on the music chip)"
+                    } else {
+                        ""
+                    }
+                );
+                let (voice, fm_n, duck, stop) = self
+                    .results
+                    .iter()
+                    .filter_map(|s| s.mix.as_ref())
+                    .fold((0, 0, 0, 0), |(v, f, d, st), m| {
+                        (
+                            v + usize::from(m.chip == Some("voice")),
+                            f + usize::from(m.chip == Some("fm")),
+                            d + usize::from(m.ducks_music_db.is_some()),
+                            st + usize::from(m.stops_music),
+                        )
+                    });
+                if let Some(r) = self.mix_report.as_mut() {
+                    r.measured += 1;
+                    (r.voice_lines, r.on_music_chip, r.ducking, r.stopping) =
+                        (voice, fm_n, duck, stop);
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub fn duck_report(&self) -> Option<&DuckCheckReport> {
         self.duck_report.as_ref()
     }
@@ -2389,6 +2801,7 @@ impl Extractor {
                 return;
             }
             TakeKind::Mixed(n) => n,
+            TakeKind::ChipVoice | TakeKind::MixMusic | TakeKind::MixWith => return,
         };
         let rate = self.rate;
         let (Some(m), Some((c, c_onset)), Some(report)) = (
@@ -2539,9 +2952,19 @@ impl Extractor {
                 format!("{} (at factory {}, {:+} levels)", cmd.id, a.bytes, a.levels)
             }
             (Pass::DuckCheck, _) => format!("{} (ducking check)", cmd.id),
+            (Pass::Chips, _) => match cmd.check.map(|c| c.kind) {
+                Some(TakeKind::ChipVoice) => format!("{} (voice chip alone)", cmd.id),
+                Some(TakeKind::MixMusic) => format!("{} (music chip alone)", cmd.id),
+                _ => format!("{} (over the music, music chip alone)", cmd.id),
+            },
             _ => cmd.id.clone(),
         };
         eprint!("  {what} {:<32}", cmd.name);
+        self.solo(match cmd.check.map(|c| c.kind) {
+            Some(TakeKind::ChipVoice) => Some(VOICE_CHIP),
+            Some(TakeKind::MixMusic | TakeKind::MixWith) => Some(FM_CHIP),
+            _ => None,
+        });
         self.sender.extend(cmd.sends.iter().copied());
         let search = (matches!(self.pass, Pass::Main | Pass::Retry)
             && self.opts.loop_max_secs > 0.0)
@@ -2723,7 +3146,13 @@ impl Extractor {
                         return self.scenario_cmd(want);
                     }
                     let bytes = parse_id(want);
-                    let id = format!("0x{}", hex(&bytes));
+                    // As the command list names it (a WPCS bank filler dropped).
+                    let id = self
+                        .game_cmd(&Entry {
+                            bytes: bytes.clone(),
+                            name: String::new(),
+                        })
+                        .id;
                     cmds.iter()
                         .find(|c| c.id == id)
                         .cloned()
@@ -2789,10 +3218,15 @@ impl Extractor {
             (sends, board)
         } else {
             let b = if mask == 2 { 1 } else { 0 };
-            (board_sends(mask, b, &e.bytes), b)
+            (board_sends(mask, b, &self.wpcs_bank(b, &e.bytes)), b)
+        };
+        let bytes = if mask == 3 {
+            e.bytes.clone()
+        } else {
+            self.wpcs_bank(if mask == 2 { 1 } else { 0 }, &e.bytes)
         };
         Cmd {
-            id: format!("0x{}", hex(&e.bytes)),
+            id: format!("0x{}", hex(&bytes)),
             name: e.name.clone(),
             board: board_typestr(board).unwrap_or_default(),
             board_no: board,
@@ -2800,6 +3234,19 @@ impl Extractor {
             slot: None,
             alt: None,
             check: None,
+        }
+    }
+
+    /// WPCS: sounds.dat writes a sound of the second bank (`7A xx`, which the game sends as
+    /// two bytes, and which libaltsound sees as `0x7Axx`) with a filler byte in front,
+    /// `01 7A xx` (Twilight Zone's 142 entries), so that PinMAME's commander, which sends
+    /// pairs, puts `7A` second. Sent as is, the filler is a command of its own: on Twilight
+    /// Zone `01` fades the music out, and every such sound seemed to stop it. The filler is
+    /// dropped: the command is `7A xx`.
+    fn wpcs_bank(&self, board: c_int, bytes: &[u8]) -> Vec<u8> {
+        match bytes {
+            [_, 0x7A, x] if self.families[board as usize] == "WPCS" => vec![0x7A, *x],
+            _ => bytes.to_vec(),
         }
     }
 
@@ -2849,6 +3296,9 @@ impl Extractor {
     }
 
     fn finish(&mut self, rec: Recording, ended_by: &'static str) {
+        if self.pass == Pass::Chips {
+            self.solo(None);
+        }
         if let (Some(dir), Some(p)) = (std::env::var_os("R2A_SEQ_DUMP"), &self.probe)
             && !rec.seq.at.is_empty()
         {
@@ -2864,6 +3314,7 @@ impl Extractor {
         match self.pass {
             Pass::VolumeCheck => self.finish_check(rec, a, ended_by),
             Pass::FactoryOffset => self.finish_offset(rec, a, ended_by),
+            Pass::Chips => self.finish_chip_take(rec, a),
             Pass::DuckCheck => self.finish_duck_take(rec, a),
             Pass::Main | Pass::Retry => self.finish_sound(rec, a, ended_by),
         }
@@ -2963,6 +3414,7 @@ impl Extractor {
             idle_level: self.idle.first().copied().unwrap_or(0),
             onset: rec.first_loud.map(|f| round3(f as f64 / rate as f64)),
             dcs,
+            mix: None,
         };
         match rec.cmd.slot {
             // A retry that played something replaces the first try.
@@ -3188,6 +3640,7 @@ impl Extractor {
             board_resets: self.board_resets,
             dc_blocked_wav: self.opts.dc_block,
             dcs: self.dcs_report(),
+            mix_check: self.mix_report.as_ref(),
             sounds: &self.results,
         };
         let path = self.opts.out_dir.join("manifest.json");
@@ -3605,6 +4058,19 @@ fn held_dc_start(s: &[i16], ch: usize, first: usize, end: usize, rate: u32) -> u
         cut = prev_last;
     }
     cut
+}
+
+/// The rms level of `x` per window of `win` seconds, in dB (floored at -120).
+fn envelope_db(x: &[f64], rate: u32, win: f64) -> Vec<f64> {
+    let n = ((win * rate as f64) as usize).max(1);
+    x.chunks_exact(n)
+        .map(|w| {
+            10.0 * (w.iter().map(|v| v * v).sum::<f64>() / n as f64)
+                .max(1e-12)
+                .log10()
+                - 90.3
+        })
+        .collect()
 }
 
 /// "0x0186" or "0186" -> [01, 86]; an odd digit count gets a leading zero.

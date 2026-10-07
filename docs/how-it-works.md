@@ -276,7 +276,58 @@ measured and counts as a mismatch. The boards are reset once before the check (o
 and on afm_113b the first take of music `0011` then played another track. It adds about a minute of emulation. Only DCS boards
 replay a sound sample-exactly (two takes correlate at 0.998+); on Whitestar (apollo13) they
 correlate at 0.3 to 0.99 and the fit means nothing, so there is no check, and no reading,
-on other boards. The research behind this: [ducking-study.md](ducking-study.md).
+on the BSMT boards. WPCS and System 11 are measured chip by chip instead (below). The research behind this: [ducking-study.md](ducking-study.md).
+
+### Ducking, stops and channels (WPCS and System 11)
+
+These boards have no track programs to read: their sound program is 6809 (or 6808) code.
+What it does to the music is measured instead, chip by chip, with PinMAME's mixer: each
+chip's output is a mixer channel (`YM2151 #0 Ch1/Ch2`, `DAC #0`, `HC55536 #0`; System 11
+has a DAC and a CVSD per board), and setting a channel's mixing level to 0 mutes it without
+touching the emulation (`mixer_set_mixing_level`, called from Rust; the levels the boot
+left are restored before PinMAME stops, since it saves them in the machine's cfg and the
+next boot would start muted). After the factory offset pass, the **chips pass** (on by
+default, `--no-chip-check` skips it) plays every written sound that is not a loop:
+
+1. with only the **voice chip** (the HC55516/HC55536 CVSD, `HC555*`) heard, at most 2.5 s:
+   its level against the written file over the same length. Within 6 dB, most of the sound
+   is on that chip (`mix.voice_db`, `mix.chip` `voice`);
+2. sent 2 s into the loudest written music loop, with only the **music chip** (the YM2151)
+   heard; the music alone is played once first, the same way. The two takes are compared
+   as envelopes (rms per 0.1 s; FM replays are not sample-exact, two takes of the same
+   music differ by +2.9 dB at the sample level): the median gain before the command is the
+   takes' own drift, and its spread, as 2.5 standard errors of the medians, the smallest
+   move told from it (`music_noise_db`, 0.2 to 1.7 dB). Relative to before, the music's
+   gain while the sound plays (`music_during_db`, at most its first 6 s) and from 0.3 to
+   1.3 s after it ends (`music_after_db`) say whether it **ducks** the music (by 1.5 dB
+   or more, and more than the drift: `ducks_music_db`), **stops** it (-20 dB or less
+   after: `stops_music`) or **plays on the music chip** itself (+1.5 dB or more: `chip`
+   `fm`; its ducking cannot be told from its own sound).
+
+The pass adds two takes per sound: 1976 s of emulation on Twilight Zone (257 sounds,
+about 10 minutes of wall time), 1337 s on Whirlwind (167). The manifest's `mix_check` sums it up (the music used, the channels, the
+counts).
+
+On Twilight Zone (WPCS) speech and booms are on the CVSD (a boom is a CVSD sample like a
+voice line, so the chip alone does not tell a voice line from an effect: the name does),
+FM jingles and menu sounds on the YM2151, the drums of the music on the DAC. Over music
+`1C`: 141 of the 257 sounds are on the voice chip (91 of them voice lines), 7 on the
+music chip; no voice line lowers the music by more than 2.4 dB, but 36 jingles and effects
+lower it by 1.7 to 13.8 dB while they play (they take some of the YM2151's voices: the
+same Clock Chime raised music `03`, quieter, by 3 dB instead), and the tilts `D3` and `D4`
+stop it. The second bank's filler (`01` before `7A xx`, see Commands) used to make all its
+141 sounds stop the music. On Whirlwind (System 11, two boards) 53 of 167 sounds are on a
+voice chip, 44 on the music chip, none lowers the music `0166`, and 11 sounds of the music
+board end it: a command of that board replaces the music it was playing.
+
+How the measures map onto the pack:
+
+| column | rule | what is exact, what is lost |
+|---|---|---|
+| `CHANNEL` | 1 (jingle: one at a time) for a sound on the voice chip, which plays one sound at a time on the board, a new one cutting the previous; 0 for a non-voice sound that ends the music (System 11C: a command of the music board ends the music it was playing), which takes the music's place as on the board; -1 otherwise | The board may also refuse a sound of lower priority, which AltSound cannot. A sound on the music chip takes some of its voices from the music; AltSound plays both in full |
+| `TYPE` | `callout` for a sound on the voice chip unless its name says it is an effect (`SFX:`); `sfx` for the rest; `music` as before | Without sounds.dat names (System 11), every voice-chip sound is a callout |
+| `DUCK` | `round(100 * 10^(dB/20))` of the measured duck, 100 when none | Measured on one music: a sound may duck another music differently |
+| `STOP` | 1 for a jingle that stops the music | A non-voice sound that stops it goes on the music channel instead (above) |
 
 ### Factory mode (the default; `--no-factory` turns it off)
 
@@ -610,6 +661,13 @@ leaving out those that change the board's state (`commands_from` says what was s
 - WPCS: bytes 01..FF without the tempo/volume bytes of sounds.dat `wpcs:` (1E-2F, 60-72) and
   the prefixes 79 (volume) and 7A (16-bit commands).
 - Other boards: bytes 01..FF.
+
+**WPCS second bank**: sounds.dat writes the sounds of the `7A` bank with a filler byte in
+front, `01 7A xx` (Twilight Zone's 142 entries), so that PinMAME's commander, which sends
+byte pairs, puts `7A` second. The game sends `7A xx`, and libaltsound keys it `0x7Axx`.
+Sent as is, the filler is a command of its own (on Twilight Zone `01` fades the music out
+over a second), so it is dropped: the command and its id are `7A xx` (`--only` takes either
+form).
 
 On two-board machines the id is `board<<8 | byte`, so `0x0105` means byte 05 on board 1.
 `--stop` overrides the stop. It uses the same notation as `--only`.

@@ -61,8 +61,9 @@ manifest.json, cold-boot.json and factory-nvram/.
 
 The pack is a starting point: every sound plays at the same level. On DCS boards
 the channels and the ducking come from the ROM's own track programs (the music is
-lowered under a sound by as much as the real board lowers it); on the other boards
-nothing is ducked or stopped. Do the artistic pass (ducking, stops, gains) in an
+lowered under a sound by as much as the real board lowers it); on WPCS and System 11
+boards they are measured chip by chip (the chips pass); on the other boards nothing
+is ducked or stopped. Do the artistic pass (ducking, stops, gains) in an
 AltSound editor such as VPin Studio. AltSound loops whole files only
 (https://github.com/vpinball/libaltsound/issues/14): a loop with an intro of its own
 (a fanfare before the loop) plays from an extended file, the intro then whole cycles
@@ -205,6 +206,14 @@ struct Cli {
     /// times (Minus when negative), print the DAC writes and save the nvram
     #[arg(long, hide = true, value_name = "N", allow_negative_numbers = true)]
     sam_volume_test: Option<i32>,
+    /// WPCS and System 11: skip the chips pass (each sound again with only its voice chip
+    /// heard, and over a music with only the music chip heard), which finds the voice lines,
+    /// the ducking and the stops for the pack
+    #[arg(long)]
+    no_chip_check: bool,
+    /// Diagnostic: mute every mixer channel whose name does not contain this (e.g. YM2151)
+    #[arg(long, hide = true, value_name = "NAME")]
+    solo: Option<String>,
     /// Diagnostic: send the volume (and, on Data East, the music volume and stop) once
     /// after the boot instead of before every command
     #[arg(long, hide = true)]
@@ -437,6 +446,8 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             dump_region: cli.dump_sound_region.clone(),
             verbose: cli.verbose,
             no_refresh: cli.no_refresh,
+            solo: cli.solo.clone(),
+            chip_check: !cli.no_chip_check,
             bsmt,
         },
         dat,
@@ -498,6 +509,21 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             },
             r.files_referenced
         );
+        if let Some(c) = &r.chips {
+            println!(
+                "  altsound (chips): voice chip -> CHANNEL 1 {} row(s) ({} callouts), {} row(s) duck the music (DUCK {}), {} STOP, {} on the music channel (they end the music)",
+                c.voice_chip_rows,
+                c.callout_rows,
+                c.ducking_rows,
+                c.duck_values
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join("/"),
+                c.stop_rows,
+                c.music_channel_rows,
+            );
+        }
         if let Some(d) = &r.dcs {
             println!(
                 "  altsound (DCS): music channel 0 {} row(s), voice channel {} -> CHANNEL 1 {} row(s), {} row(s) duck the music (DUCK {}), {} STOP",
@@ -739,6 +765,18 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
             ),
             None => println!("    as shipped: n/a (factory offset not measured)"),
         }
+    }
+    if let Some(r) = x.mix_report() {
+        println!(
+            "  chips: {} sound(s) over music {}: {} voice line(s), {} on the music chip, {} duck the music, {} stop it{}",
+            r.measured,
+            if r.music.is_empty() { "-" } else { &r.music },
+            r.voice_lines,
+            r.on_music_chip,
+            r.ducking,
+            r.stopping,
+            r.note.as_ref().map_or(String::new(), |n| format!(" ({n})"))
+        );
     }
     if let Some(r) = x.duck_report() {
         match &r.note {

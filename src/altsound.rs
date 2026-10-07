@@ -18,9 +18,11 @@
 //! - DCS: CHANNEL, DUCK and STOP (AltSound), TYPE and the ducking profiles (G-Sound) come
 //!   from the track programs (`dcsrom::command_effects`, in `manifest.json` as `dcs`): the
 //!   music is DCS channel 0, the one voice channel without twins is the jingle channel
-//!   (one line at a time), and DUCK is the depth the program lowers the music by. Other
-//!   boards keep DUCK 100 and STOP 0: their sound programs are CPU code, nothing says how
-//!   they mix. The rest of the artistic pass is left to an editor such as VPin Studio.
+//!   (one line at a time), and DUCK is the depth the program lowers the music by.
+//! - WPCS and System 11: the same columns from the chips pass (`SoundInfo::mix`,
+//!   `apply_chips`). Other boards keep DUCK 100 and STOP 0: their sound programs are CPU
+//!   code, nothing says how they mix. The rest of the artistic pass is left to an editor
+//!   such as VPin Studio.
 
 use std::fs;
 use std::io;
@@ -109,6 +111,26 @@ pub struct PackReport {
     pub files_referenced: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dcs: Option<DcsPack>,
+    /// WPCS and System 11: how the chips pass (`SoundInfo::mix`) was mapped onto the pack.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chips: Option<ChipsPack>,
+}
+
+/// WPCS and System 11: the rows' CHANNEL, TYPE, DUCK and STOP from the chips pass.
+#[derive(Debug, Default, serde::Serialize)]
+pub struct ChipsPack {
+    /// Rows on the voice chip (one sound at a time on the machine): AltSound's jingle
+    /// channel (CHANNEL 1); of them, voice lines (G-Sound callouts).
+    pub voice_chip_rows: usize,
+    pub callout_rows: usize,
+    pub ducking_rows: usize,
+    pub duck_values: Vec<u32>,
+    pub stop_rows: usize,
+    /// Other sounds that end the music: on the music channel (CHANNEL 0), which they take.
+    pub music_channel_rows: usize,
+    pub callout_profiles: Vec<u32>,
+    pub sfx_profiles: Vec<u32>,
+    pub limits: Vec<String>,
 }
 
 /// DCS: how the track programs were mapped onto the pack.
@@ -870,6 +892,9 @@ pub fn write_pack(
     report.rows = rows.len();
     report.files_referenced = referenced.len();
     report.dcs = apply_dcs(&mut rows, &row_sound, sounds, &twins);
+    if report.dcs.is_none() {
+        report.chips = apply_chips(&mut rows, &row_sound, sounds);
+    }
 
     if merge_twins {
         for t in &twins {
@@ -887,9 +912,10 @@ pub fn write_pack(
         }
     }
 
-    let ini = match &report.dcs {
-        Some(d) => altsound_ini_dcs(&d.callout_profiles, &d.sfx_profiles),
-        None => altsound_ini(),
+    let ini = match (&report.dcs, &report.chips) {
+        (Some(d), _) => altsound_ini_dcs(&d.callout_profiles, &d.sfx_profiles),
+        (None, Some(c)) => altsound_ini_dcs(&c.callout_profiles, &c.sfx_profiles),
+        _ => altsound_ini(),
     };
     for (name, text) in [
         (ALTSOUND_CSV, altsound_csv(&rows)),
@@ -974,6 +1000,60 @@ fn apply_dcs(
             lost_stops.join(" ")
         ));
     }
+    Some(pack)
+}
+
+/// WPCS and System 11: CHANNEL, TYPE, DUCK and STOP from the chips pass. A sound on the
+/// voice chip (HC55516: the board plays one at a time, a new one cuts the previous) goes on
+/// AltSound's jingle channel, and is a G-Sound callout unless its name says it is a sound
+/// effect (Twilight Zone's booms are on that chip too); DUCK is how much it lowered the
+/// music chip; a jingle that stopped the music stops it (STOP 1), another sound that ended
+/// it goes on the music channel. None when no row was measured.
+fn apply_chips(rows: &mut [Row], row_sound: &[usize], sounds: &[SoundInfo]) -> Option<ChipsPack> {
+    let mix = |r: usize| sounds[row_sound[r]].mix.as_ref();
+    if !(0..rows.len()).any(|r| mix(r).is_some()) {
+        return None;
+    }
+    let mut pack = ChipsPack::default();
+    for (r, row) in rows.iter_mut().enumerate() {
+        let Some(m) = mix(r) else { continue };
+        if row.kind == Kind::Music && (row.looped || row.continuous) {
+            continue;
+        }
+        let voice = m.chip == Some("voice");
+        if voice {
+            row.channel = 1;
+            pack.voice_chip_rows += 1;
+            if row.kind != Kind::Sfx || sounds[row_sound[r]].name.trim().is_empty() {
+                row.gtype = GType::Callout;
+                pack.callout_rows += 1;
+            }
+        }
+        if let Some(db) = m.ducks_music_db {
+            row.duck = (100.0 * 10f64.powf(db / 20.0)).round().clamp(0.0, 100.0) as u32;
+            pack.ducking_rows += usize::from(row.duck < 100);
+        }
+        if m.stops_music {
+            if voice {
+                row.stop = true;
+                pack.stop_rows += 1;
+            } else {
+                // It takes the music's place on the board (System 11C: any command of the
+                // music board ends the music): the music channel does the same.
+                row.channel = 0;
+                pack.music_channel_rows += 1;
+            }
+        }
+    }
+    let mut values: Vec<u32> = rows.iter().map(|r| r.duck).filter(|&d| d < 100).collect();
+    values.sort_unstable_by(|a, b| b.cmp(a));
+    values.dedup();
+    pack.duck_values = values;
+    (pack.callout_profiles, pack.sfx_profiles) = assign_profiles(rows);
+    pack.limits = vec![
+        "the voice chip plays one sound at a time, as AltSound's jingle channel; the board may also refuse a lower-priority sound, which AltSound cannot".into(),
+        "a sound on the music chip takes some of its voices from the music; AltSound plays both in full".into(),
+    ];
     Some(pack)
 }
 
@@ -1096,6 +1176,7 @@ fn annotate_manifest(
         "merged_twins": report.merged_twins,
         "files_referenced": report.files_referenced,
         "dcs": report.dcs,
+        "chips": report.chips,
         "twin_test": {
             "max_length_diff_samples": TWIN_MAX_LENGTH_DIFF,
             "max_lufs_diff": TWIN_MAX_LUFS_DIFF,
@@ -1313,6 +1394,75 @@ mod tests {
         let ini = altsound_ini_dcs(&[], &[50]);
         assert!(ini.contains("[callout]\nducks =\n"), "{ini}");
         assert!(!ini.contains("[callout_ducking_profiles]"), "{ini}");
+    }
+
+    #[test]
+    fn chips_rows() {
+        use crate::extract::MixInfo;
+        // A music loop, a voice line that stops the music, an unnamed sound on the voice
+        // chip that ducks it, a boom on the voice chip, an FM sound that ends the music.
+        let mix = |chip, duck: Option<f64>, stop| MixInfo {
+            chip: Some(chip),
+            ducks_music_db: duck,
+            stops_music: stop,
+            ..Default::default()
+        };
+        let cases = [
+            ("Music: Main", Kind::Music, None),
+            (
+                "\"Extra ball\"",
+                Kind::Callout,
+                Some(mix("voice", None, true)),
+            ),
+            ("", Kind::Sfx, Some(mix("voice", Some(-6.0), false))),
+            ("SFX: Boom", Kind::Sfx, Some(mix("voice", None, false))),
+            ("", Kind::Sfx, Some(mix("fm", None, true))),
+        ];
+        let mut rows: Vec<Row> = cases
+            .iter()
+            .enumerate()
+            .map(|(i, (n, k, _))| {
+                Row::plain(
+                    i as u32,
+                    *k,
+                    i == 0,
+                    false,
+                    csv_name(n, "x"),
+                    format!("{i}.wav"),
+                )
+            })
+            .collect();
+        let infos: Vec<SoundInfo> = cases
+            .iter()
+            .enumerate()
+            .map(|(i, (n, _, m))| {
+                let mut s =
+                    SoundInfo::for_test(&format!("0x{i:04X}"), n, effects(0, &[0], None, &[]));
+                s.dcs = None;
+                s.mix = m.clone();
+                s
+            })
+            .collect();
+        let row_sound: Vec<usize> = (0..rows.len()).collect();
+        let pack = apply_chips(&mut rows, &row_sound, &infos).unwrap();
+        let a = altsound_csv(&rows);
+        assert!(a.contains("0x0000,0,100,100,100,0,"), "{a}");
+        assert!(a.contains("0x0001,1,100,100,0,1,"), "{a}");
+        assert!(a.contains("0x0002,1,50,100,0,0,"), "{a}");
+        assert!(a.contains("0x0003,1,100,100,0,0,"), "{a}");
+        assert!(a.contains("0x0004,0,100,100,0,0,"), "{a}");
+        let g = gsound_csv(&rows);
+        assert!(g.contains("0x0001,callout,100,0,"), "{g}");
+        assert!(g.contains("0x0002,callout,100,1,"), "{g}");
+        assert!(g.contains("0x0003,sfx,100,0,"), "{g}");
+        assert_eq!(
+            (pack.voice_chip_rows, pack.callout_rows, pack.stop_rows),
+            (3, 2, 1)
+        );
+        assert_eq!(
+            (pack.music_channel_rows, pack.duck_values.clone()),
+            (1, vec![50])
+        );
     }
 
     #[test]

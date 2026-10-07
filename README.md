@@ -123,6 +123,14 @@ when a sound ends, where the board fades it back over about 0.15 s, and when two
 overlap it keeps only the deepest duck, where the board adds them up
 ([libaltsound issue #15](https://github.com/vpinball/libaltsound/issues/15)).
 
+**On WPCS and System 11 boards (Williams 1987-1993), the mix is measured.** Each sound is
+played again with only one chip of the board heard (PinMAME's mixer can mute a chip): with
+the voice chip alone, to tell what plays on it (it plays one sound at a time, so these go
+on the jingle channel, where a new one cuts the previous), and over a music with the music
+chip alone, to see whether the sound lowers the music (**DUCK**), stops it (**STOP**, or the
+music channel for a sound that ends it). On Twilight Zone, FM jingles and effects lower the
+music by 2 to 14 dB while they play; voice lines barely touch it.
+
 **On the other boards**, the sound programs are code for the board's own processor, with
 nothing that says how one sound changes another, so the pack makes nothing up: music on
 the music channel (loops and sounds named "Music:"), the rest as sound effects, voice lines
@@ -139,8 +147,8 @@ What rom2altsound gets out of each sound board family:
 | family | sounds | exact loops | reference volume | ducking (DUCK) | stops (STOP) | channels (CHANNEL / TYPE) |
 |---|---|---|---|---|---|---|
 | Williams/Bally WPC DCS (1993-1999) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ¹ |
-| Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ✅ ⁸ | ❌ | ❌ | ❌ |
-| Williams System 11 | ✅ | ⚠️ ⁵ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ✅ ⁸ | ✅ ¹¹ | ✅ ¹¹ | ✅ ¹¹ |
+| Williams System 11 | ✅ | ⚠️ ⁵ | ✅ ⁴ | ✅ ¹¹ | ✅ ¹¹ | ✅ ¹¹ |
 | Data East (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
 | Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ | ❌ | ❌ | ❌ |
 | Stern SAM | ✅ ⁷ | ✅ ⁷ | ✅ ⁷ | ❌ | ❌ | ❌ |
@@ -194,6 +202,16 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
     the tool waits out the Turbo Cheap Squeak's 5 s self-test. Music loops (see 5): Spy
     Hunter 2 of 2, City Slicker 7 of 10; none of Motordome's 5, whose program keeps a few
     bytes that drift against the music.
+11. Measured chip by chip (see [how it works](docs/how-it-works.md)): each sound is played
+    again with only the voice chip heard, and over a music with only the music chip heard.
+    A sound on the voice chip, which plays one sound at a time, goes on the jingle channel
+    (a callout, unless named as an effect); DUCK is how much a sound lowered the music; a
+    jingle that stopped it has STOP 1, another sound that ended it goes on the music
+    channel. Twilight Zone: 141 of 257 sounds on the voice chip, 40 lower the music (FM
+    jingles and effects by 1.7 to 13.8 dB, as they take some of its voices; voice lines by
+    2.4 dB at most), the tilts stop it; Whirlwind: 53 of 167 on a voice chip, none lowers
+    the music, 11 sounds of the music board end it. Measured over one music: a sound can
+    lower another music differently.
 
 ### Stern SAM
 
@@ -447,6 +465,15 @@ quand un son se termine, alors que la carte le remonte en fondu sur environ 0,15
 deux sons se chevauchent il ne garde que la baisse la plus forte, alors que la carte les
 additionne ([ticket libaltsound n° 15](https://github.com/vpinball/libaltsound/issues/15)).
 
+**Sur les cartes WPCS et System 11 (Williams 1987-1993), le mélange est mesuré.** Chaque
+son est rejoué avec une seule puce de la carte audible (le mélangeur de PinMAME peut couper
+une puce) : avec la puce des voix seule, pour savoir ce qu'elle joue (elle ne joue qu'un son
+à la fois, ces sons vont donc sur la voie jingle, où un nouveau coupe le précédent), et
+par-dessus une musique avec la puce de la musique seule, pour voir si le son baisse la
+musique (**DUCK**), l'arrête (**STOP**, ou la voie musique pour un son qui la termine). Sur
+Twilight Zone, les jingles et effets FM baissent la musique de 2 à 14 dB pendant qu'ils
+jouent ; les voix la touchent à peine.
+
 **Sur les autres cartes**, les programmes sonores sont du code pour le processeur de la
 carte, sans rien qui dise comment un son en change un autre : le pack n'invente donc rien.
 La musique va sur la voie musique (les boucles et les sons nommés « Music: »), le reste se
@@ -464,8 +491,8 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 | famille | sons | boucles exactes | volume de référence | ducking (DUCK) | arrêts (STOP) | voies (CHANNEL / TYPE) |
 |---|---|---|---|---|---|---|
 | Williams/Bally WPC DCS (1993-1999) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ¹ |
-| Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ✅ ⁸ | ❌ | ❌ | ❌ |
-| Williams System 11 | ✅ | ⚠️ ⁵ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ✅ ⁸ | ✅ ¹¹ | ✅ ¹¹ | ✅ ¹¹ |
+| Williams System 11 | ✅ | ⚠️ ⁵ | ✅ ⁴ | ✅ ¹¹ | ✅ ¹¹ | ✅ ¹¹ |
 | Data East (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
 | Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ | ❌ | ❌ | ❌ |
 | Stern SAM | ✅ ⁷ | ✅ ⁷ | ✅ ⁷ | ❌ | ❌ | ❌ |
@@ -523,6 +550,17 @@ reste joué en parallèle.
     Boucles de musique (voir 5) : Spy Hunter 2 sur 2, City Slicker 7 sur 10 ; aucune des 5
     de Motordome, dont le programme garde quelques octets qui dérivent par rapport à la
     musique.
+11. Mesurés puce par puce (voir [comment ça marche](docs/how-it-works.md), en anglais) :
+    chaque son est rejoué avec seule la puce des voix audible, et par-dessus une musique
+    avec seule la puce de la musique audible. Un son sur la puce des voix, qui ne joue qu'un
+    son à la fois, va sur la voie jingle (un « callout », sauf si son nom dit que c'est un
+    effet) ; DUCK est de combien un son a baissé la musique ; un jingle qui l'a arrêtée a
+    STOP 1, un autre son qui l'a terminée va sur la voie musique. Twilight Zone : 141 de
+    257 sons sur la puce des voix, 40 baissent la musique (les jingles et effets FM de 1,7 à
+    13,8 dB, car ils lui prennent des voix ; les voix de 2,4 dB au plus), les « tilt »
+    l'arrêtent ; Whirlwind : 53 de 167 sur une puce des voix, aucun ne baisse la musique,
+    11 sons de la carte musique la terminent. Mesuré sur une seule musique : un son peut
+    baisser une autre musique autrement.
 
 ### Stern SAM
 

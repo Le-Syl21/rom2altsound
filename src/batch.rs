@@ -102,6 +102,7 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
             .map(|v| v.to_string_lossy().into_owned()),
     );
     opt("--stop", cli.stop.clone());
+    opt("--solo", cli.solo.clone());
     opt(
         "--sam-volume-test",
         cli.sam_volume_test.map(|n| n.to_string()),
@@ -124,6 +125,7 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
         ("--merge-twins", cli.merge_twins),
         ("--check-ducking", cli.check_ducking),
         ("--no-refresh", cli.no_refresh),
+        ("--no-chip-check", cli.no_chip_check),
         ("--bsmt-hle", cli.bsmt_hle),
     ] {
         if on {
