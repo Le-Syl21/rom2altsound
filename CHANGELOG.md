@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **Reference volume** on the boards without a volume stage (System 11, Cheap Squeak and
+  Turbo Cheap Squeak, Data East's hardware pot): full scale, reported as such
+  (`reference_volume` in `manifest.json`); WPCS boards are recorded at `79 16 E9`, the
+  loudest level at which no Twilight Zone file clips (`--wpcs-volume`).
+- **Stern SAM**: the factory volume read in the DAC is now shown to be the operator's volume
+  setting (the coin door's volume buttons move it, `factory_offset.verified`).
+- **Loops on the boards older than DCS**: found in the state of the board's processor (the
+  music's sequencer), checked on the audio and cut where two cycles differ least
+  (`method: "sequencer-state"`): Twilight Zone 26 of its 45 musics, Whirlwind 14 of 22,
+  Spy Hunter 2 of 2, City Slicker 7 of 10.
+- **WPCS and System 11 mix**: a chips pass plays each sound again with only one chip
+  heard, and fills CHANNEL, TYPE, DUCK and STOP from what it measures (`mix` in
+  `manifest.json`; `--no-chip-check` skips it).
+- WPCS: the sounds of Twilight Zone's second bank are sent as the game sends them, `7A xx`,
+  without the filler byte sounds.dat puts in front (which faded the music out), and keyed
+  `0x7Axx` in the pack, as libaltsound sees them.
+
 ## 0.1.0 (first release)
 
 rom2altsound turns a pinball ROM's sounds into an AltSound pack for Visual Pinball: one WAV
