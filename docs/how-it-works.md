@@ -321,7 +321,16 @@ apart from isolated clicks. Measured with full sweeps (written files with raw sa
 |---|---|---|---|
 | DCS | `55 AA EF 10` (level 29/31, `--dcs-volume`) | afm_113b `0186` (1 sample), cv_20h `03DE` (2 samples, a 77 ms click that ignores the master volume) | `FF`: afm 5 files (`0186` 68 samples), cv_20h 18 (its loop `0016` 575), mm_109c 24 (`01AB` 99), rs_l6 5 (`0240` 33) |
 | Whitestar | `FE 11 FD` (level 30/31, `--whitestar-volume`) | xfiles `1F` (56 samples, a 50 ms click that ignores the master volume) | `FE 10 FD`: apollo13 `5C` 172 samples, `68` 13 (xfiles: only `1F`) |
-| Data East, System 11 | no master volume: unchanged | | |
+| System 11, Cheap Squeak / Turbo Cheap Squeak, Data East | no software volume stage: always full scale, which is the reference (`reference_volume: "full_scale (no volume stage)"`); on Data East the music level is set to its loudest, `20` | | |
+
+**Boards without a volume stage.** System 11 (`s11s`, `s11cs`, `s11js` in wmssnd.c) and
+Bally's Cheap Squeak and Turbo Cheap Squeak (`by45`, `byTCS` in by35snd.c) write their DACs,
+CVSD and YM2151 directly: no volume register, no `mixer_set_volume`, no volume command in
+their sound programs that PinMAME would see. Data East's BSMT board (`de2s` in desound.c)
+has its master volume on a pot in the power junction box ("it was not done through the
+software"); its bytes `20`..`2F` are a music level the game drives (a music may fade it as
+it ends), which the tool sets to its loudest, `20`, before every command. These boards are
+always at full scale: that is their reference volume, and their factory offset is 0.
 
 Whitestar's top step is not like the others: `FE 10` is 4.8 dB above `FE 11` (apollo13
 offsets to the factory `FE 2C`: -37.4 dB from `FE 10`, -32.6 dB from `FE 11`, i.e. about
@@ -342,9 +351,9 @@ on the warm boot they send `55 AA 67 98` after 6-12 s.
 | DCS channel mix | `55 AB..B0 vv ~vv` (rs_l6 fades `55 AB` FF to 07 and back to FF at boot) | none | |
 | WPCS | `79 vv ~vv`: the game's is read (tz_94h `79 0C F3`), no reference volume (the files are at the game's) | none | `00` |
 | Whitestar BSMT (Sega/Stern) | `FE xx FD`, level = 2F - xx, 0..31 | the master volume (ours with the factory settings, else the game's `FE xx FD`, which it re-sends every 0.5 s) | `00` |
-| Data East BSMT | none (hardware pot) | the music volume `20`..`2F`, then the stop `00` | `00` |
+| Data East BSMT | none (hardware pot in the power box) | the music volume `20`..`2F` (the loudest, `20`, with the reference volume), then the stop `00` | `00` |
 | System 11 (WMSS11, 11C, 11J) | none (no volume stage) | none | `00` / `20` (11C) |
-| Bally Cheap Squeak (BY45), Turbo Cheap Squeak (BYTCS) | none known | none | `00` |
+| Bally Cheap Squeak (BY45), Turbo Cheap Squeak (BYTCS) | none (no volume stage) | none | `00` |
 | Stern SAM | PCM1755 DAC attenuation, `FF` = 0 dB, -0.5 dB per step (read, not driven) | none | none (static, see Stern SAM) |
 
 **DCS**: `55 AA vv ~vv` sets the master volume (`~vv` must be the complement, else the
@@ -756,7 +765,9 @@ recovered_by_retry, ignores_master_volume), `loudness`, the `stop` actually sent
 `ducking_check`). `recording_cap`: `max_secs` (120 s by default),
 `loop_max_secs` (240 s), `loop_hint_max_secs` (900 s) and what they do (see Loops).
 
-Reference mode (the default) adds `levels_note`, `factory_offset_db` (the ROM's offset: 0
+Reference mode (the default) adds `reference_volume` (what each board is recorded at: our
+master volume command, or `full_scale (no volume stage)`; `board N: ...` per board when they
+differ), `levels_note`, `factory_offset_db` (the ROM's offset: 0
 without a master volume, null if not measured), `factory_offset` (`method`, per board the
 `reference_volume`, `factory_volume` and where it comes from, `factory_offset_db`,
 `spread_db` and the `samples`: `id`, `reference_lufs`, `factory_lufs`, `delta_db`, plus a

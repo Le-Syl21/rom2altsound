@@ -661,6 +661,9 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
         x.volume_label()
             .unwrap_or_else(|| "the boards' own level (no volume command)".into())
     );
+    if x.is_reference() {
+        println!("  reference volume: {}", x.reference_volume());
+    }
     let l = x.loudness_report();
     let fmt = |a: &loudness::Aggregate| {
         format!(

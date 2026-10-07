@@ -138,11 +138,11 @@ What rom2altsound gets out of each sound board family:
 |---|---|---|---|---|---|---|
 | Williams/Bally WPC DCS (1993-1999) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ¹ |
 | Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ⚠️ ⁸ | ❌ | ❌ | ❌ |
-| Williams System 11 | ✅ | ⚠️ ³ | ❌ ⁴ | ❌ | ❌ | ❌ |
-| Data East (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ⚠️ ⁶ | ❌ | ❌ | ❌ |
+| Williams System 11 | ✅ | ⚠️ ³ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Data East (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
 | Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ | ❌ | ❌ | ❌ |
 | Stern SAM | ✅ ⁷ | ✅ ⁷ | ⚠️ ⁷ | ❌ | ❌ | ❌ |
-| Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ¹⁰ | ❌ ¹⁰ | ❌ | ❌ | ❌ |
+| Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ¹⁰ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
 ✅ verified, ⚠️ partial, ❌ not available. "Reference volume": every sound recorded at one
 loud volume set the way the game sets it, and the game's own (factory) volume read and
@@ -156,10 +156,14 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
 2. Verified on Twilight Zone (302 of its 307 commands, named from sounds.dat). The
    earlier WPC89 sound board was not tested.
 3. Found in the audio only; this board does not replay a sound sample-exactly.
-4. The board has no volume stage.
+4. No software volume stage: the output is always at full scale, which is then the
+   reference (`reference_volume: "full_scale (no volume stage)"` in `manifest.json`).
+   Checked in PinMAME's board code: nothing on these boards scales the sound.
 5. The music never repeats exactly (Twilight Zone: none of its 45 music tracks within
    4 minutes): it is cut at 2 minutes (`--max-secs`).
-6. Music volume only: the master volume is a hardware knob.
+6. The master volume is a knob in the power box, not in the software. The bytes `20`..`2F`
+   are a music level the game drives (a music can fade it): the files are recorded at its
+   loudest, `20`.
 7. Read from the ROM image, without emulation (see [Stern SAM](#stern-sam)); verified on
    AC/DC LE 1.68. Every sound, and every version of every song as one continuous file,
    looped where the game loops it. The files are at full scale (the reference volume);
@@ -175,8 +179,7 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
     and City Slicker (Turbo Cheap Squeak 2: 133), with no option to add. The stop between
     sounds is `00`; a music it does not stop is ended by a sound board reset, after which
     the tool waits out the Turbo Cheap Squeak's 5 s self-test. No music of the three
-    repeated exactly within 40 s (they are cut at `--max-secs`), and no volume command is
-    known for these boards: the files are at the board's own level.
+    repeated exactly within 40 s (they are cut at `--max-secs`).
 
 ### Stern SAM
 
@@ -441,11 +444,11 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 |---|---|---|---|---|---|---|
 | Williams/Bally WPC DCS (1993-1999) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ¹ |
 | Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ⚠️ ⁸ | ❌ | ❌ | ❌ |
-| Williams System 11 | ✅ | ⚠️ ³ | ❌ ⁴ | ❌ | ❌ | ❌ |
-| Data East (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ⚠️ ⁶ | ❌ | ❌ | ❌ |
+| Williams System 11 | ✅ | ⚠️ ³ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Data East (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
 | Sega / Stern Whitestar (BSMT) ⁹ | ✅ | ⚠️ ⁵ | ✅ | ❌ | ❌ | ❌ |
 | Stern SAM | ✅ ⁷ | ✅ ⁷ | ⚠️ ⁷ | ❌ | ❌ | ❌ |
-| Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ¹⁰ | ❌ ¹⁰ | ❌ | ❌ | ❌ |
+| Bally Cheap Squeak / Turbo Cheap Squeak | ✅ ¹⁰ | ⚠️ ¹⁰ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
 ✅ vérifié, ⚠️ partiel, ❌ non disponible. « Volume de référence » : tous les sons sont
 enregistrés à un même volume fort, réglé comme le jeu le règle, et le volume d'usine du jeu
@@ -460,10 +463,14 @@ reste joué en parallèle.
 2. Vérifié sur Twilight Zone (302 de ses 307 commandes, nommées d'après sounds.dat). La
    carte son WPC89, plus ancienne, n'a pas été testée.
 3. Trouvées dans le son seulement ; cette carte ne rejoue pas un son à l'échantillon près.
-4. La carte n'a pas d'étage de volume.
+4. Aucun étage de volume logiciel : la sortie est toujours à pleine échelle, qui est donc
+   la référence (`reference_volume: "full_scale (no volume stage)"` dans `manifest.json`).
+   Vérifié dans le code des cartes de PinMAME : rien sur ces cartes ne règle le niveau.
 5. La musique ne se répète jamais exactement (Twilight Zone : aucun de ses 45 morceaux en
    4 minutes) : elle est coupée à 2 minutes (`--max-secs`).
-6. Volume de la musique seulement : le volume général est un bouton matériel.
+6. Le volume général est un bouton dans le boîtier d'alimentation, pas dans le logiciel.
+   Les octets `20`..`2F` sont un niveau de musique piloté par le jeu (une musique peut le
+   baisser en finissant) : les fichiers sont enregistrés à son plus fort, `20`.
 7. Lus dans l'image de la ROM, sans émulation (voir [Stern SAM](#stern-sam-1)) ; vérifié
    sur AC/DC LE 1.68. Tous les sons, et chaque version de chaque morceau en un seul
    fichier continu, en boucle là où le jeu le fait boucler. Les fichiers sont à pleine
@@ -481,8 +488,7 @@ reste joué en parallèle.
     sons est `00` ; une musique qu'il n'arrête pas est coupée par une remise à zéro de la
     carte son, après quoi l'outil attend la fin de l'autotest de 5 s de la Turbo Cheap Squeak.
     Aucune musique des trois ne s'est répétée exactement en 40 s (elles sont coupées à
-    `--max-secs`), et aucune commande de volume n'est connue pour ces cartes : les fichiers
-    sont au niveau propre de la carte.
+    `--max-secs`).
 
 ### Stern SAM
 

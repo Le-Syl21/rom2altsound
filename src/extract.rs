@@ -696,6 +696,11 @@ struct Manifest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     game_volume: Option<VolumeReport>,
     volume_init: Option<String>,
+    /// Reference mode: the volume each board is recorded at, its reference: our master
+    /// volume command where the board has one, `volume::FULL_SCALE` where it has no volume
+    /// stage at all (System 11, Cheap Squeak, Data East's hardware pot).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reference_volume: Option<String>,
     /// Reference mode: what the levels below are relative to, and how to get them as shipped.
     #[serde(skip_serializing_if = "Option::is_none")]
     levels_note: Option<&'static str>,
@@ -1570,6 +1575,30 @@ impl Extractor {
         })
     }
 
+    /// The manifest's `reference_volume`: per board, our master volume, or full scale on a
+    /// board without a volume stage; one value when every board has the same.
+    pub fn reference_volume(&self) -> String {
+        let per: Vec<(c_int, String)> = self
+            .board_list()
+            .map(|b| {
+                let label = self.family_label(b);
+                let v = match self.our_master(b) {
+                    Some(bytes) => hex(&bytes),
+                    None if volume::no_volume_stage(&label) => volume::FULL_SCALE.into(),
+                    None => "none: recorded at the game's own volume".into(),
+                };
+                (b, v)
+            })
+            .collect();
+        if per.windows(2).all(|w| w[0].1 == w[1].1) {
+            return per.into_iter().next().map_or(String::new(), |p| p.1);
+        }
+        per.iter()
+            .map(|(b, v)| format!("board {b}: {v}"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
+
     /// The master volume value (`vv` or `xx`) the board is playing at: ours, else the game's.
     fn current_master(&self, board: c_int) -> Option<u8> {
         match self.our_master(board) {
@@ -1748,14 +1777,20 @@ impl Extractor {
         for b in self.board_list() {
             if self.is_de_board(b) {
                 let music = last.iter().find(|v| v.board == b && v.kind == "music");
-                let byte = music.map_or(*volume::DE_MUSIC_VOLUME.start(), |v| v.value);
+                let loudest = *volume::DE_MUSIC_VOLUME.start();
+                let byte = if self.is_reference() {
+                    loudest
+                } else {
+                    music.map_or(loudest, |v| v.value)
+                };
                 self.refresh.extend(addressed(self.mask, b, &[byte, 0x00]));
                 self.refresh_labels.push(format!(
                     "board {b}: {byte:02X} 00 (Data East music volume, {}, then the stop)",
-                    if music.is_some() {
-                        "the game's last one at boot"
-                    } else {
-                        "the board's default: the game sent none at boot"
+                    match music {
+                        _ if self.is_reference() =>
+                            "the loudest, with the reference volume (full scale)".to_string(),
+                        Some(_) => "the game's last one at boot".into(),
+                        None => "the board's default: the game sent none at boot".into(),
                     }
                 ));
                 continue;
@@ -3036,6 +3071,7 @@ impl Extractor {
             factory_volume: factory.then(|| vol.clone()),
             game_volume: (!factory).then_some(vol),
             volume_init: self.volume_label(),
+            reference_volume: self.is_reference().then(|| self.reference_volume()),
             levels_note: self.is_reference().then_some(
                 "every level (per sound and in loudness) is measured on the files, recorded at the reference volume (volume_init); add factory_offset_db for the level at the game's factory volume (loudness.as_shipped)",
             ),

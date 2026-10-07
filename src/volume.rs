@@ -106,6 +106,21 @@ pub fn decode_de_music(board: i32, byte: u8, at: f64) -> Option<VolumeCmd> {
     })
 }
 
+/// Families without any software volume stage: their output is always at full scale,
+/// which is therefore their reference volume. Checked in PinMAME's board code: the System
+/// 11 boards (wmssnd.c `s11s`, `s11cs`, `s11js`) and Bally's Cheap Squeak and Turbo Cheap
+/// Squeak (by35snd.c `by45`, `byTCS`) write their DACs, CVSD and YM2151 directly, with no
+/// volume register and no `mixer_set_volume`; Data East's BSMT board (desound.c `de2s`)
+/// has its master volume on a pot in the power junction box ("it was not done through the
+/// software"), its bytes `20`..`2F` being a music level the game drives, set to the
+/// loudest (`20`) for the recordings. `family` is a label from `Extractor::family_label`.
+pub fn no_volume_stage(family: &str) -> bool {
+    family.starts_with("WMSS11") || matches!(family, "BY45" | "BYTCS" | "BSMT (Data East)")
+}
+
+/// The manifest's `reference_volume` for a board without a volume stage.
+pub const FULL_SCALE: &str = "full_scale (no volume stage)";
+
 /// Why a family never reports a volume, for the summary.
 pub fn none_reason(family: &str) -> &'static str {
     match family {
@@ -116,6 +131,7 @@ pub fn none_reason(family: &str) -> &'static str {
         "BSMT" | "AT91" => "no FE 10..2F seen (Whitestar's master volume command)",
         "BSMT (Data East)" => "Data East sets the master volume with a hardware pot",
         f if f.starts_with("WMSS11") => "System 11 sound boards have no volume stage",
+        "BY45" | "BYTCS" => "Cheap Squeak boards have no volume stage",
         _ => "no known volume command for this board family",
     }
 }
@@ -160,6 +176,23 @@ mod tests {
         );
         assert_eq!(decode_de_music(1, 0x2F, 0.0).unwrap().level, 0);
         assert_eq!(decode_de_music(1, 0x30, 0.0), None);
+    }
+
+    #[test]
+    fn full_scale_families() {
+        for f in [
+            "WMSS11",
+            "WMSS11C",
+            "WMSS11J",
+            "BY45",
+            "BYTCS",
+            "BSMT (Data East)",
+        ] {
+            assert!(no_volume_stage(f), "{f}");
+        }
+        for f in ["DCS", "WPCS", "BSMT", "AT91"] {
+            assert!(!no_volume_stage(f), "{f}");
+        }
     }
 
     #[test]
