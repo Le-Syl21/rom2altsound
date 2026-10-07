@@ -97,11 +97,21 @@ afm_113b/
 ├── g-sound.csv                 G-Sound format (set format = g-sound in altsound.ini to use it)
 ├── altsound.ini                format, and the ROM's volume control turned off
 ├── manifest.json               every measure: names, lengths, loudness, loops, twins...
+├── index.html                  a page to listen to every sound in a browser (see below)
 ├── cold-boot.json              how the factory boot went
 └── factory-nvram/afm_113b.nv   the factory settings the ROM was played with
 ```
 
 Every gain is 100: the files already carry the ROM's own levels.
+
+**`index.html` lists every sound with a play button**: open it straight from the folder
+(double-click, no server, no internet needed). For each sound: its command, its name, its
+length, its loudness and peak, its loop (and a button for the loop alone), its channel,
+DUCK and STOP when known, its twin and what is unusual about it (clipped, blip...). A search
+box, filters (music, voices, effects, loops only) and sorting (by id, length, loudness)
+help find one; Space or Enter plays the selected sound and the arrow keys move. With
+several ROMs, an `index.html` in the output folder links each ROM's page. `--no-html`
+skips them.
 
 **On DCS boards (Williams/Bally 1993-1999), the mix comes from the ROM itself.** Each DCS
 sound command is a small program that says which of the board's channels it plays on and
@@ -439,11 +449,21 @@ afm_113b/
 ├── g-sound.csv                 format G-Sound (mettre format = g-sound dans altsound.ini pour l'utiliser)
 ├── altsound.ini                le format, et le contrôle du volume par la ROM désactivé
 ├── manifest.json               toutes les mesures : noms, durées, niveaux, boucles, jumeaux...
+├── index.html                  une page pour écouter chaque son dans un navigateur (voir plus bas)
 ├── cold-boot.json              le déroulé du démarrage en réglages d'usine
 └── factory-nvram/afm_113b.nv   les réglages d'usine avec lesquels la ROM a été jouée
 ```
 
 Tous les gains sont à 100 : les fichiers ont déjà les niveaux de la ROM.
+
+**`index.html` liste chaque son avec un bouton de lecture** : il s'ouvre directement depuis
+le dossier (double-clic, sans serveur ni internet). Pour chaque son : sa commande, son nom,
+sa durée, son niveau et sa crête, sa boucle (et un bouton pour la boucle seule), sa voie,
+son DUCK et son STOP quand on les connaît, son jumeau et ce qu'il a de particulier (saturé,
+blip...). Une recherche, des filtres (musique, voix, effets, boucles seules) et un tri (par
+numéro, durée, niveau) aident à en trouver un ; Espace ou Entrée joue le son choisi et les
+flèches passent d'un son à l'autre. Avec plusieurs ROM, un `index.html` dans le dossier de
+sortie mène à la page de chacune. `--no-html` ne les écrit pas.
 
 **Sur les cartes DCS (Williams/Bally 1993-1999), le mixage vient de la ROM elle-même.**
 Chaque commande de son DCS est un petit programme qui dit sur quelle voie de la carte elle

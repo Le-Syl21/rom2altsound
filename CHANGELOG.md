@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **A page to listen to the pack**: `index.html` in each ROM folder plays every sound
+  from disk, in any browser, offline, with what the manifest says about it (name, length,
+  loudness, loop, channel, DUCK, STOP, twin, flags), a search box, filters and sorting; a
+  batch also gets an `index.html` linking each ROM's page. `--no-html` skips them.
 - **Reference volume** on the boards without a volume stage (System 11, Cheap Squeak and
   Turbo Cheap Squeak, Data East's hardware pot): full scale, reported as such
   (`reference_volume` in `manifest.json`); WPCS boards are recorded at `79 16 E9`, the

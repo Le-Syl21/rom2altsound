@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="rom2altsound">
+<title><!--TITLE--></title>
+<style>
+:root {
+  --bg: #fbfbfa; --fg: #1d1d1f; --muted: #6b6b70; --line: #e3e3e0; --card: #ffffff;
+  --accent: #2459c9; --accent-fg: #ffffff; --warn: #a3410b; --warn-bg: #fdeee4;
+  --tag-bg: #eef0f3; --row-hi: #edf2fd; --focus: #2459c9;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a; --fg: #e8e8ea; --muted: #9a9aa2; --line: #2e3034; --card: #1f2023;
+    --accent: #7ea6ff; --accent-fg: #0f1115; --warn: #ffb27a; --warn-bg: #3a2416;
+    --tag-bg: #2a2c31; --row-hi: #22293a; --focus: #7ea6ff;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding-bottom: 92px;
+}
+.wrap { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
+header { padding: 20px 0 8px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h1 small { font-weight: normal; color: var(--muted); font-size: 15px; }
+.meta { color: var(--muted); font-size: 13px; margin: 2px 0; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.92em; }
+.bar {
+  position: sticky; top: 0; z-index: 2; background: var(--bg);
+  border-bottom: 1px solid var(--line); padding: 8px 0;
+}
+.bar .wrap { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+input[type=search], select {
+  font: inherit; color: var(--fg); background: var(--card);
+  border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-height: 34px;
+}
+input[type=search] { flex: 1 1 200px; min-width: 0; }
+label.chk { display: inline-flex; gap: 4px; align-items: center; font-size: 14px; white-space: nowrap; }
+#shown { color: var(--muted); font-size: 13px; margin-left: auto; }
+ul#list { list-style: none; margin: 0; padding: 0; }
+li.row {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 2px 12px; align-items: center;
+  padding: 8px 6px; border-bottom: 1px solid var(--line); border-radius: 4px;
+}
+li.row:focus { outline: 2px solid var(--focus); outline-offset: -2px; }
+li.row.playing { background: var(--row-hi); }
+.btns { display: flex; gap: 4px; grid-row: span 2; }
+button {
+  font: inherit; font-size: 13px; cursor: pointer; color: var(--fg); background: var(--card);
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; min-height: 32px;
+}
+button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+button[aria-pressed=true] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button.pk { border-color: var(--accent); }
+button.link { border: 0; background: none; color: var(--accent); padding: 0; min-height: 0; text-decoration: underline; }
+.title { min-width: 0; overflow-wrap: anywhere; }
+.title .id { font-weight: 600; margin-right: 6px; }
+.title .unnamed { color: var(--muted); font-style: italic; }
+.nums { text-align: right; font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.nums .muted { color: var(--muted); }
+.info { grid-column: 2 / 4; font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.tag { background: var(--tag-bg); border-radius: 4px; padding: 0 5px; color: var(--fg); }
+.tag.warn { background: var(--warn-bg); color: var(--warn); }
+.player {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; background: var(--card);
+  border-top: 1px solid var(--line); padding: 8px 0;
+}
+.player .wrap { display: flex; gap: 10px; align-items: center; }
+#now { flex: 0 1 40%; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+audio { flex: 1 1 auto; min-width: 0; width: 100%; height: 40px; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 14px; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+a { color: var(--accent); }
+.empty { color: var(--muted); padding: 24px 0; text-align: center; }
+@media (max-width: 600px) {
+  li.row { grid-template-columns: 1fr auto; }
+  .btns { grid-row: auto; grid-column: 1 / 3; order: 3; }
+  .info { grid-column: 1 / 3; }
+  #now { display: none; }
+  #shown { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<script type="application/json" id="data">/*DATA*/</script>
+<header class="wrap" id="head"></header>
+<div class="bar" id="bar" hidden>
+  <div class="wrap">
+    <input type="search" id="q" placeholder="Search id, name, flag... ( / )" aria-label="Search">
+    <select id="type" aria-label="Type">
+      <option value="">All types</option>
+      <option value="music">Music</option>
+      <option value="callout">Voice</option>
+      <option value="sfx">Sound effects</option>
+    </select>
+    <select id="sort" aria-label="Sort">
+      <option value="id">Sort by id</option>
+      <option value="duration">Longest first</option>
+      <option value="lufs">Loudest first</option>
+      <option value="name">By name</option>
+    </select>
+    <label class="chk"><input type="checkbox" id="loops"> Loops only</label>
+    <label class="chk"><input type="checkbox" id="sound" checked> With sound</label>
+    <span id="shown" aria-live="polite"></span>
+  </div>
+</div>
+<main class="wrap"><ul id="list" aria-label="Sounds"></ul><div id="index"></div></main>
+<div class="player" id="player" hidden>
+  <div class="wrap"><span id="now">Nothing playing</span><audio id="audio" controls preload="none"></audio></div>
+</div>
+<script>
+(function () {
+  "use strict";
+  var data = JSON.parse(document.getElementById("data").textContent);
+  var $ = function (id) { return document.getElementById(id); };
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  }
+  function num(v, d) { return typeof v === "number" ? v.toFixed(d) : null; }
+  function secs(v) {
+    if (typeof v !== "number") return "";
+    if (v < 60) return v.toFixed(v < 10 ? 2 : 1) + " s";
+    var m = Math.floor(v / 60), s = v - m * 60;
+    return m + ":" + (s < 10 ? "0" : "") + s.toFixed(1);
+  }
+  function db(v) { return typeof v === "number" ? (v > 0 ? "+" : "") + v.toFixed(2) + " dB" : "?"; }
+  function href(p) { return p.split("/").map(encodeURIComponent).join("/"); }
+
+  if (data.roms) { return batchIndex(); }
+
+  // Header: the ROM, its boards, and what volume the files are at.
+  var head = $("head"), c = data.counts || {};
+  var h1 = el("h1", null, data.rom || "");
+  if (data.parent) h1.appendChild(el("small", null, " (parent " + data.parent + ")"));
+  head.appendChild(h1);
+  var bits = [];
+  if (data.boards) bits.push(data.boards.join(", "));
+  if (data.mode) bits.push(data.mode);
+  if (c.written !== undefined) bits.push(c.written + " files");
+  if (c.loops !== undefined) bits.push(c.loops + " loops");
+  if (typeof data.lufs === "number") bits.push("all files " + data.lufs.toFixed(1) + " LUFS");
+  head.appendChild(el("p", "meta", bits.join(" · ")));
+  var v = data.volume || {}, vol = [];
+  if (v.reference) vol.push("Recorded at the reference volume " + v.reference);
+  if (v.factory) vol.push("factory volume " + v.factory);
+  if (typeof v.offset_db === "number") vol.push("factory offset " + db(v.offset_db));
+  if (vol.length) head.appendChild(el("p", "meta", vol.join("; ")));
+  if (data.levels_note) head.appendChild(el("p", "meta", data.levels_note));
+  head.appendChild(el("p", "meta", "Space or Enter plays the selected sound, arrows move, / searches. rom2altsound " + data.version));
+
+  var sounds = data.sounds || [];
+  sounds.forEach(function (s, i) {
+    s.i = i;
+    s.typ = typeOf(s);
+    s.hay = [s.id, s.name, s.typ, s.board, s.twin_of ? "twin " + s.twin_of : "",
+      s.loop ? "loop " + s.loop.method : ""].concat(s.flags || []).join(" ").toLowerCase();
+  });
+  function typeOf(s) {
+    if (s.pack && s.pack.type) return s.pack.type;
+    var n = (s.name || "").replace(/^\s+/, ""), l = n.toLowerCase();
+    if (s.loop || l.indexOf("music:") === 0) return "music";
+    if (n.charAt(0) === "\"" || l.indexOf("vox:") === 0 || l.indexOf("voice:") === 0) return "callout";
+    return "sfx";
+  }
+  var multiBoard = data.boards && data.boards.length > 1;
+
+  function row(s) {
+    var li = el("li", "row");
+    li.tabIndex = -1;
+    li.dataset.i = s.i;
+    li.id = "s-" + s.i;
+    var btns = el("div", "btns");
+    s.files.forEach(function (f, k) {
+      var b = el("button", null, "▶ " + f.label);
+      b.type = "button";
+      b.tabIndex = -1;
+      b.title = f.path + (f.pack ? " (what AltSound plays)" : "");
+      if (f.pack) b.className = "pk";
+      b.setAttribute("aria-pressed", "false");
+      b.setAttribute("aria-label", f.label + " " + s.id + " " + f.path);
+      b.addEventListener("click", function () { play(s, k); });
+      btns.appendChild(b);
+    });
+    li.appendChild(btns);
+    var t = el("div", "title");
+    t.appendChild(el("span", "id mono", s.id));
+    if (s.name) t.appendChild(el("span", null, s.name));
+    else t.appendChild(el("span", "unnamed", "no name"));
+    li.appendChild(t);
+    var n = el("div", "nums");
+    n.appendChild(document.createTextNode(secs(s.duration)));
+    if (typeof s.lufs === "number") {
+      n.appendChild(el("br"));
+      n.appendChild(el("span", null, s.lufs.toFixed(1) + " LUFS"));
+    }
+    if (typeof s.true_peak === "number") {
+      n.appendChild(el("br"));
+      var tp = el("span", "muted", "TP " + s.true_peak.toFixed(1) + " dBTP");
+      if (typeof s.peak === "number") tp.title = "peak " + s.peak.toFixed(2) + " dBFS";
+      n.appendChild(tp);
+    }
+    li.appendChild(n);
+    var info = el("div", "info");
+    function tag(text, warn) { info.appendChild(el("span", "tag" + (warn ? " warn" : ""), text)); }
+    tag(s.typ === "callout" ? "voice" : s.typ);
+    if (multiBoard && s.board) tag(s.board);
+    var p = s.pack;
+    if (p) {
+      if (p.channel === 0) tag("ch 0 (music)");
+      else if (typeof p.channel === "number" && p.channel > 0) tag("ch " + p.channel);
+      if (typeof p.duck === "number" && p.duck < 100) tag("duck " + p.duck);
+      if (p.stop) tag("stop");
+      if (p.calls && p.calls.length) tag("call" + (p.calls.length > 1 ? "s " : " ") + p.calls.join(" "));
+      if (p.kind) {
+        tag(String(p.kind).replace(/[_-]/g, " "));
+        info.lastChild.title = p.reason || "";
+      }
+    }
+    if (typeof s.dcs_channel === "number") tag("DCS ch " + s.dcs_channel);
+    if (s.chip) tag("chip " + s.chip);
+    if (s.loop) {
+      var l = "loop " + secs(s.loop.period_secs);
+      if (s.loop.intro_secs >= 0.05) l += " from " + secs(s.loop.intro_secs);
+      if (s.loop.method) l += " (" + s.loop.method + ")";
+      tag(l);
+    }
+    (s.flags || []).forEach(function (f) {
+      tag(f, /^(clipped|not clean|ignores|loop unresolved|cut)/.test(f));
+      if (f === "loop unresolved" && s.loop_unresolved) info.lastChild.title = s.loop_unresolved;
+    });
+    if (s.twin_of) {
+      var tw = el("span", "tag", "twin of ");
+      var a = el("button", "link mono", s.twin_of);
+      a.type = "button";
+      a.tabIndex = -1;
+      a.addEventListener("click", function () { goTo(s.twin_of); });
+      tw.appendChild(a);
+      info.appendChild(tw);
+    }
+    li.appendChild(info);
+    return li;
+  }
+
+  // Rows are built once; filters only show or hide them.
+  var list = $("list"), rows = sounds.map(row);
+  rows.forEach(function (r) { list.appendChild(r); });
+  $("bar").hidden = false;
+  $("player").hidden = false;
+
+  var visible = [];
+  function apply() {
+    var q = $("q").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    var typ = $("type").value, loops = $("loops").checked, snd = $("sound").checked;
+    var order = sounds.slice();
+    var key = $("sort").value;
+    var byId = function (a, b) { return a.i - b.i; };
+    var desc = function (f) {
+      return function (a, b) {
+        var x = typeof a[f] === "number" ? a[f] : -Infinity, y = typeof b[f] === "number" ? b[f] : -Infinity;
+        return y - x || byId(a, b);
+      };
+    };
+    order.sort(key === "duration" ? desc("duration") : key === "lufs" ? desc("lufs")
+      : key === "name" ? function (a, b) { return (a.name || "￿").localeCompare(b.name || "￿") || byId(a, b); }
+      : byId);
+    visible = [];
+    order.forEach(function (s) {
+      var ok = (!typ || s.typ === typ) && (!loops || s.loop) && (!snd || s.files.length > 0) &&
+        q.every(function (w) { return s.hay.indexOf(w) >= 0; });
+      var r = rows[s.i];
+      r.hidden = !ok;
+      list.appendChild(r);
+      if (ok) visible.push(r);
+    });
+    $("shown").textContent = visible.length + " of " + sounds.length + " shown";
+    var cur = list.querySelector("li.row[tabindex='0']");
+    if (!cur || cur.hidden) setCurrent(visible[0], false);
+    var none = $("index");
+    none.className = visible.length ? "" : "empty";
+    none.textContent = visible.length ? "" : "No sound matches.";
+  }
+  ["q", "type", "sort", "loops", "sound"].forEach(function (id) {
+    $(id).addEventListener(id === "q" ? "input" : "change", apply);
+  });
+
+  // One row in the tab order at a time (roving tabindex); its buttons join it.
+  function setCurrent(r, focus) {
+    rows.forEach(function (x) {
+      var on = x === r;
+      x.tabIndex = on ? 0 : -1;
+      Array.prototype.forEach.call(x.querySelectorAll("button"), function (b) { b.tabIndex = on ? 0 : -1; });
+    });
+    if (r && focus) { r.focus(); }
+  }
+  list.addEventListener("focusin", function (e) {
+    var r = e.target.closest("li.row");
+    if (r && r.tabIndex !== 0) setCurrent(r, false);
+  });
+  list.addEventListener("keydown", function (e) {
+    var r = e.target.closest("li.row");
+    if (!r) return;
+    var at = visible.indexOf(r), to = -1;
+    if (e.key === "ArrowDown") to = at + 1;
+    else if (e.key === "ArrowUp") to = at - 1;
+    else if (e.key === "Home") to = 0;
+    else if (e.key === "End") to = visible.length - 1;
+    else if ((e.key === " " || e.key === "Enter") && e.target === r) {
+      e.preventDefault();
+      var s = sounds[+r.dataset.i];
+      if (s.files.length) play(s, 0);
+      return;
+    } else return;
+    e.preventDefault();
+    if (to >= 0 && to < visible.length) setCurrent(visible[to], true);
+  });
+  document.addEventListener("keydown", function (e) {
+    var q = $("q");
+    if (e.key === "/" && document.activeElement !== q && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) {
+      e.preventDefault();
+      q.focus();
+    } else if (e.key === "Escape" && document.activeElement === q) {
+      setCurrent(visible[0], true);
+    } else if (e.key === "ArrowDown" && document.activeElement === q && visible.length) {
+      e.preventDefault();
+      setCurrent(visible[0], true);
+    }
+  });
+
+  function goTo(id) {
+    var s = sounds.filter(function (x) { return x.id === id; })[0];
+    if (!s) return;
+    var r = rows[s.i];
+    if (r.hidden) { $("q").value = ""; $("type").value = ""; $("loops").checked = false; $("sound").checked = false; apply(); }
+    setCurrent(r, true);
+    r.scrollIntoView({ block: "center" });
+  }
+
+  // One shared player. A loop body plays looped; the button of what plays pauses it.
+  var audio = $("audio"), playing = null;
+  function play(s, k) {
+    var f = s.files[k], src = href(f.path);
+    if (playing && playing.s === s && playing.k === k) {
+      if (audio.paused) audio.play(); else audio.pause();
+      return;
+    }
+    mark(false);
+    playing = { s: s, k: k };
+    audio.loop = f.label === "loop";
+    audio.src = src;
+    audio.play().catch(function () {});
+    $("now").textContent = s.id + (s.name ? " " + s.name : "") + " (" + f.label + (audio.loop ? ", looped" : "") + ")";
+    $("now").title = f.path;
+    mark(true);
+  }
+  function mark(on) {
+    if (!playing) return;
+    var r = rows[playing.s.i];
+    r.classList.toggle("playing", on);
+    var b = r.querySelectorAll(".btns button")[playing.k];
+    if (b) b.setAttribute("aria-pressed", on && !audio.paused ? "true" : "false");
+  }
+  audio.addEventListener("play", function () { mark(true); });
+  audio.addEventListener("pause", function () { mark(true); });
+  audio.addEventListener("ended", function () { mark(true); });
+
+  apply();
+
+  // The batch's root page: one line per ROM folder.
+  function batchIndex() {
+    var head = $("head");
+    head.appendChild(el("h1", null, "rom2altsound packs"));
+    head.appendChild(el("p", "meta", data.roms.length + " ROMs · rom2altsound " + data.version));
+    var t = el("table"), tr = el("tr");
+    ["ROM", "Boards", "Files", "Loops", "LUFS", "Factory offset"].forEach(function (h, i) {
+      tr.appendChild(el("th", i > 1 ? "n" : null, h));
+    });
+    t.appendChild(tr);
+    data.roms.forEach(function (r) {
+      var tr = el("tr"), td = el("td"), a = el("a", "mono", r.rom || r.dir);
+      a.href = href(r.page);
+      td.appendChild(a);
+      tr.appendChild(td);
+      tr.appendChild(el("td", null, (r.boards || []).join(", ")));
+      tr.appendChild(el("td", "n", r.written));
+      tr.appendChild(el("td", "n", r.loops));
+      tr.appendChild(el("td", "n", num(r.lufs, 1)));
+      tr.appendChild(el("td", "n", typeof r.factory_offset_db === "number" ? db(r.factory_offset_db) : ""));
+      t.appendChild(tr);
+    });
+    $("index").appendChild(t);
+  }
+})();
+</script>
+</body>
+</html>

@@ -121,6 +121,7 @@ are in a C shim.
    `<out>/manifest.json`, rewritten after every command, then a summary on stdout.
 11. AltSound pack (unless `--no-altsound`, see below): loop points, twins, `altsound.csv`,
    `g-sound.csv`, `altsound.ini`.
+12. Listening page (unless `--no-html`, see below): `<out>/index.html`.
 
 ### AltSound pack
 
@@ -181,6 +182,43 @@ AltSound folder).
   ROM's volume commands must not change them. Boards other than DCS get libaltsound's own
   G-Sound template; DCS gets the ROM's ducking profiles (below).
 - Ids that are not a single number (none so far) are left out of the CSVs.
+
+### Listening page
+
+`index.html` (`src/listen.rs`, template `src/listen.html`) is written last, from the final
+`manifest.json` (after the AltSound pack has added `pack` and `twin_of`), in the ROM's
+folder; Stern SAM packs get one too. It opens from disk: a page loaded as `file://` cannot
+fetch `manifest.json`, so the data it needs is spliced into the page as JSON in a
+`<script type="application/json">`, with every `<` written `\u003c` (it only occurs inside
+JSON strings, where it reads back the same), so no sound name can close the element. The
+CSS and JS are inline and nothing is loaded from elsewhere: it works offline, with the
+system's fonts, in light and dark.
+
+Per sound: `id`, `name`, `board`, `duration`, `lufs`, `true_peak` and `peak`, `ended_by`,
+`loop` (`method`, `period_secs`, `intro_secs`, `confidence`), `loop_unresolved`, `pack`
+(`channel`, `type` = `gsound_type`, `duck`, `stop`, `kind` = `file_kind`, `reason`, and on Stern SAM the game's `calls`), the DCS
+channel, the chips pass's `chip`, `twin_of`, `flags` (`clipped (n)`, `blip`, `silent`, `not
+clean`, `ignores master volume`, `cut at max`, `loop unresolved`), and `files`: the
+recording, the loop body, the extended file and the file the pack plays (a merged twin's
+original), each only when it is on disk when the page is written, as a path relative to the
+page, with `pack: true` on the one the pack plays (its button is outlined). The header shows the reference volume, the factory volume and `factory_offset_db`.
+
+One shared `<audio>` element plays them; the `loop` button plays the body looped (the
+browser loops the whole file, as libaltsound does). Rows are built once, and the search
+(every word must be in the id, name, type, board, loop method or flags), the type filter
+(`pack.type`, or the name's prefix as in the pack when there is no pack), "loops only",
+"with sound" (rows with a file, on by default) and the sorting only hide and reorder
+them. Keyboard: one row is in the tab order at a time; Up/Down/Home/End move, Space or
+Enter plays the row's first file (again: pause), `/` goes to the search.
+
+A batch (several ROMs) also writes `<out>/index.html`, a table of every folder under
+`--out` (default `.`) that has a page of ours and a `manifest.json`, when there are at least
+two; an `index.html` at that root that is not ours (no `<meta name="generator"
+content="rom2altsound">`) is left alone.
+
+`rom2altsound page <folder>...` writes the page again in existing ROM folders, from their
+`manifest.json` (a pack made before the page existed, or after editing the manifest), then
+the index of their parent folder.
 
 ### Twins
 

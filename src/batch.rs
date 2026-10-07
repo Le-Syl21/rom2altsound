@@ -122,6 +122,7 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
         ("--throttled", cli.throttled),
         ("--verbose", cli.verbose),
         ("--no-altsound", cli.no_altsound),
+        ("--no-html", cli.no_html),
         ("--merge-twins", cli.merge_twins),
         ("--check-ducking", cli.check_ducking),
         ("--no-refresh", cli.no_refresh),
@@ -263,7 +264,15 @@ pub fn run(cli: &Cli) -> i32 {
             std::thread::sleep(Duration::from_millis(200));
         }
     }
-    recap(&outcomes)
+    let code = recap(&outcomes);
+    if !cli.no_html && !cli.cold_boot_only && outcomes.iter().any(|o| o.error.is_none()) {
+        match crate::listen::write_index(&root) {
+            Ok(Some(p)) => println!("pages of every ROM: {}", p.display()),
+            Ok(None) => {}
+            Err(e) => eprintln!("cannot write the index page: {e}"),
+        }
+    }
+    code
 }
 
 const LOG: &str = "rom2altsound.log";

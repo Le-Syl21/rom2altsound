@@ -8,6 +8,7 @@ mod dcsrom;
 mod ducking;
 mod extract;
 mod ffi;
+mod listen;
 mod looping;
 mod loudness;
 mod sam;
@@ -187,6 +188,10 @@ struct Cli {
     /// points in the WAV files): only the WAV files and manifest.json
     #[arg(long)]
     no_altsound: bool,
+    /// Do not write index.html, the page that lists and plays the sounds in a browser (and,
+    /// for several ROMs, the one linking their pages at the output root)
+    #[arg(long)]
+    no_html: bool,
     /// Commands that play the same audio (twins, listed as `twin_of` in manifest.json) share
     /// the first one's file in the CSVs, and the twins' own WAV files are not kept. Off by
     /// default: every command keeps its own file (on DCS, twins are the same sound on two
@@ -307,6 +312,7 @@ fn main() {
         Some("drift-check") => return ducking::drift_check(std::env::args().skip(2).collect()),
         Some("seq-scan") => return seqloop::scan_cli(std::env::args().skip(2).collect()),
         Some("seq-audio") => return seqloop::audio_cli(std::env::args().skip(2).collect()),
+        Some("page") => return listen::page_cli(std::env::args().skip(2).collect()),
         _ => {}
     }
     let cli = Cli::parse();
@@ -328,6 +334,12 @@ fn main() {
         if let Err(e) = run(&cli, &job) {
             eprintln!("error: {e}");
             std::process::exit(1);
+        }
+        if !cli.no_html && !cli.cold_boot_only {
+            match listen::write_page(&job.out) {
+                Ok(p) => println!("  page: {}", p.display()),
+                Err(e) => eprintln!("cannot write the listening page: {e}"),
+            }
         }
         return;
     }
