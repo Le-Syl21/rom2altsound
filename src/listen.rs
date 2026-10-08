@@ -141,16 +141,11 @@ fn page_data(m: &Value, exists: impl Fn(&str) -> bool) -> Value {
     })
 }
 
-/// "Recorded at ...; factory volume ..., offset ... dB", from the reference mode fields.
+/// "Recorded at ...; reference volume ...; factory offset ... dB", from the manifest's
+/// volume fields (factory or reference mode).
 fn volume_line(m: &Value) -> Value {
-    let reference = m["reference_volume"]
-        .as_str()
-        .map(str::to_owned)
-        .or_else(|| m["volume_init"].as_str().map(str::to_owned))
-        .or_else(|| {
-            (m["boards"][0].as_str()?.starts_with("SAM"))
-                .then(|| "full scale (DAC at FF)".to_owned())
-        });
+    let factory_mode = m["volume_mode"].as_str() == Some("factory");
+    let reference = m["reference_volume"].as_str().map(str::to_owned);
     let fo = &m["factory_offset"];
     let mut factory: Vec<String> = fo["boards"]
         .as_array()
@@ -161,9 +156,31 @@ fn volume_line(m: &Value) -> Value {
     if let Some(f) = fo["factory_volume"].as_str() {
         factory.push(f.to_owned());
     }
+    let factory = (!factory.is_empty()).then(|| factory.join(", "));
+    let sam = m["boards"][0]
+        .as_str()
+        .is_some_and(|b| b.starts_with("SAM"));
+    let recorded = if factory_mode {
+        let f = m["volume_init"]
+            .as_str()
+            .map(str::to_owned)
+            .or_else(|| factory.as_ref().map(|f| format!("factory {f}")))
+            .unwrap_or_else(|| "the boards' own level".into());
+        format!("the factory volume ({f})")
+    } else {
+        let r = reference
+            .clone()
+            .or_else(|| m["volume_init"].as_str().map(str::to_owned))
+            .or_else(|| sam.then(|| "full scale (DAC at FF)".to_owned()));
+        match r {
+            Some(r) => format!("the reference volume {r}"),
+            None => "the boards' own level".into(),
+        }
+    };
     json!({
-        "reference": reference,
-        "factory": (!factory.is_empty()).then(|| factory.join(", ")),
+        "recorded": recorded,
+        "reference": if factory_mode { reference } else { None },
+        "factory": if factory_mode { None } else { factory },
         "offset_db": m["factory_offset_db"],
     })
 }
@@ -330,6 +347,24 @@ mod tests {
         }
         // Offline: nothing loaded from elsewhere.
         assert!(!html.contains("http://") && !html.contains("https://"));
+    }
+
+    #[test]
+    fn volume_line_factory_mode() {
+        let m = json!({
+            "boards": ["DCS"],
+            "volume_mode": "factory",
+            "volume_init": "factory 55AA6798",
+            "reference_volume": "55AAEF10",
+            "factory_offset_db": -22.4,
+            "factory_offset": { "boards": [{ "factory_volume": "55AA6798" }] },
+        });
+        let v = volume_line(&m);
+        assert_eq!(v["recorded"], "the factory volume (factory 55AA6798)");
+        assert_eq!(v["reference"], "55AAEF10");
+        assert!(v["factory"].is_null());
+        let r = volume_line(&manifest());
+        assert_eq!(r["recorded"], "the reference volume 55AAEF10");
     }
 
     #[test]

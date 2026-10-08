@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- **Every board is now recorded at its factory volume**, the master volume the game itself
+  sets at boot from its factory settings, for every family and whatever the table (was
+  the per-family reference volume in 0.2.1): DCS `55 AA 67 98` (level 12/31 on Attack from
+  Mars; the board's reset default `67` when a game sends none), WPCS `79 0C F3` (level 12,
+  read from the boot, which was already the reference), Whitestar `FE 2C FD` (level 3/31 on
+  Apollo 13 and Monopoly, instead of `FE 11 FD`), Stern SAM the DAC attenuation the game
+  writes, the operator's volume setting (AC/DC `E8`, -11.5 dB, applied to the decoded
+  samples). Boards without a volume stage (System 11, Data East's pot, Bally) stay at full
+  scale, their only level; on Data East the music volume is the game's own at boot, else
+  the board's default `20`. The files are as loud as the game plays them out of the box,
+  so quieter than before: DCS by about 22 dB (afm_113b: peaks -38.9 to -25.8 dBFS, -43.4
+  LUFS in all), Whitestar by 25 to 33 dB (Monopoly -24.6, Apollo 13 -32.6). Nothing is lost but the final 16-bit rounding,
+  which PinMAME's mixer does once anyway (its float output is the same 16-bit mix, so a
+  24-bit file would hold nothing more): the files stay 16-bit.
+  - `manifest.json`: `volume_mode` (`factory` or `reference`), `recorded_volume` (per
+    board, the volume and where it comes from, including "the game sent none: the board's
+    power-on level"), `clipped_files`; `reference_volume`, `factory_offset_db` and
+    `factory_offset` are kept, for information (the offset is now measured on a few files
+    played again at the reference volume; afm_113b -22.4 dB).
+  - A file that clips at the factory volume (in PinMAME's own mix) is listed in
+    `clipped_files` and on a `CLIPPED` line of the summary; the volume is never lowered.
+  - `--volume reference` records at the reference volume, as 0.2.1 did (DCS `55 AA EF
+    10`, WPCS `79 0C F3`, Whitestar `FE 11 FD`, SAM at full scale); `--dcs-volume`,
+    `--wpcs-volume` and `--whitestar-volume` imply it unless `--volume factory` is given.
+    `--factory-volume` is kept as a hidden alias of the new default.
+  - WPCS master volume levels are reported on their 0..31 scale (was /255).
+  - Twins at the factory volume: PinMAME's ±1 LSB dither is 22 dB closer to a DCS file's
+    signal and the silence trim falls a few samples apart, so none of afm_113b's twins
+    passed the old test (-60 dB residual, 1 sample of length, 3 of lag). A pair now also
+    passes with a residual of at most 4 LSB RMS (and 30 dB below the signal), lengths up
+    to 256 samples apart and lags up to 128 (`altsound.twin_test` in `manifest.json`).
 - **WPCS and System 11: the DAC is AC-coupled, as on the real boards.** PinMAME maps
   their 8-bit DAC unsigned (code 0 = output 0) while the sound programs play around its
   middle code and leave it on the last value a sound wrote: a DC level in the mix that the

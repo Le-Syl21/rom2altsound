@@ -79,6 +79,13 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
     };
     opt("--only", cli.only.as_ref().map(|v| v.join(",")));
     opt("--limit", cli.limit.map(|v| v.to_string()));
+    opt(
+        "--volume",
+        cli.volume.map(|m| {
+            clap::ValueEnum::to_possible_value(&m)
+                .map_or_else(String::new, |p| p.get_name().to_owned())
+        }),
+    );
     opt("--dcs-volume", cli.dcs_volume.map(|v| format!("{v:02X}")));
     opt(
         "--whitestar-volume",

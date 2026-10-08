@@ -64,7 +64,7 @@ pub fn decode(family: &str, board: i32, recent: &[u8], at: f64) -> Option<Volume
             _ => return None,
         },
         "WPCS" => match *tail(3)? {
-            [0x79, v, nv] if v == !nv => (tail(3)?, v, u32::from(v), 255),
+            [0x79, v, nv] if v == !nv => (tail(3)?, v, u32::from(v), 31),
             _ => return None,
         },
         "BSMT" | "AT91" => match *tail(2)? {

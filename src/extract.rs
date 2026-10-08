@@ -291,7 +291,7 @@ pub enum VolumeInit {
     /// Keep what the game itself sent at boot; after a board reset (which loses it), the
     /// game's own last volume command is sent again, byte for byte.
     Game,
-    /// The default of `--factory`: record every board at its reference volume, the loudest
+    /// `--volume reference`: record every board at its reference volume, the loudest
     /// master volume that does not clip in emulation (DCS `55 AA vv ~vv` with this `vv`,
     /// Whitestar `FE xx FD` with this `xx`, re-sent before every command as the game
     /// re-sends its own, WPCS `79 vv ~vv` with this `vv`).
@@ -299,7 +299,23 @@ pub enum VolumeInit {
     /// is measured on a few files played again at the factory volume (`factory_offset`).
     /// Boards without a volume stage (Data East, System 11, Cheap Squeak) are at full
     /// scale, their only level.
-    Reference { dcs: u8, whitestar: u8, wpcs: u8 },
+    Reference(Ref),
+    /// The default of the factory settings: record every board at the factory volume, the
+    /// master volume the game itself sent at boot from its factory nvram (on DCS, the
+    /// board's reset default `67` when the game sent none; on WPCS and Whitestar, the
+    /// board's power-on level, left alone). It is sent again once booted, before every
+    /// command where the game kept re-sending it (Whitestar), and after a board reset.
+    /// The reference volumes are only used to measure, on a few files played again at
+    /// them, the offset between the two (`factory_offset`), for information.
+    Factory(Ref),
+}
+
+/// The reference master volumes: DCS `55 AA vv ~vv`, Whitestar `FE xx FD`, WPCS `79 vv ~vv`.
+#[derive(Clone, Copy, Debug)]
+pub struct Ref {
+    pub dcs: u8,
+    pub whitestar: u8,
+    pub wpcs: u8,
 }
 
 /// The DCS master volume a board keeps when the game sends none: its reset default.
@@ -744,8 +760,9 @@ pub struct VolumeCheck {
 #[derive(Clone, Serialize)]
 pub struct OffsetSample {
     pub id: String,
-    /// `level_lufs` at the reference volume (the written file) and at the factory volume.
-    pub reference_lufs: f64,
+    /// `level_lufs` at the reference volume and at the factory volume (one of them is the
+    /// written file, the other the replay).
+    pub reference_lufs: Option<f64>,
     pub factory_lufs: Option<f64>,
     /// Factory minus reference, in dB.
     pub delta_db: Option<f64>,
@@ -767,6 +784,25 @@ pub struct BoardOffset {
     pub factory_offset_db: Option<f64>,
     pub spread_db: Option<f64>,
     pub samples: Vec<OffsetSample>,
+}
+
+/// The volume one board's files are recorded at (manifest `recorded_volume`).
+#[derive(Clone, Debug, Serialize)]
+pub struct RecordedVolume {
+    pub board: c_int,
+    pub family: String,
+    /// The master volume command (hex), or why there is none.
+    pub volume: String,
+    pub from: String,
+}
+
+/// A written file that reaches full scale (manifest `clipped_files`).
+#[derive(Clone, Debug, Serialize)]
+pub struct ClippedFile {
+    pub id: String,
+    pub file: String,
+    pub clipped_samples: usize,
+    pub ignores_master_volume: bool,
 }
 
 /// What the files would measure at the factory volume: the reference totals shifted by
@@ -928,20 +964,29 @@ struct Manifest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     game_volume: Option<VolumeReport>,
     volume_init: Option<String>,
-    /// Reference mode: the volume each board is recorded at, its reference: our master
-    /// volume command where the board has one, `volume::FULL_SCALE` where it has no volume
-    /// stage at all (System 11, Cheap Squeak, Data East's hardware pot).
+    /// Which volume the files are recorded at: "factory" (the default), "reference", or
+    /// "game" / "dcs" without the factory settings.
+    volume_mode: &'static str,
+    /// Per board: the volume its files are recorded at, and where that volume comes from.
+    recorded_volume: Vec<RecordedVolume>,
+    /// The written files with samples at full scale (+32767/-32768) in PinMAME's own mix
+    /// at the recorded volume, loudest first: reported, never fixed by lowering the volume.
+    clipped_files: Vec<ClippedFile>,
+    /// The reference volume of each board: our master volume command where the board has
+    /// one, `volume::FULL_SCALE` where it has no volume stage at all (System 11, Cheap
+    /// Squeak, Data East's hardware pot). In reference mode the files are recorded at it;
+    /// in factory mode it is what the factory offset is measured against.
     #[serde(skip_serializing_if = "Option::is_none")]
     reference_volume: Option<String>,
-    /// Reference mode: what the levels below are relative to, and how to get them as shipped.
+    /// What the levels below are relative to.
     #[serde(skip_serializing_if = "Option::is_none")]
     levels_note: Option<&'static str>,
-    /// Reference mode: the factory level minus the reference level, in dB (negative), for
-    /// the ROM; 0 when no board has a master volume (the files are at the only level there
-    /// is). Null when it could not be measured.
+    /// The factory level minus the reference level, in dB (negative where the factory
+    /// volume is quieter), for the ROM; 0 when no board has a master volume (the files are
+    /// at the only level there is). Null when it could not be measured.
     #[serde(skip_serializing_if = "Option::is_none")]
     factory_offset_db: Option<Option<f64>>,
-    /// Reference mode: the offset per board with a master volume, and how it was measured.
+    /// The offset per board with a master volume, and how it was measured.
     #[serde(skip_serializing_if = "Option::is_none")]
     factory_offset: Option<FactoryOffsetReport<'a>>,
     /// The longest recording, and what happens to the sounds that reach it.
@@ -1873,17 +1918,34 @@ impl Extractor {
     }
 
     /// The master volume the tool sets on a board itself, if any: `VolumeInit::Dcs` on DCS
-    /// boards; `VolumeInit::Reference` on DCS and Whitestar boards.
+    /// boards; `VolumeInit::Reference` on DCS, WPCS and Whitestar boards; with
+    /// `VolumeInit::Factory`, the game's own factory master volume on those boards (see
+    /// `factory_master`).
     fn our_master(&self, board: c_int) -> Option<Vec<u8>> {
-        match (self.opts.volume, self.families[board as usize].as_str()) {
-            (VolumeInit::Dcs(vv) | VolumeInit::Reference { dcs: vv, .. }, "DCS") => {
+        match self.opts.volume {
+            VolumeInit::Dcs(vv) if self.families[board as usize] == "DCS" => {
                 Some(vec![0x55, 0xAA, vv, !vv])
             }
-            (VolumeInit::Reference { wpcs, .. }, "WPCS") => Some(vec![0x79, wpcs, !wpcs]),
-            (VolumeInit::Reference { whitestar, .. }, "BSMT" | "AT91")
-                if !self.is_de_board(board) =>
-            {
-                Some(vec![0xFE, whitestar, volume::BSMT_END])
+            VolumeInit::Reference(_) => self.reference_master(board),
+            VolumeInit::Factory(_) => {
+                self.reference_master(board)?;
+                self.factory_master(board).map(|f| f.0)
+            }
+            _ => None,
+        }
+    }
+
+    /// The reference master volume of a board (`VolumeInit::Reference` and `Factory`), or
+    /// None for a board without a master volume.
+    fn reference_master(&self, board: c_int) -> Option<Vec<u8>> {
+        let (VolumeInit::Reference(r) | VolumeInit::Factory(r)) = self.opts.volume else {
+            return None;
+        };
+        match self.families[board as usize].as_str() {
+            "DCS" => Some(vec![0x55, 0xAA, r.dcs, !r.dcs]),
+            "WPCS" => Some(vec![0x79, r.wpcs, !r.wpcs]),
+            "BSMT" | "AT91" if !self.is_de_board(board) => {
+                Some(vec![0xFE, r.whitestar, volume::BSMT_END])
             }
             _ => None,
         }
@@ -1904,7 +1966,17 @@ impl Extractor {
     }
 
     pub fn is_reference(&self) -> bool {
-        matches!(self.opts.volume, VolumeInit::Reference { .. })
+        matches!(self.opts.volume, VolumeInit::Reference(_))
+    }
+
+    /// The files are recorded at the game's factory volume (`VolumeInit::Factory`).
+    pub fn is_factory_volume(&self) -> bool {
+        matches!(self.opts.volume, VolumeInit::Factory(_))
+    }
+
+    /// The factory offset is measured: reference or factory volume.
+    pub fn compares_volumes(&self) -> bool {
+        self.is_reference() || self.is_factory_volume()
     }
 
     /// Our own master volumes, as reported in `volume_init`.
@@ -1926,6 +1998,8 @@ impl Extractor {
         let label = parts.join(" ");
         Some(if self.is_reference() {
             format!("reference {label}")
+        } else if self.is_factory_volume() {
+            format!("factory {label}")
         } else {
             label
         })
@@ -1938,7 +2012,7 @@ impl Extractor {
             .board_list()
             .map(|b| {
                 let label = self.family_label(b);
-                let v = match self.our_master(b) {
+                let v = match self.reference_master(b) {
                     Some(bytes) => hex(&bytes),
                     None => match volume::full_scale(&label) {
                         Some(full) => full.into(),
@@ -1955,6 +2029,75 @@ impl Extractor {
             .map(|(b, v)| format!("board {b}: {v}"))
             .collect::<Vec<_>>()
             .join("; ")
+    }
+
+    /// The manifest's `volume_mode`.
+    fn volume_mode(&self) -> &'static str {
+        match self.opts.volume {
+            VolumeInit::Factory(_) => "factory",
+            VolumeInit::Reference(_) => "reference",
+            VolumeInit::Game => "game",
+            VolumeInit::Dcs(_) => "dcs",
+        }
+    }
+
+    /// Per board, the volume its files are recorded at and where it comes from.
+    pub fn recorded_volumes(&self) -> Vec<RecordedVolume> {
+        self.board_list()
+            .map(|b| {
+                let family = self.family_label(b);
+                let (volume, from) = if let Some(bytes) = self.our_master(b) {
+                    let from = match self.opts.volume {
+                        VolumeInit::Factory(_) => self
+                            .factory_master(b)
+                            .map_or_else(String::new, |f| format!("factory: {}", f.1)),
+                        VolumeInit::Reference(_) => "the reference volume".into(),
+                        _ => "--dcs-volume".into(),
+                    };
+                    (hex(&bytes), from)
+                } else if let Some(full) = volume::full_scale(&family) {
+                    (full.to_string(), "the board's only level".into())
+                } else if let Some(m) = self.last_master(b) {
+                    (
+                        m.bytes.clone(),
+                        format!("the game's own, sent at {:.1} s of the boot", m.at),
+                    )
+                } else {
+                    (
+                        "the board's power-on level".into(),
+                        format!(
+                            "the game sent no master volume at boot: {}",
+                            volume::none_reason(&family)
+                        ),
+                    )
+                };
+                RecordedVolume {
+                    board: b,
+                    family,
+                    volume,
+                    from,
+                }
+            })
+            .collect()
+    }
+
+    /// The written files that reach full scale, the most clipped first.
+    pub fn clipped_files(&self) -> Vec<ClippedFile> {
+        let mut v: Vec<ClippedFile> = self
+            .results
+            .iter()
+            .filter(|s| s.clipped_samples > 0)
+            .filter_map(|s| {
+                Some(ClippedFile {
+                    id: s.id.clone(),
+                    file: s.file.clone()?,
+                    clipped_samples: s.clipped_samples,
+                    ignores_master_volume: s.ignores_master_volume,
+                })
+            })
+            .collect();
+        v.sort_by_key(|c| std::cmp::Reverse(c.clipped_samples));
+        v
     }
 
     /// The master volume value (`vv` or `xx`) the board is playing at: ours, else the game's.
@@ -2383,14 +2526,14 @@ impl Extractor {
     /// and not flagged: loud, so that they stay well above the silence threshold at a low
     /// factory volume (apollo13 plays at level 3/31).
     fn factory_offset_commands(&mut self) -> Vec<Cmd> {
-        if !self.is_reference() {
+        if !self.compares_volumes() {
             return Vec::new();
         }
         let median = self.median_lufs();
         let mut cmds = Vec::new();
         let mut notes = Vec::new();
         for b in self.board_list() {
-            let Some(ours) = self.our_master(b) else {
+            let Some(reference) = self.reference_master(b) else {
                 notes.push(format!(
                     "board {b} ({}): no master volume, the files are at the board's only level (offset 0)",
                     self.family_label(b)
@@ -2399,11 +2542,35 @@ impl Extractor {
             };
             let Some((factory, from)) = self.factory_master(b) else {
                 notes.push(format!(
-                    "board {b} ({}): the game sent no master volume at boot, offset not measured",
+                    "board {b} ({}): the game sent no master volume at boot (the board stays at its power-on level), offset not measured",
                     self.family_label(b)
                 ));
                 continue;
             };
+            // The files are at `ours`; the replays at the other one.
+            let (ours, other) = if self.is_reference() {
+                (reference.clone(), factory.clone())
+            } else {
+                (factory.clone(), reference.clone())
+            };
+            if ours == other {
+                notes.push(format!(
+                    "board {b} ({}): the factory volume is the reference volume ({}), offset 0",
+                    self.family_label(b),
+                    hex(&ours)
+                ));
+                self.offsets.push(BoardOffset {
+                    board: b,
+                    family: self.family_label(b),
+                    reference_volume: hex(&reference),
+                    factory_volume: hex(&factory),
+                    factory_volume_from: from,
+                    factory_offset_db: Some(0.0),
+                    spread_db: None,
+                    samples: Vec::new(),
+                });
+                continue;
+            }
             let mut files: Vec<usize> = self
                 .counted(false)
                 .filter(|&i| self.main_cmds.get(i).is_some_and(|c| c.board_no == b))
@@ -2427,9 +2594,9 @@ impl Extractor {
                 ));
             }
             let alt = AltVolume {
-                sends: board_sends(self.mask, b, &factory),
-                bytes: hex(&factory),
-                levels: master_level(&factory) - master_level(&ours),
+                sends: board_sends(self.mask, b, &other),
+                bytes: hex(&other),
+                levels: master_level(&other) - master_level(&ours),
                 reference: false,
             };
             for &i in &files {
@@ -2441,7 +2608,7 @@ impl Extractor {
             self.offsets.push(BoardOffset {
                 board: b,
                 family: self.family_label(b),
-                reference_volume: hex(&ours),
+                reference_volume: hex(&reference),
                 factory_volume: hex(&factory),
                 factory_volume_from: from,
                 factory_offset_db: None,
@@ -2452,7 +2619,15 @@ impl Extractor {
         if !cmds.is_empty() {
             notes.insert(
                 0,
-                format!("{} file(s) played again at the factory volume", cmds.len()),
+                format!(
+                    "{} file(s) played again at the {} volume",
+                    cmds.len(),
+                    if self.is_reference() {
+                        "factory"
+                    } else {
+                        "reference"
+                    }
+                ),
             );
         }
         self.offset_note = (!notes.is_empty()).then(|| notes.join("; "));
@@ -3091,7 +3266,10 @@ impl Extractor {
     /// The ROM's factory offset: 0 when no board has a master volume of ours, the one
     /// board's offset otherwise (the median of all samples if several boards have one).
     pub fn rom_offset(&self) -> Option<f64> {
-        if !self.board_list().any(|b| self.our_master(b).is_some()) {
+        if !self
+            .board_list()
+            .any(|b| self.reference_master(b).is_some())
+        {
             return Some(0.0);
         }
         let deltas: Vec<f64> = self
@@ -3099,6 +3277,14 @@ impl Extractor {
             .iter()
             .flat_map(|o| o.samples.iter().filter_map(|s| s.delta_db))
             .collect();
+        if deltas.is_empty() && !self.offsets.is_empty() {
+            // Every board with a master volume is at its reference (offset 0, not measured).
+            return self
+                .offsets
+                .iter()
+                .all(|o| o.factory_offset_db == Some(0.0))
+                .then_some(0.0);
+        }
         loudness::median(deltas)
     }
 
@@ -3158,7 +3344,12 @@ impl Extractor {
                 format!("{} (at {}, {:+} levels)", cmd.id, a.bytes, a.levels)
             }
             (Pass::FactoryOffset, Some(a)) => {
-                format!("{} (at factory {}, {:+} levels)", cmd.id, a.bytes, a.levels)
+                let at = if self.is_reference() {
+                    "factory"
+                } else {
+                    "reference"
+                };
+                format!("{} (at {at} {}, {:+} levels)", cmd.id, a.bytes, a.levels)
             }
             (Pass::DuckCheck, _) => format!("{} (ducking check)", cmd.id),
             (Pass::Chips, _) => match cmd.check.map(|c| c.kind) {
@@ -3773,10 +3964,17 @@ impl Extractor {
         let level = (!a.raw.is_empty())
             .then(|| loudness::measure(&a.blocked, self.channels.max(1), self.rate))
             .and_then(|l| l.level_lufs);
-        let Some(reference) = self.results[i].level_lufs else {
+        let Some(written) = self.results[i].level_lufs else {
             return;
         };
-        let delta = level.map(|l| round3(l - reference));
+        // Reference mode: the files at the reference, the replay at the factory volume;
+        // factory mode the other way round. Either way, delta = factory - reference.
+        let (factory, reference) = if self.is_reference() {
+            (level, Some(written))
+        } else {
+            (Some(written), level)
+        };
+        let delta = factory.zip(reference).map(|(f, r)| round3(f - r));
         eprintln!(
             " level {} ({})  [{ended_by}]",
             level.map_or("n/a".into(), |l| format!("{l:.1} LUFS")),
@@ -3792,7 +3990,7 @@ impl Extractor {
         o.samples.push(OffsetSample {
             id: rec.cmd.id,
             reference_lufs: reference,
-            factory_lufs: level,
+            factory_lufs: factory,
             delta_db: delta,
         });
         let deltas: Vec<f64> = o.samples.iter().filter_map(|s| s.delta_db).collect();
@@ -3852,14 +4050,26 @@ impl Extractor {
             factory_volume: factory.then(|| vol.clone()),
             game_volume: (!factory).then_some(vol),
             volume_init: self.volume_label(),
-            reference_volume: self.is_reference().then(|| self.reference_volume()),
-            levels_note: self.is_reference().then_some(
-                "every level (per sound and in loudness) is measured on the files, recorded at the reference volume (volume_init); add factory_offset_db for the level at the game's factory volume (loudness.as_shipped)",
-            ),
-            factory_offset_db: self.is_reference().then(|| self.rom_offset()),
-            factory_offset: self.is_reference().then(|| FactoryOffsetReport {
+            volume_mode: self.volume_mode(),
+            recorded_volume: self.recorded_volumes(),
+            clipped_files: self.clipped_files(),
+            reference_volume: self.compares_volumes().then(|| self.reference_volume()),
+            levels_note: if self.is_reference() {
+                Some(
+                    "every level (per sound and in loudness) is measured on the files, recorded at the reference volume (volume_init); add factory_offset_db for the level at the game's factory volume (loudness.as_shipped)",
+                )
+            } else if self.is_factory_volume() {
+                Some(
+                    "every level (per sound and in loudness) is measured on the files, recorded at the game's factory volume (recorded_volume), as PinMAME plays the ROM; factory_offset_db (factory minus reference) is for information",
+                )
+            } else {
+                None
+            },
+            factory_offset_db: self.compares_volumes().then(|| self.rom_offset()),
+            factory_offset: self.compares_volumes().then(|| FactoryOffsetReport {
                 method: format!(
-                    "per board with a master volume: up to {OFFSET_FILES} written non-loop files (the loudest at most {VOLUME_CHECK_ABOVE_MEDIAN_LU} LU above the median file, at least {OFFSET_MIN_SECS} s, not clipped) played again at the factory volume; offset = median of (factory level_lufs - reference level_lufs)"
+                    "per board with a master volume: up to {OFFSET_FILES} written non-loop files (the loudest at most {VOLUME_CHECK_ABOVE_MEDIAN_LU} LU above the median file, at least {OFFSET_MIN_SECS} s, not clipped) played again at the {} volume; offset = median of (factory level_lufs - reference level_lufs)",
+                    if self.is_reference() { "factory" } else { "reference" }
                 ),
                 boards: &self.offsets,
                 note: self.offset_note.clone(),

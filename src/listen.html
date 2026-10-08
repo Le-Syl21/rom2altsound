@@ -154,7 +154,8 @@ a { color: var(--accent); }
   if (typeof data.lufs === "number") bits.push("all files " + data.lufs.toFixed(1) + " LUFS");
   head.appendChild(el("p", "meta", bits.join(" · ")));
   var v = data.volume || {}, vol = [];
-  if (v.reference) vol.push("Recorded at the reference volume " + v.reference);
+  if (v.recorded) vol.push("Recorded at " + v.recorded);
+  if (v.reference) vol.push("reference volume " + v.reference);
   if (v.factory) vol.push("factory volume " + v.factory);
   if (typeof v.offset_db === "number") vol.push("factory offset " + db(v.offset_db));
   if (vol.length) head.appendChild(el("p", "meta", vol.join("; ")));

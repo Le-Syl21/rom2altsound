@@ -14,7 +14,7 @@
 //!   (`twin_of`); each command keeps its own file unless `--merge-twins` is given.
 //! - `altsound.csv` (the "AltSound" format), `g-sound.csv` (the "G-Sound" format) and an
 //!   `altsound.ini` that selects the AltSound format and turns off the ROM volume control:
-//!   every file is recorded at the same reference level, so GAIN is 100 everywhere.
+//!   every file is recorded at the same master volume, so GAIN is 100 everywhere.
 //! - DCS: CHANNEL, DUCK and STOP (AltSound), TYPE and the ducking profiles (G-Sound) come
 //!   from the track programs (`dcsrom::command_effects`, in `manifest.json` as `dcs`): the
 //!   music is DCS channel 0, the one voice channel without twins is the jingle channel
@@ -36,19 +36,32 @@ pub const GSOUND_CSV: &str = "g-sound.csv";
 pub const ALTSOUND_INI: &str = "altsound.ini";
 
 /// Twin test thresholds. A pair is a twin only when all three hold.
-/// - Lengths within one sample of each other.
+/// - Lengths within `TWIN_MAX_LENGTH_DIFF` samples of each other.
 /// - Integrated loudness within 0.01 LU.
 /// - After aligning the two files to a fraction of a sample, the residual is at the level
-///   of 16-bit dither / resampling noise relative to the signal.
-pub const TWIN_MAX_LENGTH_DIFF: usize = 1;
+///   of 16-bit dither / resampling noise: -60 dB relative to the signal, or, for quiet
+///   files, at most `TWIN_MAX_RESIDUAL_LSB` RMS (and still `TWIN_MAX_RESIDUAL_QUIET_DB`
+///   below the signal).
+///
+/// At the factory volume (afm_113b `55 AA 67 98`, 22 dB below the reference) the ±1 LSB
+/// dither of PinMAME's mixer is 22 dB closer to the signal, and the silence trim (2 LSB)
+/// falls a few samples apart on the decaying tails: the twins of the reference volume
+/// (0 to 1 sample apart, -64 to -80 dB) were 1 to 105 samples apart and at -22 to -28 dB
+/// with integer lags only. Different sounds of nearly the same length stay above 0 dB.
+pub const TWIN_MAX_LENGTH_DIFF: usize = 256;
 pub const TWIN_MAX_LUFS_DIFF: f64 = 0.01;
 pub const TWIN_MAX_RESIDUAL_DB: f64 = -60.0;
+pub const TWIN_MAX_RESIDUAL_LSB: f64 = 4.0;
+pub const TWIN_MAX_RESIDUAL_QUIET_DB: f64 = -30.0;
 /// Integer lags tried before the sub-sample refinement (the boards can start a sound one
-/// or two samples apart).
+/// or two samples apart, and on a quiet file the silence trim can fall dozens of samples
+/// apart).
 ///
 /// Measured on afm_113b: the 303 pairs that pass the length and loudness tests are at
 /// -64 to -80 dB once aligned; different sounds of nearly the same length are above 0 dB.
-const TWIN_MAX_LAG: isize = 3;
+const TWIN_MAX_LAG: isize = 128;
+/// The lags tried first.
+const TWIN_NEAR_LAG: isize = 3;
 
 /// A loop is played from an extended file (intro + cycles) when its intro holds at least
 /// this much audio of its own, before the repetition starts. Shorter, the "intro" is only
@@ -367,7 +380,7 @@ pub fn altsound_ini_dcs(callout: &[u32], sfx: &[u32]) -> String {
     format!(
         "; altsound.ini - written by rom2altsound (https://github.com/Le-Syl21/rom2altsound)\n\
          ;\n\
-         ; rom_volume_ctrl = 0: every sample was recorded at the same reference volume, so the\n\
+         ; rom_volume_ctrl = 0: every sample was recorded at one master volume (by default the game's factory one), so the\n\
          ; ROM's own volume commands must not change the playback level.\n\
          ; format: this folder holds both altsound.csv and g-sound.csv; switch to\n\
          ; \"g-sound\" to use the latter.\n\
@@ -412,7 +425,7 @@ pub fn altsound_ini_dcs(callout: &[u32], sfx: &[u32]) -> String {
 pub fn altsound_ini() -> String {
     "; altsound.ini - written by rom2altsound (https://github.com/Le-Syl21/rom2altsound)\n\
      ;\n\
-     ; rom_volume_ctrl = 0: every sample was recorded at the same reference volume, so the\n\
+     ; rom_volume_ctrl = 0: every sample was recorded at one master volume (by default the game's factory one), so the\n\
      ; ROM's own volume commands must not change the playback level.\n\
      ; format: this folder holds both altsound.csv and g-sound.csv; switch to\n\
      ; \"g-sound\" to use the latter.\n\
@@ -692,10 +705,17 @@ fn residual_at(a: &[f64], b: &[f64], lag: f64, range: std::ops::Range<usize>) ->
 pub fn aligned_residual(a: &[f64], b: &[f64]) -> (f64, f64) {
     let n = a.len().min(b.len());
     let mut best = (f64::INFINITY, 0.0);
-    for l in -TWIN_MAX_LAG..=TWIN_MAX_LAG {
-        let r = residual_at(a, b, l as f64, 0..n);
-        if r < best.0 {
-            best = (r, l as f64);
+    // The nearest lags first; further ones only when those do not align the files (on a
+    // periodic sound a lag of one period would fit as well, and the nearest is the one).
+    for max in [TWIN_NEAR_LAG, TWIN_MAX_LAG] {
+        for l in -max..=max {
+            let r = residual_at(a, b, l as f64, 0..n);
+            if r < best.0 {
+                best = (r, l as f64);
+            }
+        }
+        if best.0 <= TWIN_MAX_RESIDUAL_QUIET_DB {
+            break;
         }
     }
     if best.0 == f64::NEG_INFINITY {
@@ -727,6 +747,17 @@ pub fn aligned_residual(a: &[f64], b: &[f64]) -> (f64, f64) {
     if r < best.0 { (r, lag) } else { best }
 }
 
+/// The residual of `aligned_residual` (`residual_db`, relative to `a`) in LSB RMS, over
+/// the overlap of the two files.
+fn residual_rms(a: &[f64], b: &[f64], residual_db: f64) -> f64 {
+    let n = a.len().min(b.len());
+    if n == 0 {
+        return f64::INFINITY;
+    }
+    let p = a[..n].iter().map(|v| v * v).sum::<f64>() / n as f64;
+    (p * 10f64.powf(residual_db / 10.0)).sqrt()
+}
+
 /// Finds twins among the written sounds. Each sound is compared to the earlier sounds
 /// that are not twins themselves; the first that passes all three tests is its original.
 pub fn find_twins(out_dir: &Path, sounds: &[SoundInfo]) -> Vec<Twin> {
@@ -752,14 +783,17 @@ pub fn find_twins(out_dir: &Path, sounds: &[SoundInfo]) -> Vec<Twin> {
                 return None;
             }
             let (residual_db, lag) = aligned_residual(&o.audio, &audio);
-            (residual_db <= TWIN_MAX_RESIDUAL_DB).then_some(Twin {
-                index,
-                of: o.index,
-                residual_db,
-                lag,
-                length_diff,
-                lufs_diff,
-            })
+            (residual_db <= TWIN_MAX_RESIDUAL_DB
+                || (residual_db <= TWIN_MAX_RESIDUAL_QUIET_DB
+                    && residual_rms(&o.audio, &audio, residual_db) <= TWIN_MAX_RESIDUAL_LSB))
+                .then_some(Twin {
+                    index,
+                    of: o.index,
+                    residual_db,
+                    lag,
+                    length_diff,
+                    lufs_diff,
+                })
         });
         match found {
             Some(t) => twins.push(t),
@@ -1181,6 +1215,8 @@ fn annotate_manifest(
             "max_length_diff_samples": TWIN_MAX_LENGTH_DIFF,
             "max_lufs_diff": TWIN_MAX_LUFS_DIFF,
             "max_residual_db": TWIN_MAX_RESIDUAL_DB,
+            "max_residual_lsb": TWIN_MAX_RESIDUAL_LSB,
+            "max_residual_quiet_db": TWIN_MAX_RESIDUAL_QUIET_DB,
         },
     });
     fs::write(&path, serde_json::to_string_pretty(&m).unwrap())

@@ -35,8 +35,8 @@ const LONG_ABOUT: &str = "\
 Turn a pinball ROM's sound board into an AltSound pack.
 
 rom2altsound runs PinMAME in-process, plays every sound command of the ROM on the
-emulated sound board, and records each one to its own WAV file at one reference
-volume. Music loops are cut to their intro plus one exact cycle. Each ROM gets a
+emulated sound board, and records each one to its own WAV file at the volume the
+game itself sets from its factory settings. Music loops are cut to their intro plus one exact cycle. Each ROM gets a
 folder that VPinball's AltSound plugin reads as is: drop it as
 <table folder>/altsound/<rom>/.
 
@@ -98,31 +98,41 @@ struct Cli {
     limit: Option<usize>,
     /// Skip the factory settings. By default each ROM is booted cold in a fresh private
     /// PinMAME directory (no nvram) so that the game runs its factory reset and writes its
-    /// nvram, then warm from that nvram; the volume the game sets (its factory volume) is
-    /// noted and every sound is recorded at the reference volume (the loudest master volume
-    /// that does not clip: DCS 55 AA EF 10, Whitestar FE 11 FD, WPCS 79 0C F3). The dB offset to the
-    /// factory volume goes in the manifest
+    /// nvram, then warm from that nvram; every sound is recorded at the volume the game
+    /// sets there (its factory volume, see --volume)
     #[arg(long)]
     no_factory: bool,
-    /// Record at the game's own factory volume instead of the reference volume
-    /// (apollo13's files then peak around -43 dBFS)
-    #[arg(long, conflicts_with_all = ["dcs_volume", "no_factory", "no_volume_init", "cold_boot_only"])]
+    /// Which master volume the boards are recorded at, with the factory settings. factory:
+    /// the one the game itself sets at boot (DCS 55 AA 67 98 on most games, WPCS 79 0C F3,
+    /// Whitestar FE 2C FD on apollo13), on every board; the offset to the reference volume
+    /// is measured on a few files and goes in the manifest. reference: the loudest master
+    /// volume that does not clip in emulation (DCS 55 AA EF 10, Whitestar FE 11 FD, WPCS 79
+    /// 0C F3). Boards without a volume stage are at full scale either way
+    /// [default: factory, or reference when --dcs-volume, --whitestar-volume or --wpcs-volume
+    /// is given]
+    #[arg(long, value_enum, conflicts_with_all = ["no_factory", "no_volume_init", "cold_boot_only"])]
+    volume: Option<VolumeMode>,
+    /// Same as --volume factory (kept for older scripts)
+    #[arg(long, hide = true, conflicts_with_all = ["volume", "dcs_volume", "whitestar_volume", "wpcs_volume", "no_factory", "no_volume_init", "cold_boot_only"])]
     factory_volume: bool,
     /// Do not set the DCS master volume (keep what the game or the board's reset set);
     /// implies --no-factory
     #[arg(long)]
     no_volume_init: bool,
     /// DCS master volume byte sent as `55 AA vv ~vv` (FF = 0 dB, one step = 08); with
-    /// the factory settings, the DCS reference volume [default: EF, or FF with --no-factory]
+    /// the factory settings, the DCS reference volume (implies --volume reference unless
+    /// --volume factory is given) [default: EF, or FF with --no-factory]
     #[arg(long, value_parser = parse_hex_byte)]
     dcs_volume: Option<u8>,
     /// The Whitestar reference volume byte, sent as `FE xx FD` (10 = level 31, the
-    /// loudest; 2F = silent) [default: 11]
-    #[arg(long, conflicts_with_all = ["factory_volume", "no_factory", "no_volume_init", "cold_boot_only"], value_parser = parse_whitestar)]
+    /// loudest; 2F = silent; implies --volume reference unless --volume factory is given)
+    /// [default: 11]
+    #[arg(long, conflicts_with_all = ["no_factory", "no_volume_init", "cold_boot_only"], value_parser = parse_whitestar)]
     whitestar_volume: Option<u8>,
     /// The WPCS reference volume byte, sent as `79 vv ~vv` (00 = silent, 1F = the loudest;
-    /// the board ignores 20 and above) [default: 0C]
-    #[arg(long, conflicts_with_all = ["factory_volume", "no_factory", "no_volume_init", "cold_boot_only"], value_parser = parse_hex_byte)]
+    /// the board ignores 20 and above; implies --volume reference unless --volume factory
+    /// is given) [default: 0C]
+    #[arg(long, conflicts_with_all = ["no_factory", "no_volume_init", "cold_boot_only"], value_parser = parse_hex_byte)]
     wpcs_volume: Option<u8>,
     /// Minimum emulated boot time before halting the game CPUs; the boot then lasts until
     /// no game sound byte has arrived for 3 s (and, on DCS, until the game's volume)
@@ -235,6 +245,30 @@ impl Cli {
     fn factory(&self) -> bool {
         !(self.no_factory || self.no_volume_init || self.cold_boot_only)
     }
+
+    /// With the factory settings: the volume the files are recorded at.
+    fn volume_mode(&self) -> VolumeMode {
+        match self.volume {
+            Some(m) => m,
+            None if self.factory_volume => VolumeMode::Factory,
+            None if self.dcs_volume.is_some()
+                || self.whitestar_volume.is_some()
+                || self.wpcs_volume.is_some() =>
+            {
+                VolumeMode::Reference
+            }
+            None => VolumeMode::Factory,
+        }
+    }
+}
+
+/// `--volume`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum VolumeMode {
+    /// The master volume the game itself sets at boot from its factory settings.
+    Factory,
+    /// The loudest master volume that does not clip in emulation, per board family.
+    Reference,
 }
 
 /// One ROM to extract: its set name, the directory holding its zip, its output folder.
@@ -434,13 +468,17 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             parent: parent.clone(),
             only: cli.only.clone(),
             limit: cli.limit,
-            volume: if cli.factory_volume || cli.no_volume_init {
+            volume: if cli.no_volume_init {
                 VolumeInit::Game
             } else if cli.factory() {
-                VolumeInit::Reference {
+                let r = extract::Ref {
                     dcs: cli.dcs_volume.unwrap_or(DCS_REFERENCE),
                     whitestar: cli.whitestar_volume.unwrap_or(WHITESTAR_REFERENCE),
                     wpcs: cli.wpcs_volume.unwrap_or(WPCS_REFERENCE),
+                };
+                match cli.volume_mode() {
+                    VolumeMode::Factory => VolumeInit::Factory(r),
+                    VolumeMode::Reference => VolumeInit::Reference(r),
                 }
             } else {
                 VolumeInit::Dcs(cli.dcs_volume.unwrap_or(0xFF))
@@ -736,8 +774,29 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
         x.volume_label()
             .unwrap_or_else(|| "the boards' own level (no volume command)".into())
     );
-    if x.is_reference() {
+    for r in x.recorded_volumes() {
+        println!(
+            "    board {} ({}): {} ({})",
+            r.board, r.family, r.volume, r.from
+        );
+    }
+    if x.compares_volumes() {
         println!("  reference volume: {}", x.reference_volume());
+    }
+    let clipped = x.clipped_files();
+    if !clipped.is_empty() {
+        let list: Vec<String> = clipped
+            .iter()
+            .take(12)
+            .map(|c| format!("{} ({})", c.id, c.clipped_samples))
+            .collect();
+        println!(
+            "  CLIPPED at the recorded volume (PinMAME's own mix, not lowered): {} file(s), {} sample(s): {}{}",
+            clipped.len(),
+            clipped.iter().map(|c| c.clipped_samples).sum::<usize>(),
+            list.join(" "),
+            if clipped.len() > 12 { " ..." } else { "" }
+        );
     }
     let l = x.loudness_report();
     let fmt = |a: &loudness::Aggregate| {
@@ -761,7 +820,7 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
     if let Some(n) = &l.master_volume_check {
         println!("    master volume check: {n}");
     }
-    if x.is_reference() {
+    if x.compares_volumes() {
         for o in x.offsets() {
             println!(
                 "    factory offset: board {} ({}) factory {} vs reference {}: {} (spread {}, {} file(s))",
@@ -788,7 +847,10 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
                 s.loudest_true_peak_dbtp
                     .map_or("n/a".into(), |v| format!("{v:.1} dBTP")),
             ),
-            None => println!("    as shipped: n/a (factory offset not measured)"),
+            None if x.is_reference() => {
+                println!("    as shipped: n/a (factory offset not measured)")
+            }
+            None => {}
         }
     }
     if let Some(r) = x.mix_report() {
@@ -957,5 +1019,38 @@ fn loop_scan(args: Vec<String>) {
                 t0.elapsed().as_secs_f64()
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mode(args: &[&str]) -> VolumeMode {
+        let argv = std::iter::once("rom2altsound").chain(args.iter().copied());
+        Cli::try_parse_from(argv).unwrap().volume_mode()
+    }
+
+    #[test]
+    fn factory_volume_by_default() {
+        assert_eq!(mode(&["afm_113b"]), VolumeMode::Factory);
+        assert_eq!(mode(&["afm_113b", "--factory-volume"]), VolumeMode::Factory);
+        assert_eq!(
+            mode(&["afm_113b", "--volume", "reference"]),
+            VolumeMode::Reference
+        );
+        // A reference byte asks for the reference volume, unless factory is explicit.
+        assert_eq!(
+            mode(&["taf_l5", "--wpcs-volume", "16"]),
+            VolumeMode::Reference
+        );
+        assert_eq!(
+            mode(&["taf_l5", "--wpcs-volume", "16", "--volume", "factory"]),
+            VolumeMode::Factory
+        );
+        assert!(
+            Cli::try_parse_from(["rom2altsound", "x", "--volume", "reference", "--no-factory"])
+                .is_err()
+        );
     }
 }

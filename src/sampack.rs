@@ -6,8 +6,9 @@
 //!   named after the first sample id that plays it (`s0123-<rom>.wav`, `s0123-l2-<rom>.wav`
 //!   for a language other than the first), and every music script (song versions, loop
 //!   beds) as one continuous 24 kHz file (`s0172-<rom>.wav`), joins declicked, with a
-//!   `smpl` loop when the script loops. All at full scale: the samples as decoded, which
-//!   is what the DAC plays at 0 dB (attenuation FF).
+//!   `smpl` loop when the script loops. All at the game's factory DAC attenuation (the
+//!   decoded samples scaled by it, in the real DAC's 0.5 dB steps), or at full scale (what
+//!   the DAC plays at 0 dB, attenuation FF) with `--volume reference` or when it is unknown.
 //! - Factory volume: the game sets its master volume in the PCM1755 DAC (registers
 //!   0x10/0x11), from the operator setting in its nvram (`VOLUME_PROOF`). The cold boot
 //!   (child process) writes the factory nvram, the warm boot from it logs the DAC writes
@@ -379,6 +380,17 @@ fn sound_file(rom: &str, sample: u16, lang: u8) -> String {
     }
 }
 
+/// The samples at `gain` (the factory attenuation as a linear factor; 1 = full scale),
+/// rounded to the nearest 16-bit value.
+fn scaled(pcm: Vec<i16>, gain: f64) -> Vec<i16> {
+    if gain == 1.0 {
+        return pcm;
+    }
+    pcm.into_iter()
+        .map(|s| (f64::from(s) * gain).round().clamp(-32768.0, 32767.0) as i16)
+        .collect()
+}
+
 fn write(out: &Path, file: &str, pcm: &[i16], rate: u32) -> Result<(), String> {
     crate::extract::write_wav(&out.join(file), pcm, 1, rate)
         .map_err(|e| format!("{}: {e}", out.join(file).display()))
@@ -401,9 +413,10 @@ fn write_music(
     out: &Path,
     file: &str,
     intro_loop_secs: f64,
+    gain: f64,
 ) -> Result<Written, String> {
     let r = sam::render(rom, &m.timeline, true);
-    let pcm = r.pcm;
+    let pcm = scaled(r.pcm, gain);
     write(out, file, &pcm, BASE_RATE)?;
     let mut loop_info = None;
     if let (Some(start), Some(_)) = (m.timeline.loop_start, m.timeline.loop_end) {
@@ -475,6 +488,7 @@ fn write_all(
     items: &[(Item, String)],
     out: &Path,
     intro_loop_secs: f64,
+    gain: f64,
 ) -> Result<Vec<Written>, String> {
     let next = AtomicUsize::new(0);
     let results: Mutex<Vec<(usize, Result<Written, String>)>> = Mutex::new(Vec::new());
@@ -492,7 +506,7 @@ fn write_all(
                     let r = match *item {
                         Item::Sound(k) => {
                             let st = &cat.sounds[k].stream;
-                            let pcm = st.decode(rom);
+                            let pcm = scaled(st.decode(rom), gain);
                             write(out, file, &pcm, st.rate()).map(|()| Written {
                                 file: file.clone(),
                                 rate: st.rate(),
@@ -501,7 +515,7 @@ fn write_all(
                             })
                         }
                         Item::Music(k) => {
-                            write_music(rom, &cat.music[k], out, file, intro_loop_secs)
+                            write_music(rom, &cat.music[k], out, file, intro_loop_secs, gain)
                         }
                     };
                     results.lock().unwrap().push((i, r));
@@ -667,10 +681,6 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
         items.push((Item::Music(i), f));
     }
     std::fs::create_dir_all(&job.out).map_err(|e| e.to_string())?;
-    let t_files = Instant::now();
-    let written = write_all(&rom, &cat, &items, &job.out, cli.intro_loop_secs)?;
-    let files_secs = t_files.elapsed().as_secs_f64();
-
     let (cold, warm, factory_note) = if cli.factory() {
         factory(cli, job, vpm)
     } else {
@@ -680,6 +690,34 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
             Some("--no-factory: the game was not booted".into()),
         )
     };
+    // Factory volume: the PCM1755 attenuation the game wrote on the warm boot.
+    let dac = warm.as_ref().and_then(|b| {
+        let l = b
+            .left
+            .as_deref()
+            .and_then(|v| u8::from_str_radix(v, 16).ok());
+        let r = b
+            .right
+            .as_deref()
+            .and_then(|v| u8::from_str_radix(v, 16).ok());
+        l.or(r).map(|l| (l, r.unwrap_or(l)))
+    });
+    let offset = dac.and_then(|(l, r)| match (dac_db(l), dac_db(r)) {
+        (Some(a), Some(b)) => Some((a + b) / 2.0),
+        _ => None,
+    });
+    // The files are written at the factory attenuation (the real DAC's 0.5 dB steps), unless
+    // `--volume reference` or the attenuation is unknown (then full scale, said so).
+    let at_factory = cli.factory() && cli.volume_mode() == crate::VolumeMode::Factory;
+    let gain_db = if at_factory { offset } else { None };
+    if at_factory && gain_db.is_none() {
+        eprintln!("SAM: factory attenuation not known, files written at full scale (FF)");
+    }
+
+    let t_files = Instant::now();
+    let gain = gain_db.map_or(1.0, |d| 10f64.powf(d / 20.0));
+    let written = write_all(&rom, &cat, &items, &job.out, cli.intro_loop_secs, gain)?;
+    let files_secs = t_files.elapsed().as_secs_f64();
 
     let calls_of = cat.calls_of();
     let speech = cat.localized();
@@ -741,22 +779,6 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
         pack_of.entry(i).or_default().push(r);
     }
 
-    // Factory volume.
-    let dac = warm.as_ref().and_then(|b| {
-        let l = b
-            .left
-            .as_deref()
-            .and_then(|v| u8::from_str_radix(v, 16).ok());
-        let r = b
-            .right
-            .as_deref()
-            .and_then(|v| u8::from_str_radix(v, 16).ok());
-        l.or(r).map(|l| (l, r.unwrap_or(l)))
-    });
-    let offset = dac.and_then(|(l, r)| match (dac_db(l), dac_db(r)) {
-        (Some(a), Some(b)) => Some((a + b) / 2.0),
-        _ => None,
-    });
     let factory_volume = warm.as_ref().map(|b| {
         json!({
             "seen": dac.is_some(),
@@ -968,14 +990,36 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
     let manifest = json!({
         "rom": job.rom,
         "parent": Value::Null,
-        "mode": if cli.factory() { "reference (Stern SAM: static extraction, full scale; factory volume from a warm boot)" } else { "static (Stern SAM: sounds read from the flash image)" },
+        "mode": match (cli.factory(), gain_db) {
+            (true, Some(_)) => "factory (Stern SAM: static extraction at the factory DAC attenuation, read on a warm boot)",
+            (true, None) => "reference (Stern SAM: static extraction, full scale; factory volume from a warm boot)",
+            (false, _) => "static (Stern SAM: sounds read from the flash image)",
+        },
+        "volume_mode": if gain_db.is_some() { "factory" } else { "reference" },
+        "recorded_volume": [{
+            "board": 0,
+            "family": "SAM",
+            "volume": match (gain_db, dac) {
+                (Some(_), Some((l, r))) => format!("{} {}", hex2(l), hex2(r)),
+                _ => "FF (full scale)".to_string(),
+            },
+            "from": match gain_db {
+                Some(d) => format!("factory: the PCM1755 attenuation the game wrote on the warm boot, {d:+.1} dB, applied to the decoded samples"),
+                None if at_factory => format!("full scale: the factory attenuation is not known ({})", factory_note.as_deref().unwrap_or("no DAC write seen")),
+                None => "the reference volume (--volume reference)".to_string(),
+            },
+        }],
         "factory": cold,
         "boards": ["SAM (software mixer, PCM1755 DAC)"],
         "sample_rate": BASE_RATE,
         "channels": 1,
         "factory_volume": factory_volume,
-        "volume_init": Value::Null,
-        "levels_note": "Every file holds the decoded samples at full scale: what the DAC plays at 0 dB (attenuation FF), the reference volume. The game's own per-voice volume ramps (script opcode 09) are not applied. Add factory_offset_db to a level to get it at the factory volume.",
+        "volume_init": gain_db.and(dac).map(|(l, r)| format!("factory {} {}", hex2(l), hex2(r))),
+        "levels_note": if gain_db.is_some() {
+            "Every file holds the decoded samples at the game's factory DAC attenuation (recorded_volume), in the real PCM1755's 0.5 dB steps; factory_offset_db (factory minus full scale) is for information. The game's own per-voice volume ramps (script opcode 09) are not applied."
+        } else {
+            "Every file holds the decoded samples at full scale: what the DAC plays at 0 dB (attenuation FF), the reference volume. The game's own per-voice volume ramps (script opcode 09) are not applied. Add factory_offset_db to a level to get it at the factory volume."
+        },
         "factory_offset_db": offset,
         "factory_offset": {
             "method": "PCM1755 attenuation (0.5 dB per step from FF) of the master volume the game writes on a warm boot from its factory nvram; the mean of left and right",
@@ -1065,7 +1109,7 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
         .map(|(_, w)| w.m.duration)
         .sum();
     println!(
-        "{}: Stern SAM, static: {} sound stream(s), {} music script(s) ({} songs, {:.1} min), {} loop(s) ({} extended), {} file(s) reaching full scale as decoded; {} languages; {} calls; {:.1} s wall",
+        "{}: Stern SAM, static: {} sound stream(s), {} music script(s) ({} songs, {:.1} min), {} loop(s) ({} extended), {} file(s) reaching full scale as written; {} languages; {} calls; {:.1} s wall",
         job.rom,
         cat.sounds.len(),
         cat.music.len(),
@@ -1105,7 +1149,15 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
                 .map_or("n/a".into(), |v| format!("{v:.1} dBTP"))
         )
     };
-    println!("  loudness (full scale): all {}", fmt(&all));
+    println!(
+        "  loudness ({}): all {}",
+        if gain_db.is_some() {
+            "at the factory attenuation"
+        } else {
+            "full scale"
+        },
+        fmt(&all)
+    );
     println!("    without loops:     {}", fmt(&once));
     if !cli.no_altsound {
         println!(
@@ -1188,7 +1240,7 @@ mod tests {
             })
             .collect();
         items.push((Item::Music(0), sound_file("t", cat.music[0].sample(), 0)));
-        let w = write_all(&s.rom, &cat, &items, &dir, 1.0).unwrap();
+        let w = write_all(&s.rom, &cat, &items, &dir, 1.0, 1.0).unwrap();
         assert_eq!(w.len(), 13);
         // Sound files: the stream at its own rate, sample-exact.
         let r = hound::WavReader::open(dir.join("s0001-t.wav")).unwrap();
