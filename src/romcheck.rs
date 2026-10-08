@@ -274,6 +274,12 @@ pub struct SetMatch {
     /// (a split set) and the system sets' it loads from (see `systems`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub split_with: Vec<String>,
+    /// An incomplete set whose missing files are all in other zips of the same folder that
+    /// PinMAME would not look in (MAME's Pinball 2000 base zips `rfmpb`, `swe1pb`: the shared
+    /// sound and Prism ROMs of every version, under other names), found by content:
+    /// `--fix-names` writes it complete from them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub complete_with: Vec<String>,
     /// A shared system ROM set (gts80s, allied...), not a game.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub system: bool,
@@ -458,6 +464,7 @@ fn compare(d: &Driver, members: &[Member]) -> SetMatch {
         folders,
         no_dump,
         split_with: Vec::new(),
+        complete_with: Vec::new(),
         system: d.system,
         system_users: None,
         systems: d.systems.clone(),
@@ -1049,7 +1056,45 @@ fn find_split_sets(units: &mut [Unit]) {
                 with.push((v, k == 0 && s.parent.is_some()));
             }
         }
-        if !need.is_empty() || with.is_empty() {
+        if !need.is_empty() {
+            // Not loadable as is: the rest may still be in some other zip of the folder.
+            let mut donors: Vec<usize> = Vec::new();
+            for (v, other) in units.iter().enumerate() {
+                if need.is_empty() {
+                    break;
+                }
+                if v == u
+                    || with.iter().any(|&(w, _)| w == v)
+                    || Path::new(&other.path).parent().map(Path::to_path_buf) != dir
+                {
+                    continue;
+                }
+                let before = need.len();
+                need.retain(|h| !other.members.iter().any(|m| (m.crc, m.size) == *h));
+                if need.len() < before {
+                    donors.push(v);
+                }
+            }
+            if need.is_empty() {
+                let paths: Vec<String> = with
+                    .iter()
+                    .map(|&(v, _)| v)
+                    .chain(donors.iter().copied())
+                    .map(|v| units[v].path.clone())
+                    .collect();
+                let donor_paths: Vec<String> =
+                    donors.iter().map(|&v| units[v].path.clone()).collect();
+                let s = &mut units[u].sets[0];
+                s.complete_with = paths;
+                let set = s.set.clone();
+                units[u].issues.push(format!(
+                    "completable: {set}'s missing files are all in {} (found by content, under other names; PinMAME does not look there): --fix-names writes the complete set",
+                    donor_paths.join(", ")
+                ));
+            }
+            continue;
+        }
+        if with.is_empty() {
             continue;
         }
         let paths: Vec<String> = with.iter().map(|&(v, _)| units[v].path.clone()).collect();
@@ -1086,7 +1131,8 @@ fn fix_names(ix: &Index, units: &[Unit], out: &Path) -> Vec<String> {
     let mut written: HashSet<String> = HashSet::new();
     for u in units {
         for s in &u.sets {
-            if !matches!(s.status, SetStatus::Good | SetStatus::Split) {
+            if !matches!(s.status, SetStatus::Good | SetStatus::Split) && s.complete_with.is_empty()
+            {
                 continue;
             }
             let Some(d) = ix.driver(&s.set) else { continue };
@@ -1152,6 +1198,7 @@ fn write_set(
     let parent_members: Vec<&Member> = s
         .split_with
         .iter()
+        .chain(&s.complete_with)
         .filter_map(|p| units.iter().find(|v| v.path == *p))
         .flat_map(|v| v.members.iter())
         .collect();
@@ -1852,6 +1899,59 @@ mod tests {
         assert_eq!(check(&ix, &out.join("spidermn.zip")).status, "ok");
         assert_eq!(check(&ix, &out.join("gts80s.zip")).status, "support");
 
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A Pinball 2000 version zip (its own update files only) and MAME's base zip of the
+    /// game (`rfmpb`: the shared ROMs under other names): completable, and --fix-names
+    /// writes the whole set.
+    #[test]
+    fn completes_a_set_from_another_zip_by_content() {
+        let dir =
+            std::env::temp_dir().join(format!("rom2altsound-romcheck-p2k-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let shared = |d: &mut Vec<RomFile>| {
+            d.push(rom("rfm_28f800.rom", b"sound flash", "sound1", true));
+            d.push(rom("rfm_u100.rom", b"prism", "user1", false));
+        };
+        let mut parent = vec![rom("p_game.rom", b"game 1.60", "user2", false)];
+        shared(&mut parent);
+        let mut clone = vec![rom("c_game.rom", b"game 1.20", "user2", false)];
+        shared(&mut clone);
+        // rfm_010 has no file of its own: the base zip holds it whole.
+        let mut base = Vec::new();
+        shared(&mut base);
+        let t = vec![
+            driver("rfm_160", None, parent),
+            driver("rfm_120", Some("rfm_160"), clone),
+            driver("rfm_010", Some("rfm_160"), base),
+        ];
+        let ix = Index::new(&t, HashMap::new());
+        zip(&dir, "rfm_120.zip", &[("c_game.rom", b"game 1.20")]);
+        zip(
+            &dir,
+            "rfmpb.zip",
+            &[
+                ("28f800.bin", b"sound flash"),
+                ("u100.rom", b"prism"),
+                ("awdbios.bin", b"bios"),
+            ],
+        );
+        let mut units: Vec<Unit> = ["rfm_120.zip", "rfmpb.zip"]
+            .iter()
+            .map(|n| check(&ix, &dir.join(n)))
+            .collect();
+        find_split_sets(&mut units);
+        let s = &units[0].sets[0];
+        assert_eq!(s.status, SetStatus::Incomplete);
+        assert_eq!(s.complete_with.len(), 1, "{:?}", units[0].issues);
+        assert!(units[0].issues.iter().any(|i| i.starts_with("completable")));
+        let out = dir.join("fixed");
+        let log = fix_names(&ix, &units, &out);
+        assert!(log.iter().any(|l| l.starts_with("rfm_120:")), "{log:?}");
+        assert!(log.iter().any(|l| l.starts_with("rfm_010:")), "{log:?}");
+        let u = check(&ix, &out.join("rfm_120.zip"));
+        assert_eq!(u.status, "ok", "{:?}", u.issues);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

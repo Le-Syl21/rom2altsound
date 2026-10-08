@@ -10,17 +10,54 @@
 //!
 //! A DCS command below the track count plays that track; `55 AA ..` and the other
 //! `55 xx` specials are far above it.
+//!
+//! Pinball 2000 (DCS2, `SNDBRD_DCSP2K`) keeps the same catalog and the same track programs
+//! in 16-bit words: its sound flash, U109 and U110 are word-wide chips (PinMAME's region:
+//! the flash at 0, U109 at $400000, U110 at $800000, little-endian words), and each word
+//! holds two bytes of the DCS layout, high byte first. `p2k_image` turns the region into
+//! that byte stream; the catalog is then at $10000 (the flash's own entry: $100 * 4 KiB,
+//! chip 0, checksum 0; then U109 and U110 with their chip selects 04 and 08 and their
+//! checksums), and a ROM pointer is a plain 24-bit offset into the image.
 
 use serde::Serialize;
 
 /// Offsets where the catalog may start in U2.
 const CATALOG_OFFSETS: [usize; 3] = [0x3000, 0x4000, 0x6000];
+/// Where it starts in a Pinball 2000 image (`p2k_image`).
+const P2K_CATALOG: usize = 0x10000;
+
+/// A Pinball 2000 sound region as the byte stream the DCS layout reads: each 16-bit word
+/// (little-endian in PinMAME's region) as its high byte, then its low byte.
+pub fn p2k_image(region: &[u8]) -> Vec<u8> {
+    region
+        .chunks(2)
+        .flat_map(|w| match *w {
+            [lo, hi] => [hi, lo],
+            [b] => [b, 0xFF],
+            _ => unreachable!(),
+        })
+        .collect()
+}
+
+/// The catalog's offset, and whether the ROM is a Pinball 2000 image (plain 24-bit
+/// pointers) rather than a WPC DCS region (chip select in the pointer's bits 21-23).
+fn find_catalog(rom: &[u8]) -> Option<(usize, bool)> {
+    if let Some(o) = CATALOG_OFFSETS.into_iter().find(|&o| catalog_at(rom, o)) {
+        return Some((o, false));
+    }
+    p2k_catalog_at(rom).then_some((P2K_CATALOG, true))
+}
+
+/// A ROM pointer to an offset in the region (`rom_pointer`), or in a Pinball 2000 image.
+fn pointer(p2k: bool, a: u32) -> usize {
+    if p2k { a as usize } else { rom_pointer(a) }
+}
 
 /// The populated track numbers of a DCS ROM set, given U2's image (the start of PinMAME's
 /// DCS sound region, where U2 is loaded at offset 0 in a slot of at most 1 MiB).
 /// Returns `(track_count, populated)`, or None if no catalog is found.
 pub fn tracks(u2: &[u8]) -> Option<(u16, Vec<u16>)> {
-    let catalog = CATALOG_OFFSETS.into_iter().find(|&o| catalog_at(u2, o))?;
+    let (catalog, _) = find_catalog(u2)?;
     let index = u24(u2, catalog + 0x40)? as usize;
     let count = u16be(u2, catalog + 0x46)?;
     let populated = (0..count)
@@ -103,6 +140,8 @@ pub fn track_run(region: &[u8], track: u16, max_frames: u32) -> TrackRun {
 
 struct Sim<'a> {
     rom: &'a [u8],
+    /// A Pinball 2000 image: plain 24-bit pointers.
+    p2k: bool,
     index: usize,
     count: u16,
     ch: [Channel; CHANNELS],
@@ -143,13 +182,11 @@ pub enum EventKind {
 
 impl<'a> Sim<'a> {
     fn new(rom: &'a [u8]) -> Result<Self, String> {
-        let catalog = CATALOG_OFFSETS
-            .into_iter()
-            .find(|&o| catalog_at(rom, o))
-            .ok_or("no DCS catalog")?;
+        let (catalog, p2k) = find_catalog(rom).ok_or("no DCS catalog")?;
         let r = |o| u24(rom, o).ok_or("catalog out of range");
         Ok(Self {
             rom,
+            p2k,
             index: r(catalog + 0x40)? as usize,
             count: u16be(rom, catalog + 0x46).ok_or("catalog out of range")?,
             ch: Default::default(),
@@ -170,7 +207,7 @@ impl<'a> Sim<'a> {
     }
     fn ptr(&self, o: usize) -> Result<usize, String> {
         let a = u32::from(self.u8(o)?) << 16 | u32::from(self.u16(o + 1)?);
-        Ok(rom_pointer(a))
+        Ok(pointer(self.p2k, a))
     }
 
     fn reset_mixing(&mut self, source: usize) {
@@ -190,7 +227,7 @@ impl<'a> Sim<'a> {
             if a & 0xFF_0000 == 0xFF_0000 {
                 continue;
             }
-            let p = rom_pointer(a);
+            let p = pointer(self.p2k, a);
             let (kind, c) = (self.u8(p)?, self.u8(p + 1)? as usize);
             if c >= CHANNELS {
                 return Err(format!("track {cmd:#06x} on channel {c}"));
@@ -343,6 +380,11 @@ impl<'a> Sim<'a> {
                     }
                 }
                 0x0D => {}
+                // Pinball 2000 (DCS2) only: a level and a fade of the program's own channel,
+                // without a channel operand (`13 ll`, `14 ll nnnn`): the board channel is
+                // the host's choice there. They change no timing, and are not modelled.
+                0x13 if self.p2k => p += 1,
+                0x14 if self.p2k => p += 3,
                 0x0E => {
                     let n = self.u8(p)?;
                     p += 1;
@@ -497,7 +539,7 @@ pub fn track_effects(region: &[u8], track: u16, max_frames: u32) -> Option<Effec
     if track >= s.count || a & 0xFF_0000 == 0xFF_0000 {
         return None;
     }
-    let p = rom_pointer(a);
+    let p = pointer(s.p2k, a);
     let (kind, channel) = (*region.get(p)?, *region.get(p + 1)?);
     let mut e = Effects {
         kind,
@@ -650,7 +692,7 @@ pub fn command_effects(region: &[u8], track: u16, max_secs: f64) -> Option<Comma
     let home_of = |track: u16| {
         let s = Sim::new(region).ok()?;
         let a = u24(region, s.index + 3 * track as usize)?;
-        (track < s.count && a & 0xFF_0000 != 0xFF_0000).then(|| rom_pointer(a))
+        (track < s.count && a & 0xFF_0000 != 0xFF_0000).then(|| pointer(s.p2k, a))
     };
     let deferred = (e.kind == 2)
         .then(|| home_of(track).and_then(|p| u16be(region, p + 2)))
@@ -774,6 +816,16 @@ fn catalog_at(rom: &[u8], o: usize) -> bool {
     let cksum = u16be(rom, o + 4).unwrap_or(1);
     // U2 is a 512 KiB or 1 MiB chip; the region slot may be larger than the chip.
     chip_sel == 0 && cksum == 0 && (0x80000..=0x100000).contains(&size) && size <= rom.len()
+}
+
+/// The Pinball 2000 catalog: the sound flash's own entry ($100 * 4 KiB = 1 MiB, chip 0,
+/// checksum 0), then U109's with chip select 04.
+fn p2k_catalog_at(rom: &[u8]) -> bool {
+    let o = P2K_CATALOG;
+    u16be(rom, o) == Some(0x0100)
+        && u16be(rom, o + 2) == Some(0)
+        && u16be(rom, o + 4) == Some(0)
+        && u16be(rom, o + 8).is_some_and(|c| c >> 8 == 0x04)
 }
 
 #[cfg(test)]
@@ -921,6 +973,33 @@ mod tests {
         assert_eq!((e.track_type, e.channel), (2, 0));
         assert_eq!(e.deferred.as_deref(), Some("0x0003"));
         assert!(e.stops.is_empty());
+    }
+
+    /// The Pinball 2000 layout: little-endian words, the catalog at $10000 of the byte
+    /// image, plain 24-bit pointers (here into "U109", at $400000).
+    #[test]
+    fn p2k_catalog_and_pointers() {
+        let mut img = vec![0xFFu8; 0x40_0100];
+        let cat = 0x10000;
+        img[cat..cat + 12].copy_from_slice(&[1, 0, 0, 0, 0, 0, 4, 0, 4, 0, 0x25, 0xDB]);
+        img[cat + 0x40..cat + 0x43].copy_from_slice(&[0x01, 0x00, 0x48]);
+        img[cat + 0x46..cat + 0x48].copy_from_slice(&2u16.to_be_bytes());
+        // Track 0: FFFFFF (empty); track 1 at $011000.
+        img[0x10048..0x1004E].copy_from_slice(&[0xFF, 0xFF, 0xFF, 0x01, 0x10, 0x00]);
+        // Type 1, channel 1: 13 69 (own level), a 4-frame stream at $400000 played once,
+        // then 14 69 0002 (a fade) a frame later and the end 3 frames after that.
+        let prog = [
+            1, 1, 0, 0, 0x13, 0x69, 0, 0, 0x01, 0, 0x40, 0x00, 0x00, 1, 0, 1, 0x14, 0x69, 0, 2, 0,
+            3, 0,
+        ];
+        img[0x11000..0x11000 + prog.len()].copy_from_slice(&prog);
+        img[0x40_0000..0x40_0002].copy_from_slice(&4u16.to_be_bytes());
+        // As PinMAME's region holds it: each pair of bytes swapped.
+        let region = p2k_image(&img);
+        assert_eq!(p2k_image(&region), img);
+        assert_eq!(tracks(&img), Some((2, vec![1])));
+        // Frame 0: 13, the stream; frame 1: 14; frame 4: the end.
+        assert_eq!(track_run(&img, 1, 100), TrackRun::Ends(5));
     }
 
     #[test]

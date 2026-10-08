@@ -9,6 +9,8 @@
 #include "cpuexec.h"
 #include "wpc/sndbrd.h"
 #include "wpc/core.h"
+#include "wpc/wmssnd.h"
+#include "cpu/adsp2100/adsp2100.h"
 
 // Rebuild the board interface table exactly as src/wpc/sndbrd.c does (same X-macro list,
 // index = board type >> 8), so that we can look at a board's manual-command handler.
@@ -593,4 +595,125 @@ const char *shim_region_name(unsigned r) {
   if (r >= REGION_USER1 && r < REGION_DISKS) { sprintf(buf, "user%u", r - REGION_USER1 + 1); return buf; }
   if (r == REGION_DISKS) return "disks";
   return NULL;
+}
+
+// ---------------------------------------------------------------------------------------
+// Pinball 2000 (SNDBRD_DCSP2K): the words between the game and the DCS2 board.
+//
+// The P2K game is a PC (src/p2k) whose bus calls the board's 16-bit host interface
+// directly (p2k.c p2k_dcs_write -> wmssnd.c dcs_p2k_data_w), not through sndbrd_data_w:
+// libpinmame's sound command callback never sees a word. The board's DSP, though, is a
+// PinMAME CPU whose data map has the host latches (wmssnd.c dcs3_readmem/writemem): data
+// 0400 reads the host's word and a write there acknowledges it (the next queued word is
+// then latched), a write to 0401 is the DSP's reply. The hooks below sit in front of
+// those handlers, as the SAM one does: every word the DSP takes from the host (the word
+// it last read at 0400 when it acknowledges) and every reply is logged with the emulated
+// time, then the board's own handler runs. Nothing in PinMAME is changed.
+
+#define SHIM_P2K_LOG 65536
+static mem_read16_handler shim_p2k_in_r_orig;
+static mem_write16_handler shim_p2k_ack_w_orig, shim_p2k_out_w_orig;
+static int shim_p2k_cpu = -1;
+static data16_t shim_p2k_last_in;
+static volatile unsigned shim_p2k_n, shim_p2k_lost;
+static struct { double at; unsigned short word; unsigned char reply; } shim_p2k_log[SHIM_P2K_LOG];
+
+static void shim_p2k_push(unsigned short w, int reply) {
+  if (shim_p2k_n >= SHIM_P2K_LOG) { shim_p2k_lost++; return; }
+  shim_p2k_log[shim_p2k_n].at = timer_get_time();
+  shim_p2k_log[shim_p2k_n].word = w;
+  shim_p2k_log[shim_p2k_n].reply = (unsigned char)reply;
+  shim_p2k_n++;
+}
+
+static READ16_HANDLER(shim_p2k_in_r) {
+  data16_t v = shim_p2k_in_r_orig(offset, mem_mask);
+  shim_p2k_last_in = v;
+  return v;
+}
+static WRITE16_HANDLER(shim_p2k_ack_w) {
+  shim_p2k_push(shim_p2k_last_in, 0);
+  shim_p2k_ack_w_orig(offset, data, mem_mask);
+}
+static WRITE16_HANDLER(shim_p2k_out_w) {
+  shim_p2k_push((unsigned short)data, 1);
+  shim_p2k_out_w_orig(offset, data, mem_mask);
+}
+
+// Puts the hooks in front of the DCS2 board's latch handlers. Call it from the emulation
+// thread between two frames. Returns 1 when hooked (or already hooked), 0 when the machine
+// has no SNDBRD_DCSP2K board or its DSP's map is not the one wmssnd.c declares.
+int shim_p2k_hook(void) {
+  int ii;
+  const offs_t in = ADSP2100_DATA_OFFSET + (0x0400 << 1), out = ADSP2100_DATA_OFFSET + (0x0401 << 1);
+  if (shim_p2k_cpu >= 0)
+    return 1;
+  if (!sndbrd_exists(0) || sndbrd_type(0) != SNDBRD_DCSP2K)
+    return 0;
+  for (ii = 0; ii < MAX_CPU; ii++) {
+    const struct Memory_ReadAddress16 *r;
+    const struct Memory_WriteAddress16 *w;
+    mem_read16_handler in_r = NULL;
+    mem_write16_handler ack_w = NULL, out_w = NULL;
+    if (!Machine->drv->cpu[ii].cpu_type || !(Machine->drv->cpu[ii].cpu_flags & CPU_AUDIO_CPU))
+      continue;
+    r = (const struct Memory_ReadAddress16 *)Machine->drv->cpu[ii].memory_read;
+    w = (const struct Memory_WriteAddress16 *)Machine->drv->cpu[ii].memory_write;
+    for (; r && !IS_MEMPORT_END(r); r++)
+      if (!IS_MEMPORT_MARKER(r) && r->start == in && r->end == in + 1)
+        in_r = r->handler;
+    for (; w && !IS_MEMPORT_END(w); w++)
+      if (!IS_MEMPORT_MARKER(w) && w->start == in && w->end == in + 1)
+        ack_w = w->handler;
+      else if (!IS_MEMPORT_MARKER(w) && w->start == out && w->end == out + 1)
+        out_w = w->handler;
+    if (!in_r || !ack_w || !out_w)
+      continue;
+    shim_p2k_in_r_orig = in_r;
+    shim_p2k_ack_w_orig = ack_w;
+    shim_p2k_out_w_orig = out_w;
+    shim_p2k_n = shim_p2k_lost = 0;
+    install_mem_read16_handler(ii, in, in + 1, shim_p2k_in_r);
+    install_mem_write16_handler(ii, in, in + 1, shim_p2k_ack_w);
+    install_mem_write16_handler(ii, out, out + 1, shim_p2k_out_w);
+    shim_p2k_cpu = ii;
+    return 1;
+  }
+  return 0;
+}
+
+// Moves the logged words out (oldest first, at most `max`), and empties the log. Returns
+// how many were stored; `lost` gets how many did not fit in the log since the last call.
+int shim_p2k_take(double *at, unsigned short *word, unsigned char *reply, int max, unsigned *lost) {
+  unsigned i, n = shim_p2k_n;
+  if (n > (unsigned)max)
+    n = (unsigned)max;
+  for (i = 0; i < n; i++) {
+    at[i] = shim_p2k_log[i].at;
+    word[i] = shim_p2k_log[i].word;
+    reply[i] = shim_p2k_log[i].reply;
+  }
+  if (n < shim_p2k_n)
+    memmove(shim_p2k_log, shim_p2k_log + n, (shim_p2k_n - n) * sizeof shim_p2k_log[0]);
+  shim_p2k_n -= n;
+  *lost = shim_p2k_lost;
+  shim_p2k_lost = 0;
+  return (int)n;
+}
+
+// Sends one 16-bit word to the board's host port, as the game's PC does (p2k.c
+// p2k_dcs_write, a word write at BAR4 offset 0). sndbrd_manCmd would truncate it to 8 bits.
+void shim_p2k_word(unsigned short w) {
+  dcs_p2k_data_w(w);
+}
+
+// Takes the DCS2 board's pending reply, as the game's PC does (a word read at BAR4 offset
+// 0 once the status says one is there). The DSP waits for the host to take each reply
+// before it goes on (its boot after a reset answers EE07, then waits). Returns 1 when a
+// reply was taken.
+int shim_p2k_take_reply(void) {
+  if (shim_p2k_cpu < 0 || !(dcs_p2k_status_r() & 0x80))
+    return 0;
+  dcs_p2k_data_r();
+  return 1;
 }

@@ -5,6 +5,11 @@
 //! - DCS: `55 AA vv ~vv`, `vv` = 47..FF in steps of 08 = level 8..31 (`vv = level * 8 + 7`).
 //!   `55 AB..B0 vv ~vv` set the mixing level of one DCS channel (rs_l6 fades channel AB
 //!   from FF to 07 and back to FF during its boot); they are kept as `channel` levels.
+//! - Pinball 2000 DCS2 (`DCSP2K`, 16-bit words, written here as their bytes, high byte
+//!   first; game.rom `DCSSetVolume`, `DCSSetTrackVolume`, `DCSSetTrackPan`): `55AA vv ~vv`,
+//!   `vv` = level * 8 for level 0..30 and FF for 31; `55AB mm vv` sets the volume of the
+//!   board channels whose bits are set in `mm` (3F = all six) to `vv` (same scale), and
+//!   `55AC mm pp` their pan (7F = middle). The pan is kept too: it is replayed after a reset.
 //! - WPCS: `79 vv ~vv`.
 //! - Whitestar BSMT2000 (Sega/Stern, from Apollo 13 on): `FE xx`, `xx` = 10 (31, loudest)
 //!   to 2F (0), completed by `FD`. System 11 boards have no volume stage at all.
@@ -63,6 +68,18 @@ pub fn decode(family: &str, board: i32, recent: &[u8], at: f64) -> Option<Volume
             }
             _ => return None,
         },
+        "DCSP2K" => match *tail(4)? {
+            [0x55, 0xAA, v, nv] if v == !nv => (tail(4)?, v, p2k_level(v), 31),
+            [0x55, 0xAB, m, v] if m & 0xC0 == 0 => {
+                kind = format!("channel volume {m:02X}");
+                (tail(4)?, v, p2k_level(v), 31)
+            }
+            [0x55, 0xAC, m, p] if m & 0xC0 == 0 => {
+                kind = format!("channel pan {m:02X}");
+                (tail(4)?, p, u32::from(p), 255)
+            }
+            _ => return None,
+        },
         "WPCS" => match *tail(3)? {
             [0x79, v, nv] if v == !nv => (tail(3)?, v, u32::from(v), 31),
             _ => return None,
@@ -89,6 +106,16 @@ pub fn decode(family: &str, board: i32, recent: &[u8], at: f64) -> Option<Volume
         level_max,
         at: (at * 1000.0).round() / 1000.0,
     })
+}
+
+/// A Pinball 2000 volume byte as the game's level 0..31 (`vv = level * 8`, FF for 31).
+pub fn p2k_level(v: u8) -> u32 {
+    if v == 0xFF { 31 } else { u32::from(v) / 8 }
+}
+
+/// The Pinball 2000 volume byte of a level 0..31.
+pub fn p2k_byte(level: u32) -> u8 {
+    if level >= 31 { 0xFF } else { (level * 8) as u8 }
 }
 
 /// Recognizes a Data East music volume byte (`20`..`2F`, level 15 down to 0).
@@ -151,6 +178,7 @@ pub fn none_reason(family: &str) -> &'static str {
         "DCS" => {
             "the game sent no 55 AA vv ~vv during boot (the board keeps its reset default, 67)"
         }
+        "DCSP2K" => "the game sent no 55AA vv ~vv during boot",
         "WPCS" => "the game sent no 79 vv ~vv during boot",
         "BSMT" | "AT91" => "no FE 10..2F seen (Whitestar's master volume command)",
         "BSMT (Data East)" => "Data East sets the master volume with a hardware pot",
@@ -168,6 +196,28 @@ pub fn none_reason(family: &str) -> &'static str {
 mod tests {
     use super::*;
 
+    #[test]
+    fn p2k_volumes() {
+        let v = decode("DCSP2K", 0, &[0x55, 0xAA, 0x60, 0x9F], 9.1).unwrap();
+        assert_eq!(
+            (v.kind.as_str(), v.level, v.replay.as_str()),
+            ("master", 12, "55AA609F")
+        );
+        assert_eq!(
+            decode("DCSP2K", 0, &[0x55, 0xAA, 0xFF, 0x00], 0.0)
+                .unwrap()
+                .level,
+            31
+        );
+        let c = decode("DCSP2K", 0, &[0x55, 0xAB, 0x3F, 0xFF], 0.0).unwrap();
+        assert_eq!((c.kind.as_str(), c.level), ("channel volume 3F", 31));
+        let p = decode("DCSP2K", 0, &[0x55, 0xAC, 0x3F, 0x7F], 0.0).unwrap();
+        assert_eq!(p.kind, "channel pan 3F");
+        assert_eq!(
+            (p2k_byte(12), p2k_byte(31), p2k_level(0x98)),
+            (0x60, 0xFF, 19)
+        );
+    }
     #[test]
     fn dcs() {
         let v = decode("DCS", 0, &[0x03, 0x55, 0xAA, 0x67, 0x98], 10.4).unwrap();

@@ -157,6 +157,8 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("BY56", &[0x05]),
     ("BYSNT", &[0x05]),
     ("BY32", &[0x0F]),
+    // game.rom `DCSQuietAllTracks`: 55AE, then the mask of the six channels in the high byte.
+    ("DCSP2K", &[0x55, 0xAE, 0x3F, 0x00]),
 ];
 /// Boards that take this long after a reset before they take commands again, silently: the
 /// wait for quiet after a reset is at least this.
@@ -201,7 +203,12 @@ const BLIP_SECS: f64 = 0.020;
 const NOOP_MANCMD: &[&str] = &["SAM"];
 /// Boards reset by a write to their control port (the game's own reset path, which also
 /// reboots the DSP on DCS), instead of a plain CPU reset line.
-const CTRL_RESET: &[&str] = &["DCS", "WPCS"];
+const CTRL_RESET: &[&str] = &["DCS", "DCSP2K", "WPCS"];
+/// Pinball 2000: the pan of a request, the middle (game.rom `DCSRequest`'s `vol_pan` low
+/// byte; the game's boot requests use it).
+const P2K_PAN_CENTER: u16 = 0x7F;
+/// Pinball 2000: the board channel ("trk") the tool plays every track on.
+const P2K_TRK: u16 = 0;
 /// After halting the game CPUs, let any half-sent command expire (DCS drops it after 100 ms).
 const SETTLE_SECS: f64 = 0.5;
 /// High-pass corner of the DC blocker used for the levels (and `--dc-block`), in Hz.
@@ -287,7 +294,9 @@ pub struct Options {
 #[derive(Clone, Copy, Debug)]
 pub enum VolumeInit {
     /// Send `55 AA vv ~vv` to every DCS board once booted (and again after a board reset).
-    Dcs(u8),
+    /// (WPC DCS `vv`, Pinball 2000 `vv`): `--dcs-volume`, else FF on WPC (0 dB) and the
+    /// reference on Pinball 2000, whose FF clips most sounds.
+    Dcs(u8, u8),
     /// Keep what the game itself sent at boot; after a board reset (which loses it), the
     /// game's own last volume command is sent again, byte for byte.
     Game,
@@ -310,16 +319,22 @@ pub enum VolumeInit {
     Factory(Ref),
 }
 
-/// The reference master volumes: DCS `55 AA vv ~vv`, Whitestar `FE xx FD`, WPCS `79 vv ~vv`.
+/// The reference master volumes: DCS `55 AA vv ~vv` (and Pinball 2000's words), Whitestar `FE xx FD`, WPCS `79 vv ~vv`.
 #[derive(Clone, Copy, Debug)]
 pub struct Ref {
     pub dcs: u8,
+    /// Pinball 2000 (DCS2): `55AA vv ~vv`, `vv` = level * 8 (FF = 31).
+    pub p2k: u8,
     pub whitestar: u8,
     pub wpcs: u8,
 }
 
 /// The DCS master volume a board keeps when the game sends none: its reset default.
 const DCS_RESET_DEFAULT: u8 = 0x67;
+/// Pinball 2000: the factory master volume, for a boot that did not reach the game's sound
+/// setup: `55AA 609F`, level 12, what swep1_130 and rfm_120 send on a cold boot (rfm_120's
+/// warm boot sends none, see `end_boot`).
+const P2K_FACTORY_DEFAULT: u8 = 0x60;
 /// Factory offset: this many non-loop files per board are played again at the factory
 /// volume (the loudest at or below `VOLUME_CHECK_ABOVE_MEDIAN_LU` over the median, at least
 /// `OFFSET_MIN_SECS` long, not clipped), and the offset is the median of their level moves.
@@ -343,6 +358,9 @@ enum Send {
     Burst(c_int, [u8; 4], u8),
     /// Reset every sound board (control-port reset or audio CPU reset line).
     Reset,
+    /// Pinball 2000: the first `n` 16-bit words, written to the DCS2 board's host port in
+    /// one frame, as the game's PC writes a request (`shim_p2k_word`).
+    Words([u16; 4], u8),
     /// Scenario (`--only 0x000C+2.5+0x0390`): wait this many seconds (in milliseconds)
     /// before the next send, keeping the recording open.
     Wait(u32),
@@ -915,6 +933,10 @@ pub struct BootReport {
     pub ended_by: &'static str,
     pub bytes: usize,
     pub log: Vec<BootLog>,
+    /// Pinball 2000: whether the game's boot opened the DCS2 protocol (`ACE1`, answered
+    /// `000C`), or the tool had to set the board up itself.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub p2k: Option<String>,
 }
 
 /// One range of a raw command sweep (a board's single bytes, a WPCS bank...).
@@ -1293,6 +1315,10 @@ pub struct Extractor {
     /// Chips pass: the report, and the music take (music chip alone, envelope in dB).
     mix_report: Option<MixReport>,
     mix_music: Option<Vec<f64>>,
+    /// Pinball 2000: the DCS2 board's host latches are hooked (`shim_p2k_hook`, tried on
+    /// the first frame), and every word the game sent it, with the board's replies.
+    p2k: Option<bool>,
+    p2k_log: Vec<ffi::P2kWord>,
     pub done: bool,
     pub error: Option<String>,
 }
@@ -1373,6 +1399,8 @@ impl Extractor {
             mixer: Vec::new(),
             mix_report: None,
             mix_music: None,
+            p2k: None,
+            p2k_log: Vec::new(),
             done: false,
             error: None,
         }
@@ -1492,7 +1520,24 @@ impl Extractor {
             ended_by: self.boot_ended_by,
             bytes: self.boot_log.len(),
             log,
+            p2k: self.p2k.unwrap_or(false).then(|| match self.p2k_opened() {
+                Some(at) => format!("the game opened the DCS2 protocol (ACE1, answered 000C) at {at:.1} s"),
+                None => "the game's boot did not open the DCS2 protocol (ACE1, answered 000C): the tool reset the board and set it up itself (boot block, ACE1, volume)".into(),
+            }),
         }
+    }
+
+    /// Pinball 2000: when the board answered the game's `ACE1` with `000C` (the DCS2
+    /// protocol is open: requests play), if it did in the boot.
+    fn p2k_opened(&self) -> Option<f64> {
+        let ace1 = self
+            .p2k_log
+            .iter()
+            .position(|w| !w.reply && w.word == 0xACE1)?;
+        self.p2k_log[ace1..]
+            .iter()
+            .find(|w| w.reply && w.word == 0x000C)
+            .map(|w| w.at)
     }
 
     pub fn counts(&self) -> Counts {
@@ -1650,6 +1695,7 @@ impl Extractor {
     pub fn on_audio(&mut self, buf: &[i16]) {
         let ch = self.channels.max(1);
         let frames = (buf.len() / ch) as u64;
+        self.take_p2k_words();
         self.track_idle_level(buf, ch);
         for frame in buf.chunks_exact(ch) {
             let loud = frame
@@ -1682,6 +1728,46 @@ impl Extractor {
             for (ch, _, level) in std::mem::take(&mut self.mixer) {
                 unsafe { ffi::mixer_set_mixing_level(ch, level) };
             }
+        }
+    }
+
+    /// Pinball 2000: hooks the DCS2 board on the first frame, then collects the words the
+    /// game and the board exchanged.
+    fn take_p2k_words(&mut self) {
+        let hooked = *self
+            .p2k
+            .get_or_insert_with(|| unsafe { ffi::shim_p2k_hook() } != 0);
+        if !hooked {
+            return;
+        }
+        let (words, lost) = ffi::p2k_take();
+        if lost > 0 {
+            eprintln!("  warning: {lost} DCS2 word(s) not logged (log full)");
+        }
+        if self.opts.verbose {
+            for w in &words {
+                eprintln!(
+                    "p2k {:9.4} {} {:04X}",
+                    w.at,
+                    if w.reply { "<-" } else { "->" },
+                    w.word
+                );
+            }
+        }
+        if !matches!(self.phase, Phase::Boot) {
+            // The game's PC is halted: take the board's replies in its place, or the DSP
+            // waits for it (after a reset, its boot stops at its first reply).
+            unsafe { ffi::shim_p2k_take_reply() };
+        }
+        if matches!(self.phase, Phase::Boot) {
+            // The game's words go through the byte machinery as their two bytes, high byte
+            // first: `55AA 609F` is the DCS master volume `55 AA 60 9F`.
+            for w in words.iter().filter(|w| !w.reply) {
+                let [hi, lo] = w.word.to_be_bytes();
+                self.on_game_command(0, c_int::from(hi));
+                self.on_game_command(0, c_int::from(lo));
+            }
+            self.p2k_log.extend(words);
         }
     }
 
@@ -1735,12 +1821,18 @@ impl Extractor {
                     unsafe { ffi::shim_data_burst(board, bytes.as_ptr(), c_int::from(n)) };
                     Some(board)
                 }
+                Send::Words(words, n) => {
+                    for &w in &words[..n as usize] {
+                        unsafe { ffi::shim_p2k_word(w) };
+                    }
+                    Some(0)
+                }
                 Send::Reset => {
                     self.reset_boards();
                     None
                 }
             };
-            let dcs = board.is_some_and(|b| self.families[(b & 1) as usize] == "DCS");
+            let dcs = board.is_some_and(|b| is_dcs(&self.families[(b & 1) as usize]));
             self.cooldown = if dcs {
                 DCS_FRAMES_PER_SEND
             } else {
@@ -1755,8 +1847,20 @@ impl Extractor {
         self.board_resets += 1;
         let mut cpu_reset = false;
         for b in self.board_list() {
-            if CTRL_RESET.contains(&board_typestr(b).unwrap_or_default().as_str()) {
+            let family = board_typestr(b).unwrap_or_default();
+            if CTRL_RESET.contains(&family.as_str()) {
                 unsafe { ffi::sndbrd_ctrl_w(b, 0) };
+                if family == "DCSP2K" {
+                    // The reset leaves the DSP in its boot loader: the game then uploads
+                    // its boot block (000E) and opens the DCS2 protocol (ACE1, twice),
+                    // before its volumes, which the wait for quiet sends again.
+                    for s in p2k_reboot(ffi::sound_region().unwrap_or_default())
+                        .into_iter()
+                        .rev()
+                    {
+                        self.sender.push_front(s);
+                    }
+                }
             } else if !cpu_reset {
                 unsafe { ffi::shim_reset_audio_cpus() };
                 cpu_reset = true;
@@ -1770,7 +1874,7 @@ impl Extractor {
                 // Wait for the game to finish talking to its boards: at least `boot_secs`,
                 // then until no byte for BOOT_QUIET_SECS and, on DCS, until the game's own
                 // master volume was seen. Capped by `boot_max_secs`.
-                let has_dcs = (0..2).any(|b| board_typestr(b).as_deref() == Some("DCS"));
+                let has_dcs = (0..2).any(|b| board_typestr(b).is_some_and(|f| is_dcs(&f)));
                 let last_byte = self.boot_log.last().map_or(0, |e| e.0);
                 let quiet = self.t - last_byte.min(self.t) >= self.secs(BOOT_QUIET_SECS);
                 let repeats = self.t - self.last_novel.min(self.t) >= self.secs(BOOT_QUIET_SECS);
@@ -1778,7 +1882,7 @@ impl Extractor {
                     || self
                         .volumes
                         .iter()
-                        .any(|v| v.family == "DCS" && v.kind == "master");
+                        .any(|v| is_dcs(&v.family) && v.kind == "master");
                 if self.t >= self.secs(self.opts.boot_secs) && repeats && dcs_volume {
                     self.end_boot(if quiet { "quiet" } else { "repeats" });
                 } else if self.t >= self.secs(self.opts.boot_max_secs) {
@@ -2010,7 +2114,12 @@ impl Extractor {
     /// recording.
     fn our_master(&self, board: c_int) -> Option<Vec<u8>> {
         match self.opts.volume {
-            VolumeInit::Dcs(vv) if self.families[board as usize] == "DCS" => {
+            VolumeInit::Dcs(vv, p2k) if is_dcs(&self.families[board as usize]) => {
+                let vv = if self.families[board as usize] == "DCSP2K" {
+                    p2k
+                } else {
+                    vv
+                };
                 Some(vec![0x55, 0xAA, vv, !vv])
             }
             VolumeInit::Reference(_) => self.reference_master(board),
@@ -2032,6 +2141,7 @@ impl Extractor {
         };
         match self.families[board as usize].as_str() {
             "DCS" => Some(vec![0x55, 0xAA, r.dcs, !r.dcs]),
+            "DCSP2K" => Some(vec![0x55, 0xAA, r.p2k, !r.p2k]),
             "WPCS" => Some(vec![0x79, r.wpcs, !r.wpcs]),
             "BSMT" | "AT91" if !self.is_de_board(board) => {
                 Some(vec![0xFE, r.whitestar, volume::BSMT_END])
@@ -2125,7 +2235,7 @@ impl Extractor {
             VolumeInit::Factory(_) => "factory",
             VolumeInit::Reference(_) => "reference",
             VolumeInit::Game => "game",
-            VolumeInit::Dcs(_) => "dcs",
+            VolumeInit::Dcs(..) => "dcs",
         }
     }
 
@@ -2497,13 +2607,23 @@ impl Extractor {
                 ),
             ));
         }
-        (self.families[board as usize] == "DCS").then(|| {
-            let v = DCS_RESET_DEFAULT;
-            (
-                vec![0x55, 0xAA, v, !v],
-                "none sent by the game: the board's reset default".to_string(),
-            )
-        })
+        match self.families[board as usize].as_str() {
+            "DCS" => {
+                let v = DCS_RESET_DEFAULT;
+                Some((
+                    vec![0x55, 0xAA, v, !v],
+                    "none sent by the game: the board's reset default".to_string(),
+                ))
+            }
+            "DCSP2K" => {
+                let v = P2K_FACTORY_DEFAULT;
+                Some((
+                    vec![0x55, 0xAA, v, !v],
+                    "none sent by the game in this boot: level 12, the factory volume swep1_130 and rfm_120 send on their first boot".to_string(),
+                ))
+            }
+            _ => None,
+        }
     }
 
     /// Queues the volume and waits for quiet again. Returns false when there is nothing
@@ -2579,6 +2699,9 @@ impl Extractor {
                 l.board, l.family, l.count, l.bytes
             );
         }
+        if let Some(n) = &boot.p2k {
+            eprintln!("  board 0 (DCSP2K): {n}");
+        }
         let vol = self.volume_report();
         for c in &vol.commands {
             eprintln!(
@@ -2594,7 +2717,7 @@ impl Extractor {
             self.done = true;
             return;
         }
-        if let (Some(path), Some(region)) = (&self.opts.dump_region, ffi::sound_region())
+        if let (Some(path), Some(region)) = (&self.opts.dump_region, ffi::dcs_rom())
             && let Err(e) = std::fs::write(path, region)
         {
             eprintln!("cannot dump the sound region to {}: {e}", path.display());
@@ -2669,6 +2792,11 @@ impl Extractor {
                     "  board {b} ({family}): files written DC-blocked (its DAC holds DC levels)"
                 );
             }
+        }
+        if self.p2k == Some(true) && self.p2k_opened().is_none() {
+            // rfm_120 (XINA 1.12), warm boot: a request sent in the middle of the board's
+            // boot block left it in its loader, and the game never set it up.
+            self.reset_before_pass = true;
         }
         self.stop = self.stop_sends();
         self.set_refresh();
@@ -3067,7 +3195,7 @@ impl Extractor {
             return;
         };
         self.dcs_board = Some(board);
-        let Some(region) = ffi::sound_region() else {
+        let Some(region) = ffi::dcs_rom() else {
             return;
         };
         let Some((_, tracks)) = dcsrom::tracks(region) else {
@@ -3739,6 +3867,12 @@ impl Extractor {
                 let v = (alt * 8 + 7) as u8;
                 (vec![0x55, 0xAA, v, !v], level, alt)
             }
+            "DCSP2K" => {
+                let level = volume::p2k_level(self.current_master(board)?);
+                let alt = away(level, 0..=31)?;
+                let v = volume::p2k_byte(alt);
+                (vec![0x55, 0xAA, v, !v], level, alt)
+            }
             "BSMT" | "AT91" if !self.is_de_board(board) => {
                 let level = u32::from(0x2F - self.current_master(board)?.min(0x2F));
                 let alt = away(level, 0..=31)?;
@@ -3809,11 +3943,11 @@ impl Extractor {
     fn loop_search(&self, cmd: &Cmd) -> LoopSearch {
         let mut cap = self.secs(self.opts.loop_max_secs.max(self.opts.max_secs));
         let id = parse_id(&cmd.id);
-        let dcs_track = (self.families[(cmd.board_no & 1) as usize] == "DCS" && id.len() == 2)
+        let dcs_track = (is_dcs(&self.families[(cmd.board_no & 1) as usize]) && id.len() == 2)
             .then(|| u16::from_be_bytes([id[0], id[1]]));
         let (mut dcs, mut hint) = (None, None);
         if let Some(track) = dcs_track
-            && let Some(region) = ffi::sound_region()
+            && let Some(region) = ffi::dcs_rom()
         {
             let max_frames = (LOOP_HINT_MAX_SECS / DCS_FRAME_SECS) as u32;
             dcs = Some(match dcsrom::track_run(region, track, max_frames) {
@@ -3932,8 +4066,8 @@ impl Extractor {
             // tracks, among them 0013, a 120 s loop): on DCS, add the catalog's other tracks.
             if let Some(dcs) = self
                 .board_list()
-                .find(|&b| self.families[b as usize] == "DCS")
-                && let Some((count, tracks)) = ffi::sound_region().and_then(dcsrom::tracks)
+                .find(|&b| is_dcs(&self.families[b as usize]))
+                && let Some((count, tracks)) = ffi::dcs_rom().and_then(dcsrom::tracks)
             {
                 let extra: Vec<Cmd> = tracks
                     .iter()
@@ -4463,6 +4597,14 @@ impl Extractor {
                 Send::Byte(b, v) => format!("manCmd({b},{v:02X})"),
                 Send::Data(b, v) => format!("data_w({b},{v:02X})"),
                 Send::Burst(b, v, n) => format!("data_w({b},{})", hex(&v[..*n as usize])),
+                Send::Words(w, n) => format!(
+                    "p2k_word({})",
+                    w[..*n as usize]
+                        .iter()
+                        .map(|w| format!("{w:04X}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ),
                 Send::Reset => "board reset".into(),
                 Send::Wait(ms) => format!("wait {ms} ms"),
             })
@@ -4574,7 +4716,85 @@ fn board_mask() -> u8 {
 fn board_typestr(board: c_int) -> Option<String> {
     let t = ffi::cstr(unsafe { ffi::sndbrd_typestr(board) })?;
     let by56 = t == "BY51" && unsafe { ffi::shim_board_type(board) } & 0xFF == BY56_SUBTYPE;
-    Some(if by56 { "BY56".into() } else { t })
+    let p2k = t == "DCS" && unsafe { ffi::shim_board_type(board) } == ffi::SNDBRD_DCSP2K;
+    Some(match () {
+        _ if by56 => "BY56".into(),
+        _ if p2k => "DCSP2K".into(),
+        _ => t,
+    })
+}
+
+/// A DCS board: WPC's (`DCS`) or Pinball 2000's DCS2 (`DCSP2K`, PinMAME's same "DCS"
+/// interface with 16-bit words), which share the track catalog and the track programs.
+fn is_dcs(family: &str) -> bool {
+    matches!(family, "DCS" | "DCSP2K")
+}
+
+/// Pinball 2000: the DCS2 request for a track, as the game sends it (game.rom
+/// `DCSRequest`): the track number, then `vol_pan` = `FF pp` (the volume is always FF, the
+/// pan `7F` is the middle), then `trk_pri` = `8000 | trk << 7`, the board channel ("track")
+/// the host plays it on.
+fn p2k_request(track: u16, trk: u16) -> Send {
+    Send::Words(
+        [track, 0xFF00 | P2K_PAN_CENTER, 0x8000 | (trk & 7) << 7, 0],
+        3,
+    )
+}
+
+/// Pinball 2000: what the game sends its board after a reset (its boot, swep1_130 and
+/// rfm_120): the boot block upload, header `000E` (the DSP answers `EE07`, then `000A`),
+/// then `ACE1` twice, which opens the DCS2 protocol (`0100 000C`). The block is the flash's
+/// own boot page (`region`, PinMAME's sound region: the DSP's boot port reads the low byte
+/// of each word, four bytes per 24-bit program word, the header's `0E` giving 8 * 15 = 120
+/// words); the host sends it last word first, three words per program word (bits 16-23,
+/// 0-7, 8-15), then the header again, which commits it (wmssnd.c `p2k_preprocess_write`).
+fn p2k_reboot(region: &[u8]) -> Vec<Send> {
+    let byte = |i: usize| u32::from(region.get(2 * i).copied().unwrap_or(0));
+    let words = 8 * (byte(3) as usize + 1);
+    let mut payload = vec![0x000E];
+    for k in (0..words).rev() {
+        let op = byte(4 * k) << 16 | byte(4 * k + 1) << 8 | byte(4 * k + 2);
+        payload.extend([
+            (op >> 16) as u16,
+            (op & 0xFF) as u16,
+            (op >> 8 & 0xFF) as u16,
+        ]);
+    }
+    payload.push(0x000E);
+    let mut v: Vec<Send> = payload
+        .chunks(4)
+        .map(|c| {
+            let mut w = [0u16; 4];
+            w[..c.len()].copy_from_slice(c);
+            Send::Words(w, c.len() as u8)
+        })
+        .collect();
+    v.push(Send::Wait(500));
+    v.push(Send::Words([0xACE1, 0xACE1, 0, 0], 2));
+    v
+}
+
+/// Pinball 2000: bytes as the DCS2 board's 16-bit words, two bytes each, high byte first
+/// (`55 AA 60 9F` is `55AA 609F`). A lone word below `55AA` is a track: it goes out as a
+/// whole request (`p2k_request`).
+fn p2k_sends(bytes: &[u8]) -> Vec<Send> {
+    let words: Vec<u16> = bytes
+        .chunks(2)
+        .map(|c| u16::from_be_bytes([c[0], c.get(1).copied().unwrap_or(0)]))
+        .collect();
+    if let [w] = words[..]
+        && w < 0x55AA
+    {
+        return vec![p2k_request(w, P2K_TRK)];
+    }
+    words
+        .chunks(4)
+        .map(|c| {
+            let mut v = [0u16; 4];
+            v[..c.len()].copy_from_slice(c);
+            Send::Words(v, c.len() as u8)
+        })
+        .collect()
 }
 
 /// The board number that goes with each byte: on two-board machines the commander sends
@@ -4602,6 +4822,9 @@ fn addressed(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
 /// of `79 vv ~vv` a frame later (with 4 frames between the bytes, and with 1, it played the
 /// level byte `0C`, a music, which no stop silenced); Twilight Zone's does.
 fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
+    if board_typestr(board).as_deref() == Some("DCSP2K") {
+        return p2k_sends(bytes);
+    }
     let double = unsafe { ffi::shim_board_flags(board) } & ffi::SNDBRD_DOUBLECMD != 0;
     let t = target(mask, board);
     match bytes {
@@ -4636,7 +4859,7 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
         let (parts, note): (Vec<SweepPart>, String) = match typestr.as_str() {
             // 16-bit track numbers: only the tracks populated in the ROM's catalog. 0000 is
             // "all sound off", and the 55 xx specials (volume...) are far above the count.
-            "DCS" => match ffi::sound_region().and_then(dcsrom::tracks) {
+            "DCS" | "DCSP2K" => match ffi::dcs_rom().and_then(dcsrom::tracks) {
                 Some((count, tracks)) => {
                     let list: Vec<Vec<u8>> = tracks
                         .iter()
@@ -4645,7 +4868,7 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                         .collect();
                     let last = count.saturating_sub(1);
                     let n = format!(
-                        "board {b} (DCS): {} populated tracks of the ROM catalog's {count} (0001..{last:04X}), 0000 (stop) excluded",
+                        "board {b} ({typestr}): {} populated tracks of the ROM catalog's {count} (0001..{last:04X}), 0000 (stop) excluded",
                         list.len(),
                     );
                     let r = format!(
@@ -4656,15 +4879,13 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                 }
                 None => (
                     vec![(
-                        format!(
-                            "tracks 0001..{DCS_FALLBACK_LAST:04X} (no track catalog found in U2)"
-                        ),
+                        format!("tracks 0001..{DCS_FALLBACK_LAST:04X} (no track catalog found)"),
                         (1..=DCS_FALLBACK_LAST)
                             .map(|t| t.to_be_bytes().to_vec())
                             .collect(),
                     )],
                     format!(
-                        "board {b} (DCS): no track catalog found in U2, swept 0001..{DCS_FALLBACK_LAST:04X}"
+                        "board {b} ({typestr}): no track catalog found, swept 0001..{DCS_FALLBACK_LAST:04X}"
                     ),
                 ),
             },
@@ -5200,6 +5421,56 @@ pub(crate) fn write_wav(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn p2k_words() {
+        let words = |v: &[Send]| -> Vec<Vec<u16>> {
+            v.iter()
+                .map(|s| match s {
+                    Send::Words(w, n) => w[..*n as usize].to_vec(),
+                    _ => panic!("not words"),
+                })
+                .collect()
+        };
+        // A track: the whole request, as the game sends it.
+        assert_eq!(words(&p2k_sends(&[0x03, 0xE7])), [[0x03E7, 0xFF7F, 0x8000]]);
+        assert_eq!(words(&[p2k_request(0x03E8, 5)]), [[0x03E8, 0xFF7F, 0x8280]]);
+        // A volume, the stop: their words.
+        assert_eq!(
+            words(&p2k_sends(&[0x55, 0xAA, 0x60, 0x9F])),
+            [[0x55AA, 0x609F]]
+        );
+        assert_eq!(
+            words(&p2k_sends(&[0x55, 0xAE, 0x3F, 0x00])),
+            [[0x55AE, 0x3F00]]
+        );
+        // After a reset: the boot block (header, 3 words per program word, last first,
+        // header again), then ACE1 twice.
+        let mut region = vec![0u8; 0x2000];
+        for (i, b) in [0x18, 0x01, 0xDF, 0x00, 0x0A, 0x00, 0x1F, 0x00]
+            .iter()
+            .enumerate()
+        {
+            region[2 * i] = *b;
+        }
+        let r = p2k_reboot(&region);
+        let all: Vec<u16> = r
+            .iter()
+            .filter_map(|s| match s {
+                Send::Words(w, n) => Some(w[..*n as usize].to_vec()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert_eq!(all.len(), 1 + 8 * 3 + 1 + 2);
+        assert_eq!(&all[..4], [0x000E, 0, 0, 0]);
+        assert_eq!(
+            &all[all.len() - 9..],
+            [
+                0x000A, 0x001F, 0x0000, 0x0018, 0x00DF, 0x0001, 0x000E, 0xACE1, 0xACE1
+            ]
+        );
+    }
 
     #[test]
     fn dc_blocker_removes_offset_and_keeps_steps() {

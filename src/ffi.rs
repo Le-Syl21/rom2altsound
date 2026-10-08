@@ -7,6 +7,8 @@ pub const PINMAME_MAX_PATH: usize = 512;
 pub const AUDIO_FORMAT_INT16: c_int = 0;
 pub const STATUS_OK: c_int = 0;
 pub const SNDBRD_DOUBLECMD: c_uint = 0x0010;
+/// src/wpc/sndbrd.h: `SNDBRD_TYPE(3, 3)`, the Pinball 2000 DCS2 board.
+pub const SNDBRD_DCSP2K: c_int = 0x0303;
 /// src/wpc/gen.h: the Data East generations (alphanumeric, 128x16, 128x32 and 192x64 DMD).
 pub const GEN_DATA_EAST: u64 = 0x1000 | 0x2000 | 0x4000 | 0x8000;
 
@@ -132,6 +134,16 @@ unsafe extern "C" {
     pub fn shim_nibble_cmd(board: c_int, data: c_int);
     pub fn shim_nibble_reads() -> c_int;
     pub fn shim_data_burst(board: c_int, bytes: *const u8, n: c_int) -> c_int;
+    pub fn shim_p2k_hook() -> c_int;
+    pub fn shim_p2k_take(
+        at: *mut f64,
+        word: *mut u16,
+        reply: *mut u8,
+        max: c_int,
+        lost: *mut c_uint,
+    ) -> c_int;
+    pub fn shim_p2k_word(word: u16);
+    pub fn shim_p2k_take_reply() -> c_int;
     pub fn shim_driver_count() -> c_int;
     pub fn shim_driver_text(i: c_int, field: c_int) -> *const c_char;
     pub fn shim_driver_flags(i: c_int) -> c_uint;
@@ -163,6 +175,18 @@ pub fn sound_region() -> Option<&'static [u8]> {
     let mut len: c_uint = 0;
     let p = unsafe { shim_sound_region(&mut len) };
     (!p.is_null() && len > 0).then(|| unsafe { std::slice::from_raw_parts(p, len as usize) })
+}
+
+/// The DCS ROM the track catalog is read in (`dcsrom`): PinMAME's sound region on WPC DCS
+/// boards; on Pinball 2000 its byte image (`dcsrom::p2k_image`), made once (one machine
+/// per process). Only valid while the emulation runs.
+pub fn dcs_rom() -> Option<&'static [u8]> {
+    static P2K: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    let region = sound_region()?;
+    if unsafe { shim_board_type(0) } != SNDBRD_DCSP2K {
+        return Some(region);
+    }
+    Some(P2K.get_or_init(|| crate::dcsrom::p2k_image(region)))
 }
 
 /// True when the running game is a Data East machine (its BSMT board takes 20..2F as a
@@ -197,4 +221,43 @@ pub fn cstr(p: *const c_char) -> Option<String> {
             .to_string_lossy()
             .into_owned()
     })
+}
+
+/// One word between a Pinball 2000 game and its DCS2 board (`shim_p2k_hook`).
+#[derive(Clone, Copy, Debug)]
+pub struct P2kWord {
+    /// Emulated time (s).
+    pub at: f64,
+    pub word: u16,
+    /// A reply of the board's DSP (else a word the DSP took from the host).
+    pub reply: bool,
+}
+
+/// The words logged since the last call, and how many did not fit in the shim's log.
+pub fn p2k_take() -> (Vec<P2kWord>, u32) {
+    const MAX: usize = 4096;
+    let (mut at, mut word, mut reply) = (vec![0f64; MAX], vec![0u16; MAX], vec![0u8; MAX]);
+    let mut out = Vec::new();
+    let mut lost_all = 0;
+    loop {
+        let mut lost: c_uint = 0;
+        let n = unsafe {
+            shim_p2k_take(
+                at.as_mut_ptr(),
+                word.as_mut_ptr(),
+                reply.as_mut_ptr(),
+                MAX as c_int,
+                &mut lost,
+            )
+        } as usize;
+        lost_all += lost;
+        out.extend((0..n).map(|i| P2kWord {
+            at: at[i],
+            word: word[i],
+            reply: reply[i] != 0,
+        }));
+        if n < MAX {
+            return (out, lost_all);
+        }
+    }
 }

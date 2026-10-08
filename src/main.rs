@@ -43,7 +43,7 @@ game itself sets from its factory settings. Music loops are cut to their intro p
 folder that VPinball's AltSound plugin reads as is: drop it as
 <table folder>/altsound/<rom>/.
 
-Supported boards: Williams/Bally DCS, WPC (WPC89/WPCS), System 11, Data East
+Supported boards: Williams/Bally DCS, Pinball 2000 (DCS2), WPC (WPC89/WPCS), System 11, Data East
 (BSMT), Sega/Stern Whitestar, Bally Cheap Squeak / Turbo Cheap Squeak and the
 early Bally boards (Sounds Plus -51/-56, Squawk & Talk -61). Stern SAM has no sound board: its sounds are read from the ROM image (every sound, every
 song as one file, at full scale); its AltSound files, keyed by the game's sound
@@ -125,9 +125,10 @@ struct Cli {
     /// implies --no-factory
     #[arg(long)]
     no_volume_init: bool,
-    /// DCS master volume byte sent as `55 AA vv ~vv` (FF = 0 dB, one step = 08); with
-    /// the factory settings, the DCS reference volume (implies --volume reference unless
-    /// --volume factory is given) [default: EF, or FF with --no-factory]
+    /// DCS master volume byte sent as `55 AA vv ~vv` (FF = 0 dB, one step = 08; Pinball
+    /// 2000: the words `55AA vv~vv`); with the factory settings, the DCS reference volume
+    /// (implies --volume reference unless --volume factory is given) [default: EF, or FF
+    /// with --no-factory; Pinball 2000: A0 either way]
     #[arg(long, value_parser = parse_hex_byte)]
     dcs_volume: Option<u8>,
     /// The Whitestar reference volume byte, sent as `FE xx FD` (10 = level 31, the
@@ -483,6 +484,7 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             } else if cli.factory() {
                 let r = extract::Ref {
                     dcs: cli.dcs_volume.unwrap_or(DCS_REFERENCE),
+                    p2k: cli.dcs_volume.unwrap_or(P2K_REFERENCE),
                     whitestar: cli.whitestar_volume.unwrap_or(WHITESTAR_REFERENCE),
                     wpcs: cli.wpcs_volume.unwrap_or(WPCS_REFERENCE),
                 };
@@ -491,7 +493,10 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
                     VolumeMode::Reference => VolumeInit::Reference(r),
                 }
             } else {
-                VolumeInit::Dcs(cli.dcs_volume.unwrap_or(0xFF))
+                VolumeInit::Dcs(
+                    cli.dcs_volume.unwrap_or(0xFF),
+                    cli.dcs_volume.unwrap_or(P2K_REFERENCE),
+                )
             },
             boot_secs: cli.boot_secs,
             boot_max_secs: cli.boot_max_secs,
@@ -639,6 +644,11 @@ const COLD_BOOT_REPORT: &str = "cold-boot.json";
 /// clipped (mm_109c `01AB`: 99 samples; cv_20h's loop `0016`: 575); at `EF`, one sample of
 /// afm_113b `0186` and cv_20h's click `03DE`, which clips at any volume.
 const DCS_REFERENCE: u8 = 0xEF;
+/// The Pinball 2000 reference master volume (`55AA vv ~vv`, `vv` = level * 8, FF = 31):
+/// level 20, 8 levels (about 11 dB) above the factory volume `60`. At the factory volume
+/// the loudest of swep1_130's 683 sounds peaks at -16.4 dBFS, so at 20 at about -5 dBFS;
+/// FF (31) clips most sounds.
+const P2K_REFERENCE: u8 = 0xA0;
 /// Whitestar `FE 11 FD` (level 30/31): at `FE 10 FD`, apollo13 `5C` clipped 172 samples and
 /// `68` 13; at `FE 11`, nothing but xfiles' click `1F`, which ignores the master volume.
 const WHITESTAR_REFERENCE: u8 = 0x11;
