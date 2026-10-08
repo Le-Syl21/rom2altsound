@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Listening page: the A/B "Compare with folder" box takes an absolute path too
+  (`C:\packs\taf_l5-edit`, `/home/…/taf_l5-edit`, a `\\server\share` path), not only one
+  relative to the page; 0.2.2 turned a drive path into a broken link (reported by goodtwist).
 - **`rom2altsound roms <dir|zip>...`: ROM verification.** Identifies every ROM zip (and
   folder of unzipped ROMs) by its content, against the ROM tables of the PinMAME linked
   in, read from the library itself (every driver's `ROM_START` block: name, size, CRC32,

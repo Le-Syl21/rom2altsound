@@ -122,7 +122,7 @@ a { color: var(--accent); }
     </select>
     <label class="chk"><input type="checkbox" id="loops"> Loops only</label>
     <label class="chk"><input type="checkbox" id="sound" checked> With sound</label>
-    <input type="text" id="cmp" placeholder="Compare with folder, e.g. ../taf_l5-edit/" aria-label="Compare with folder (A/B)" title="A/B test: another folder holding files of the same names (a copy of this one with some sounds swapped); each row gets an A/B button, b flips" spellcheck="false" autocomplete="off">
+    <input type="text" id="cmp" placeholder="Compare with folder: ../taf_l5-edit/ or C:\packs\taf_l5-edit" aria-label="Compare with folder (A/B)" title="A/B test: another folder holding files of the same names (a copy of this one with some sounds swapped); each row gets an A/B button, b flips" spellcheck="false" autocomplete="off">
     <span id="shown" aria-live="polite"></span>
   </div>
 </div>
@@ -420,7 +420,16 @@ a { color: var(--accent); }
   function store(v) {
     try { if (v) localStorage.setItem(KEY, v); else localStorage.removeItem(KEY); } catch (e) { /* no storage */ }
   }
-  function srcOf(f) { return href((side === "B" ? cmp : "") + f.path); }
+  // The compare folder may be relative to this page (../copy/) or absolute: a Windows drive
+  // path (C:/...), a UNC share (//server/share/...) or a Unix path (/...), which need a
+  // file: URL (an encoded "C:" would read as a relative name).
+  function srcOf(f) {
+    if (side !== "B") return href(f.path);
+    var p = cmp + f.path, d = /^([A-Za-z]):\//.exec(p);
+    if (d) return "file:///" + d[1] + ":/" + href(p.slice(3));
+    if (p.charAt(0) === "/") return "file:" + (p.charAt(1) === "/" ? "" : "//") + href(p);
+    return href(p);
+  }
   function setCompare(v, keep) {
     v = String(v || "").trim().replace(/\\/g, "/");
     if (v && v.charAt(v.length - 1) !== "/") v += "/";
