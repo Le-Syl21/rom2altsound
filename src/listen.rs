@@ -161,12 +161,18 @@ fn volume_line(m: &Value) -> Value {
         .as_str()
         .is_some_and(|b| b.starts_with("SAM"));
     let recorded = if factory_mode {
-        let f = m["volume_init"]
+        // "factory 55AA6798 (from reference 55AAEF10, -22.44 dB)" (SAM: "factory E8 E8").
+        match m["volume_init"]
             .as_str()
             .map(str::to_owned)
             .or_else(|| factory.as_ref().map(|f| format!("factory {f}")))
-            .unwrap_or_else(|| "the boards' own level".into());
-        format!("the factory volume ({f})")
+        {
+            Some(f) => format!(
+                "the factory volume {}",
+                f.strip_prefix("factory ").unwrap_or(&f)
+            ),
+            None => "the factory volume (the boards' own level)".into(),
+        }
     } else {
         let r = reference
             .clone()
@@ -345,8 +351,16 @@ mod tests {
         ] {
             assert_eq!(html.matches(tag).count(), 1, "{tag}");
         }
-        // Offline: nothing loaded from elsewhere.
+        // Offline: nothing loaded from elsewhere, no fetch (file:// pages cannot).
         assert!(!html.contains("http://") && !html.contains("https://"));
+        assert!(!html.contains("fetch(") && !html.contains("XMLHttpRequest"));
+        // A/B: the compare folder field; every storage access guarded.
+        assert!(html.contains(r#"id="cmp""#));
+        assert!(
+            html.lines()
+                .filter(|l| l.contains("localStorage."))
+                .all(|l| l.contains("try {"))
+        );
     }
 
     #[test]
@@ -354,13 +368,16 @@ mod tests {
         let m = json!({
             "boards": ["DCS"],
             "volume_mode": "factory",
-            "volume_init": "factory 55AA6798",
+            "volume_init": "factory 55AA6798 (from reference 55AAEF10, -22.44 dB)",
             "reference_volume": "55AAEF10",
             "factory_offset_db": -22.4,
             "factory_offset": { "boards": [{ "factory_volume": "55AA6798" }] },
         });
         let v = volume_line(&m);
-        assert_eq!(v["recorded"], "the factory volume (factory 55AA6798)");
+        assert_eq!(
+            v["recorded"],
+            "the factory volume 55AA6798 (from reference 55AAEF10, -22.44 dB)"
+        );
         assert_eq!(v["reference"], "55AAEF10");
         assert!(v["factory"].is_null());
         let r = volume_line(&manifest());

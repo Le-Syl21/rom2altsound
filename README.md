@@ -115,6 +115,14 @@ help find one; Space or Enter plays the selected sound and the arrow keys move. 
 several ROMs, an `index.html` in the output folder links each ROM's page. `--no-html`
 skips them.
 
+**A/B test** (goodtwist's idea): copy the folder (`taf_l5` to `taf_l5-edit`), replace
+sounds in the copy, then type `../taf_l5-edit/` in the page's "Compare with folder" box
+(the page remembers it). Each sound gets an **A/B** button that switches the player
+between this folder's file (A) and the file of the same name in the other folder (B),
+at the same position and without stopping; the `b` key does the same. The player shows
+which side is playing, and a sound that is not in the other folder is marked "missing
+in B".
+
 **On DCS boards (Williams/Bally 1993-1999), the mix comes from the ROM itself.** Each DCS
 sound command is a small program that says which of the board's channels it plays on and
 how much it lowers the others while it plays. rom2altsound reads those programs, so in the
@@ -170,13 +178,13 @@ What rom2altsound gets out of each sound board family:
 | Bally Squawk & Talk -61 (1981-1982) ¹² | ✅ ¹⁴ | ❌ ¹⁴ | ⚠️ ¹⁴ | ❌ | ❌ | ❌ |
 | Bally -32 / -50 (1978-1980) ¹² | ❔ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
-✅ verified, ⚠️ partial, ❌ not available, ❔ untested. "Factory volume": every sound recorded at
-the master volume the game itself sets at boot from its factory settings (DCS `55 AA 67 98`
+✅ verified, ⚠️ partial, ❌ not available, ❔ untested. "Factory volume": every file at the
+master volume the game itself sets at boot from its factory settings (DCS `55 AA 67 98`
 on most games, WPCS `79 0C F3`, Whitestar `FE 2C FD` on Apollo 13, SAM's DAC attenuation),
 or at the board's only level where it has no volume stage. The files are then as loud as
 the game plays them out of the box, which can be quiet: Attack from Mars peaks at about
 -26 dBFS, Apollo 13 lower still (see [Volume](#volume)). Where ducking, stops and channels
-are ❌, the pack has the defaults: Where ducking, stops and channels are ❌, the pack has the defaults: DUCK 100,
+are ❌, the pack has the defaults: DUCK 100,
 STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphonic.
 
 1. Read in the ROM's own sound programs and measured (`--check-ducking`) on Attack from Mars;
@@ -207,7 +215,8 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
 7. Read from the ROM image, without emulation (see [Stern SAM](#stern-sam)); verified on
    AC/DC LE 1.68. Every sound, and every version of every song as one continuous file,
    looped where the game loops it. The files are at the factory volume, read in the
-   DAC, where the game writes the operator's volume setting (AC/DC: `E8`, -11.5 dB) (verified: the coin door's volume buttons move it 1 dB per press, and the game
+   DAC, where the game writes the operator's volume setting (AC/DC: `E8`, played by
+   PinMAME at -1.8 dB; -11.5 dB by the DAC's datasheet) (verified: the coin door's volume buttons move it 1 dB per press, and the game
    writes the new value at its next power-up). **The pack does not play in VPinball
    today**: SAM sends no sound command, so PinMAME has nothing to hand to AltSound.
 8. Recorded at `79 0C F3`, level 12, the game's own factory volume (the master volume runs
@@ -276,8 +285,8 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
 
 ### Volume
 
-Every sound is recorded at the **factory volume**: the master volume the game itself sends
-its sound board at boot, once it has written its factory settings (rom2altsound boots each
+Every file is at the **factory volume**: the master volume the game itself sends its
+sound board at boot, once it has written its factory settings (rom2altsound boots each
 ROM cold in a private PinMAME folder, then warm from the nvram it wrote, so your own
 settings are never used). That is the level the game plays at out of the box, on every
 board family, whatever the table:
@@ -287,22 +296,38 @@ board family, whatever the table:
 | DCS | `55 AA 67 98`, level 12/31 (Attack from Mars, and the board's own default when a game sends none) | about 22 dB below the old reference: Attack from Mars peaks at about -26 dBFS |
 | WPCS | `79 0C F3`, level 12/31 (Twilight Zone, The Addams Family) | unchanged: it was already the reference |
 | Whitestar | `FE 2C FD`, level 3/31 (Apollo 13, Monopoly) | 25 to 33 dB below the old reference (Monopoly -24.6 dB, Apollo 13 -32.6 dB) |
-| Stern SAM | DAC attenuation `E8`, -11.5 dB (AC/DC) | 11.5 dB below full scale |
+| Stern SAM | DAC attenuation `E8` (AC/DC), played by PinMAME at 81 % | 1.8 dB below full scale (see [Stern SAM](#stern-sam)) |
 | System 11, Data East, Bally | no volume stage: full scale, the only level | unchanged |
 
+**How**: the sounds are recorded at the reference volume (below), the loudest that does
+not clip, and every analysis runs on those recordings: silence trimming, where a sound
+ends, loops, twins, the chips pass. Only then are the files written again at the factory
+volume, scaled by the board's **factory offset**, measured by playing a few files again at
+the factory volume (Attack from Mars: -22.44 dB, the same on every file to 0.02 dB). At
+22 dB down, PinMAME's ±1 LSB dither would weigh 22 dB more against a quiet signal, and loop
+points, loop checks and twin tests would suffer from it: recorded loud and scaled after,
+they are the same as at the reference volume, and the files are at the factory level all
+the same (checked on the replayed files, `scaled_minus_replay_db`: on Attack from Mars each
+one within 0.02 dB of what PinMAME plays at the factory volume; Whitestar sounds follow the
+master volume less tightly, Monopoly's within 0.25 dB). The gain is applied in floating point and
+the result rounded once to 16 bits with a ±1 LSB TPDF dither, as PinMAME's mixer rounds
+its own output; a 24-bit file would hold nothing more, so the files stay 16-bit.
+
 `manifest.json` says, per board, which volume the files are at and where it comes from
-(`recorded_volume`), and how far it is from the reference volume (`factory_offset_db`, for
-information). A file that clips at the factory volume, in PinMAME's own mix, is listed
-(`clipped_files`, and a `CLIPPED` line in the summary); nothing is lowered to hide it.
+(`recorded_volume`), the gain applied (`factory_gain`), and the measured offset
+(`factory_offset`, with each replayed file). A board without a volume stage is recorded at
+its only level, and a board the game leaves at its power-on level (no volume sent at
+boot) is recorded there: neither is scaled. A sound that does not follow the master
+volume (flagged `ignores_master_volume`) is played again at the factory volume and scaled
+by its own move. A file that clipped in the recording, in
+PinMAME's own mix, is listed (`clipped_files`, and a `CLIPPED` line in the summary);
+nothing is lowered to hide it.
 
-The quieter files lose nothing but the last rounding: PinMAME applies the volume in its
-mixer, in floating point, and rounds once to 16 bits, the very samples it plays itself.
-A 24-bit file would not hold more, so the files stay 16-bit.
-
-`--volume reference` records at the **reference volume** instead, as 0.2.1 did: per board
-family, the loudest master volume at which no file clips in emulation (DCS `55 AA EF 10`,
-WPCS `79 0C F3`, Whitestar `FE 11 FD`, SAM at full scale). `--dcs-volume`, `--wpcs-volume`
-and `--whitestar-volume` set those bytes (and imply `--volume reference`).
+`--volume reference` writes the files at the **reference volume** instead, as 0.2.1 did:
+per board family, the loudest master volume at which no file clips in emulation (DCS
+`55 AA EF 10`, WPCS `79 0C F3`, Whitestar `FE 11 FD`, SAM at full scale). `--dcs-volume`,
+`--wpcs-volume` and `--whitestar-volume` set those bytes (and imply `--volume
+reference`).
 
 ### Stern SAM
 
@@ -336,14 +361,17 @@ acd_168h/
   has 24 songs, each in several versions: the song-select teaser (it loops), the in-game
   one (picks up after the teaser; songs 1-12 and 18 loop), a resume version and the full
   song. A loop is the script's own: exact, with its loop points in the file.
-- **Volume**: the files hold the samples as stored, at the factory volume. rom2altsound
-  boots the game in PinMAME (cold to write its factory settings, then warm from them) and
-  reads what it writes to its DAC (a TI PCM1755): AC/DC writes `E8`, -11.5 dB by the DAC's
-  datasheet, and the samples are scaled by that (`recorded_volume` and
-  `factory_offset_db` in `manifest.json`; `--volume reference` keeps them at full scale,
-  what the DAC plays at 0 dB). It is the operator's volume setting, written at power-up: with the
-  coin door open, each press of the volume button moves it by 1 dB, and the game writes
-  the new value at its next power-up.
+- **Volume**: the files hold the samples as stored, at the factory volume as PinMAME plays
+  it. rom2altsound boots the game in PinMAME (cold to write its factory settings, then
+  warm from them) and reads what it writes to its DAC (a TI PCM1755): AC/DC writes `E8`.
+  PinMAME turns that register into a mixer level of `(E8 & 7F) * 100 / 7F` = 81 %, -1.8 dB,
+  and the samples are scaled by that, so that the files sound as VPX players hear the game
+  today (`recorded_volume`, `factory_gain` and `factory_offset_db` in `manifest.json`;
+  `--volume reference` keeps them at full scale, what the DAC plays at 0 dB). By the DAC's
+  datasheet, `E8` is -11.5 dB (0.5 dB per step from `FF`): the real machine plays about
+  10 dB quieter than PinMAME (`datasheet_offset_db`, for information). It is the operator's
+  volume setting, written at power-up: with the coin door open, each press of the volume
+  button moves it by 1 dB, and the game writes the new value at its next power-up.
 - **AltSound**: `altsound.csv` and `g-sound.csv` are keyed by the game's sound calls (what
   its code asks for; a call picks one of a few samples), one row per sample. **VPinball
   cannot play them today**: PinMAME's AltSound needs a sound command, and SAM never sends
@@ -551,6 +579,13 @@ numéro, durée, niveau) aident à en trouver un ; Espace ou Entrée joue le son
 flèches passent d'un son à l'autre. Avec plusieurs ROM, un `index.html` dans le dossier de
 sortie mène à la page de chacune. `--no-html` ne les écrit pas.
 
+**Écoute A/B** (l'idée de goodtwist) : copiez le dossier (`taf_l5` en `taf_l5-edit`),
+remplacez des sons dans la copie, puis tapez `../taf_l5-edit/` dans la case « Compare with
+folder » de la page (elle s'en souvient). Chaque son reçoit un bouton **A/B** qui fait
+passer le lecteur du fichier de ce dossier (A) au fichier du même nom dans l'autre (B), au
+même endroit et sans s'arrêter ; la touche `b` fait de même. Le lecteur montre quel côté
+joue, et un son absent de l'autre dossier est marqué « missing in B ».
+
 **Sur les cartes DCS (Williams/Bally 1993-1999), le mixage vient de la ROM elle-même.**
 Chaque commande de son DCS est un petit programme qui dit sur quelle voie de la carte elle
 joue et de combien elle baisse les autres pendant qu'elle joue. rom2altsound lit ces
@@ -608,8 +643,8 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 | Bally Squawk & Talk -61 (1981-1982) ¹² | ✅ ¹⁴ | ❌ ¹⁴ | ⚠️ ¹⁴ | ❌ | ❌ | ❌ |
 | Bally -32 / -50 (1978-1980) ¹² | ❔ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
-✅ vérifié, ⚠️ partiel, ❌ non disponible, ❔ non testé. « Volume d'usine » : tous les sons sont
-enregistrés au volume général que le jeu règle lui-même au démarrage d'après ses réglages
+✅ vérifié, ⚠️ partiel, ❌ non disponible, ❔ non testé. « Volume d'usine » : tous les fichiers
+sont au volume général que le jeu règle lui-même au démarrage d'après ses réglages
 d'usine (DCS `55 AA 67 98` sur la plupart des jeux, WPCS `79 0C F3`, Whitestar `FE 2C FD`
 sur Apollo 13, l'atténuation du convertisseur sur SAM), ou au seul niveau de la carte
 quand elle n'a pas d'étage de volume. Les fichiers sont alors aussi forts que le jeu les
@@ -649,7 +684,8 @@ reste joué en parallèle.
    sur AC/DC LE 1.68. Tous les sons, et chaque version de chaque morceau en un seul
    fichier continu, en boucle là où le jeu le fait boucler. Les fichiers sont au volume
    d'usine, lu dans le convertisseur (DAC), où le jeu écrit le réglage de volume de
-   l'exploitant (AC/DC : `E8`, -11,5 dB) (vérifié : les boutons de
+   l'exploitant (AC/DC : `E8`, joué par PinMAME à -1,8 dB ; -11,5 dB d'après la fiche
+   technique du convertisseur) (vérifié : les boutons de
    volume de la porte le déplacent de 1 dB par appui, et le jeu écrit la nouvelle valeur
    à la mise sous tension suivante). **Le pack ne se joue pas dans VPinball aujourd'hui** : une SAM n'envoie aucune commande de son, donc
    PinMAME n'a rien à transmettre à AltSound.
@@ -725,7 +761,7 @@ reste joué en parallèle.
 
 ### Volume
 
-Chaque son est enregistré au **volume d'usine** : le volume général que le jeu envoie
+Chaque fichier est au **volume d'usine** : le volume général que le jeu envoie
 lui-même à sa carte son au démarrage, une fois ses réglages d'usine écrits (rom2altsound
 démarre chaque ROM à froid dans un dossier PinMAME à lui, puis à chaud depuis la nvram
 qu'elle a écrite : vos propres réglages ne servent jamais). C'est le niveau auquel le jeu
@@ -736,21 +772,36 @@ joue en sortie d'usine, pour toutes les familles de cartes, quelle que soit la t
 | DCS | `55 AA 67 98`, niveau 12/31 (Attack from Mars, et le réglage par défaut de la carte quand un jeu n'en envoie pas) | environ 22 dB sous l'ancienne référence : Attack from Mars culmine vers -26 dBFS |
 | WPCS | `79 0C F3`, niveau 12/31 (Twilight Zone, The Addams Family) | inchangés : c'était déjà la référence |
 | Whitestar | `FE 2C FD`, niveau 3/31 (Apollo 13, Monopoly) | 25 à 33 dB sous l'ancienne référence (Monopoly -24,6 dB, Apollo 13 -32,6 dB) |
-| Stern SAM | atténuation du convertisseur `E8`, -11,5 dB (AC/DC) | 11,5 dB sous la pleine échelle |
+| Stern SAM | atténuation du convertisseur `E8` (AC/DC), jouée par PinMAME à 81 % | 1,8 dB sous la pleine échelle (voir [Stern SAM](#stern-sam-1)) |
 | System 11, Data East, Bally | aucun étage de volume : pleine échelle, le seul niveau | inchangés |
 
+**Comment** : les sons sont enregistrés au volume de référence (plus bas), le plus fort
+qui ne sature pas, et toutes les analyses se font sur ces enregistrements : silences
+coupés, fin des sons, boucles, jumeaux, passe par puce. Ensuite seulement, les fichiers
+sont réécrits au volume d'usine, multipliés par l'**écart d'usine** de la carte, mesuré en
+rejouant quelques fichiers au volume d'usine (Attack from Mars : -22,44 dB, le même sur
+chaque fichier à 0,02 dB près). À 22 dB plus bas, le bruit de ±1 LSB que PinMAME ajoute
+pèserait 22 dB de plus face à un signal faible, et les points de boucle, la vérification
+des boucles et la recherche des jumeaux en pâtiraient : enregistrés fort puis réduits, ils
+sont ceux du volume de référence, et les fichiers sont bien au niveau d'usine (vérifié sur
+les fichiers rejoués, `scaled_minus_replay_db` : sur Attack from Mars chacun à 0,02 dB de ce
+que PinMAME joue au volume d'usine ; les sons Whitestar suivent le volume général de moins
+près, ceux de Monopoly à 0,25 dB). Le gain est appliqué en virgule flottante et le résultat
+arrondi une seule fois à 16 bits avec un bruit TPDF de ±1 LSB, comme le mélangeur de
+PinMAME arrondit sa propre sortie ; un fichier 24 bits n'en contiendrait pas plus : les
+fichiers restent en 16 bits.
+
 `manifest.json` indique, carte par carte, le volume des fichiers et d'où il vient
-(`recorded_volume`), et son écart au volume de référence (`factory_offset_db`, pour
-information). Un fichier qui sature au volume d'usine, dans le mélange de PinMAME
-lui-même, est signalé (`clipped_files`, et une ligne `CLIPPED` dans le résumé) ; rien
-n'est baissé pour le cacher.
+(`recorded_volume`), le gain appliqué (`factory_gain`) et l'écart mesuré
+(`factory_offset`, avec chaque fichier rejoué). Une carte sans étage de volume est
+enregistrée à son seul niveau, et une carte que le jeu laisse à son niveau de mise sous
+tension (aucun volume envoyé au démarrage) y est enregistrée : ni l'une ni l'autre n'est
+réduite. Un son qui ne suit pas le volume général (signalé `ignores_master_volume`) est
+rejoué au volume d'usine et réduit de son propre écart. Un fichier qui a saturé à l'enregistrement, dans le mélange de PinMAME lui-même,
+est signalé (`clipped_files`, et une ligne `CLIPPED` dans le résumé) ; rien n'est baissé
+pour le cacher.
 
-Les fichiers plus faibles ne perdent que le dernier arrondi : PinMAME applique le volume
-dans son mélangeur, en virgule flottante, et arrondit une seule fois à 16 bits, les
-échantillons mêmes qu'il joue lui-même. Un fichier 24 bits n'en contiendrait pas plus :
-les fichiers restent en 16 bits.
-
-`--volume reference` enregistre plutôt au **volume de référence**, comme la 0.2.1 : pour
+`--volume reference` écrit plutôt les fichiers au **volume de référence**, comme la 0.2.1 : pour
 chaque famille, le volume général le plus fort auquel aucun fichier ne sature dans
 l'émulation (DCS `55 AA EF 10`, WPCS `79 0C F3`, Whitestar `FE 11 FD`, SAM à pleine
 échelle). `--dcs-volume`, `--wpcs-volume` et `--whitestar-volume` règlent ces octets (et
@@ -791,12 +842,16 @@ acd_168h/
   les morceaux 1 à 12 et 18 bouclent), une version de reprise et le morceau entier. Une
   boucle est celle du script : exacte, avec ses points de boucle dans le fichier.
 - **Volume** : les fichiers contiennent les échantillons tels qu'ils sont stockés, au
-  volume d'usine. rom2altsound démarre le jeu dans PinMAME (à froid pour qu'il écrive ses
-  réglages d'usine, puis à chaud à partir d'eux) et lit ce qu'il écrit dans son
-  convertisseur (un TI PCM1755) : AC/DC écrit `E8`, soit -11,5 dB d'après la fiche
-  technique, et les échantillons sont réduits d'autant (`recorded_volume` et
-  `factory_offset_db` dans `manifest.json` ; `--volume reference` les garde à pleine
-  échelle, ce que le convertisseur joue à 0 dB). C'est le réglage de volume de l'exploitant,
+  volume d'usine tel que PinMAME le joue. rom2altsound démarre le jeu dans PinMAME (à
+  froid pour qu'il écrive ses réglages d'usine, puis à chaud à partir d'eux) et lit ce
+  qu'il écrit dans son convertisseur (un TI PCM1755) : AC/DC écrit `E8`. PinMAME en fait
+  un niveau de mélangeur de `(E8 & 7F) * 100 / 7F` = 81 %, -1,8 dB, et les échantillons
+  sont réduits d'autant, pour que les fichiers sonnent comme le jeu sonne aujourd'hui pour
+  les joueurs de VPX (`recorded_volume`, `factory_gain` et `factory_offset_db` dans
+  `manifest.json` ; `--volume reference` les garde à pleine échelle, ce que le
+  convertisseur joue à 0 dB). D'après la fiche technique du convertisseur, `E8` vaut
+  -11,5 dB (0,5 dB par pas depuis `FF`) : la vraie machine joue environ 10 dB moins fort
+  que PinMAME (`datasheet_offset_db`, pour information). C'est le réglage de volume de l'exploitant,
   écrit à la mise sous tension : porte ouverte, chaque appui sur le bouton de volume le
   déplace de 1 dB, et le jeu écrit la nouvelle valeur à la mise sous tension suivante.
 - **AltSound** : `altsound.csv` et `g-sound.csv` sont indexés par les appels de son du jeu

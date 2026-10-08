@@ -81,16 +81,17 @@ are in a C shim.
    the commander's own selection (`cpu_type && cpu_flags == 0`). Audio CPUs keep running.
    If the halt split a Whitestar `FE xx FD` (see Volume), the missing `FD` is sent.
 4. After 0.5 s, so that any half-sent command expires, the tool sends the stop command and
-   waits for silence. With the factory settings (the default) it then sends the game's own
-   factory master volume again, byte for byte (`--volume reference`: the reference volume;
-   see Factory mode). With `--no-factory` it sends `55 AA HH ~HH` to every DCS board
+   waits for silence. With the factory settings (the default) it then sends the reference
+   master volume on the boards that have one, where the files are recorded before they are
+   scaled to the game's factory volume (`--volume reference`: the same, not scaled; a
+   WPCS or Whitestar board the game left at its power-on level gets nothing; see Factory
+   mode). With `--no-factory` it sends `55 AA HH ~HH` to every DCS board
    (`--dcs-volume HH`, default `FF` = 0 dB) and waits for silence again. With
    `--no-volume-init` it sends no volume: the boards play at whatever the game set.
 5. Before every command, outside its recording, the tool sends what keeps one command's
    state from leaking into the next (`refreshed_before_each_command`), then waits for
    silence again: the Data East music volume, or the Whitestar master volume (with the
-   factory settings the game's factory one, or the reference one with `--volume reference`;
-   else the game's when it kept re-sending it during boot; see the per-family notes).
+   factory settings the reference one, as recorded; else the game's when it kept re-sending it during boot; see the per-family notes).
 6. For each command, it sends one byte per `sndbrd_manCmd` call every 4th frame, as in
    `snd_cmd.c` `playCmd`, except on DCS: one byte per frame (see DCS below), and on WPCS,
    where the bytes of a command go out back to back, as the game sends them (see WPCS
@@ -107,8 +108,8 @@ are in a C shim.
 7. If the stop does not bring silence, the tool resets the sound boards (DCS and WPCS through
    their control port, which is how the game resets them and reboots the DCS DSP; other boards
    by pulsing the audio CPUs' reset line), waits for 4 s of silence, and sends the volume
-   again since a reset loses it: the master volume the files are recorded at (factory,
-   reference or `--dcs-volume`), and the game's own last other volume commands, byte for
+   again since a reset loses it: the master volume the files are recorded at (reference,
+   or `--dcs-volume`), and the game's own last other volume commands, byte for
    byte (`volume_replays` in the manifest). If even that fails, the next
    file is marked `clean_start: false`. Nothing is only reported on stderr. A board that
    is still not silent after 3 waits for quiet in a row with no command played in between
@@ -128,8 +129,9 @@ are in a C shim.
 10. Output: `<out>/0xHHHH-<rom>.wav` (16-bit, the stream's channel count) and
    `<out>/manifest.json`, rewritten after every command, then a summary on stdout.
 11. AltSound pack (unless `--no-altsound`, see below): loop points, twins, `altsound.csv`,
-   `g-sound.csv`, `altsound.ini`.
-12. Listening page (unless `--no-html`, see below): `<out>/index.html`.
+   `g-sound.csv`, `altsound.ini`, from the recordings.
+12. Factory mode: the files written again at the factory volume (see Factory mode, step 5).
+13. Listening page (unless `--no-html`, see below): `<out>/index.html`.
 
 ### AltSound pack
 
@@ -209,7 +211,7 @@ channel, the chips pass's `chip`, `twin_of`, `flags` (`clipped (n)`, `blip`, `si
 clean`, `ignores master volume`, `cut at max`, `loop unresolved`), and `files`: the
 recording, the loop body, the extended file and the file the pack plays (a merged twin's
 original), each only when it is on disk when the page is written, as a path relative to the
-page, with `pack: true` on the one the pack plays (its button is outlined). The header shows the volume the files are recorded at, the other volume (reference or factory) and `factory_offset_db`.
+page, with `pack: true` on the one the pack plays (its button is outlined). The header shows the volume the files are at (`volume_init`: in factory mode "factory 55AA6798 (from reference 55AAEF10, -22.44 dB)"), the other volume (reference or factory) and `factory_offset_db`.
 
 One shared `<audio>` element plays them; the `loop` button plays the body looped (the
 browser loops the whole file, as libaltsound does). Rows are built once, and the search
@@ -218,6 +220,23 @@ browser loops the whole file, as libaltsound does). Rows are built once, and the
 "with sound" (rows with a file, on by default) and the sorting only hide and reorder
 them. Keyboard: one row is in the tab order at a time; Up/Down/Home/End move, Space or
 Enter plays the row's first file (again: pause), `/` goes to the search.
+
+**A/B** (goodtwist's idea: copy the folder, swap sounds in the copy, compare): the "Compare
+with folder" box takes a path relative to the page (`../taf_l5-edit/`, a trailing `/` is
+added), kept in `localStorage` under `rom2altsound.compare.<rom>` (every access in a
+`try`: in a private window or with storage blocked the page works, it just does not
+remember). With a folder set, every row with a file gets an **A/B** button and the player
+a badge (`A`, `B`, `B: missing`). The button of the playing row, or the `b` key (not in a
+text field, no modifier), switches the shared `<audio>` between `<file>` and
+`<folder><file>`: the position (`currentTime`, set again on `loadedmetadata`, which with
+`preload="none"` comes when it plays) and the play state are kept, so a paused player stays
+paused at the same point. On a row that is not playing, the button plays its pack file on
+the side shown. An `error` on the element while on B marks the row "missing in B" (with the
+path in its tooltip) and the badge. Nothing is fetched: a plain `src` change, which works
+from `file://`. The batch index has no player, so no A/B. Tested in Boa with a stub DOM (the
+same as for the rest of the page): switching both ways while playing and paused, the
+position kept, the error mark, `b` ignored with Ctrl or in the search box, the stored
+folder restored, and storage that throws.
 
 A batch (several ROMs) also writes `<out>/index.html`, a table of every folder under
 `--out` (default `.`) that has a page of ours and a `manifest.json`, when there are at least
@@ -233,24 +252,26 @@ the index of their parent folder.
 Some ROMs hold several commands that play the same audio (sounds.dat says of afm_113b
 "Every sound effect appears twice"). A sound is the **twin** of an earlier one when:
 
-- their lengths differ by at most 256 samples (6 ms);
+- their lengths differ by at most one sample;
 - their integrated loudness differs by at most 0.01 LU;
-- once aligned to a fraction of a sample (whole-sample lags up to 128, then a golden-section
+- once aligned to a fraction of a sample (whole-sample lags up to 3, then a golden-section
   search with a 48-tap windowed-sinc interpolator on the loudest 16384 samples), the
-  residual over the whole overlap is at least 60 dB below the signal, or, on a quiet file,
-  at most 4 LSB RMS (and at least 30 dB below the signal): the level of PinMAME's dither
-  and of the sub-sample interpolation.
+  residual over the whole overlap is at least 60 dB below the signal.
 
-Measured on afm_113b at the reference volume: the 303 pairs that pass the first two tests
-are at -64 to -80 dB once aligned (a linear interpolator left them at -25 to -55 dB: the
-copies differ by the fractional phase of the resampler) and 0 or 1 sample apart; different
-sounds of nearly the same length are above 0 dB. At the factory volume (22 dB lower) the
-mixer's ±1 LSB dither is 22 dB closer to the signal, and the silence trim (2 LSB) falls a
-few samples apart on the attacks and the decaying tails: the same pairs were up to 105
-samples apart in length, their starts more than 3 samples apart, and none passed the old
--60 dB test (aligned, they are at -43 to -50 dB, about 1 LSB RMS), hence the length
-margin, the lags up to 128 and the absolute residual. The thresholds are in
-`manifest.json` (`altsound.twin_test`). Each sound is compared to the earlier sounds that are not twins themselves, so
+Measured on afm_113b: the 303 pairs that pass the first two tests are at -64 to -80 dB once
+aligned (a linear interpolator left them at -25 to -55 dB: the copies differ by the
+fractional phase of the resampler); different sounds of nearly the same length are above
+0 dB. The test runs on the recordings at the reference volume, in factory mode too (the
+files are scaled to the factory volume after the pack is built, see "Factory mode"): at
+the DCS factory volume, 22 dB lower, PinMAME's ±1 LSB dither is 22 dB closer to the signal
+and the silence trim falls a few samples apart, so the same pairs measured -43 to -50 dB
+(about 1 LSB RMS) and up to 105 samples apart in length, and none passed. Which pairs pass
+can still change a little from one run to the next, at any volume: the emulation is not
+sample-exact from run to run (the sound's start against the DCS frame), and a pair whose
+copies were recorded in a different context can miss the test (afm_113b `--limit 40`,
+four runs, two at each volume: 6, 8, 7 and 6 of the same 8 pairs; `0x0070`/`0x0071` are at
+-78 dB played alone, and were missed in one of the four). The thresholds are in `manifest.json`
+(`altsound.twin_test`). Each sound is compared to the earlier sounds that are not twins themselves, so
 `twin_of` always names an original. On DCS the reason is the board's channels (see
 "Ducking, stops and channels"): a new command on a channel cuts what was playing there, so
 afm_113b puts its sound effects on channels 1 and 2 and its Martian voices and effects on
@@ -399,51 +420,90 @@ a player may have changed. So the user's nvram/cfg are never used:
    `<out>/cold-boot.json` and into the manifest.
 3. Warm boot from that nvram. `factory_volume` in the manifest and the summary is what the
    game sent on this boot (the last command per board and kind), or `seen: false` with the
-   reason. **The files are recorded at that factory volume** (`volume_mode: "factory"`),
-   on every board family and whatever the game: DCS `55 AA vv ~vv` (afm_113b `55 AA 67 98`,
-   level 12/31), WPCS `79 vv ~vv` (tz_94h and taf_l5 `79 0C F3`), Whitestar `FE xx FD`
-   (apollo13 and monopole `FE 2C FD`, level 3/31), Stern SAM the DAC attenuation
-   (acd_168h `E8`, -11.5 dB). Once booted the tool sends that command again, byte for
-   byte, before every command where the game kept re-sending it (Whitestar), and after a
-   board reset. A board with no volume stage (System 11, Data East's pot, the Bally
-   boards) is at its only level, full scale. When the game sends no master volume at
-   boot, the board stays at its power-on level: on DCS the tool sends the board's reset
-   default, `55 AA 67 98`; on WPCS and Whitestar it sends nothing. `recorded_volume` in
-   the manifest says, per board, which volume and where it comes from. Nothing is lowered
-   to avoid clipping: a file that reaches full scale at the factory volume (PinMAME's mixer
-   sums the chips in float and clips once, to 16 bits) is listed in `clipped_files` and
-   on a `CLIPPED` line of the summary. `--volume reference` records at the reference volume
-   (below) instead, as 0.2.1 did; giving `--dcs-volume`, `--wpcs-volume` or
-   `--whitestar-volume` implies it, unless `--volume factory` is given too.
+   reason. **The files end up at that factory volume** (`volume_mode: "factory"`), on every
+   board family and whatever the game: DCS `55 AA vv ~vv` (afm_113b `55 AA 67 98`, level
+   12/31), WPCS `79 vv ~vv` (tz_94h and taf_l5 `79 0C F3`), Whitestar `FE xx FD` (apollo13
+   and monopole `FE 2C FD`, level 3/31), Stern SAM the DAC attenuation as PinMAME plays it
+   (acd_168h `E8`, -1.8 dB). But a board with a master volume is **recorded at its
+   reference volume** (below), and every analysis runs on those recordings: the silence
+   trim, the end of a sound, loops (cut points, checks, seams), the volume check, the chips
+   pass, the AltSound pack (twins, extended files, `smpl`). Only then are its files written
+   again at the factory volume (step 5). Once booted the tool sends its volume again before
+   every command where the game kept re-sending its own (Whitestar), and after a board
+   reset. A board with no volume stage (System 11, Data East's pot, the Bally boards) is
+   recorded at its only level, full scale, and not scaled. When the game sends no master
+   volume at boot, the board stays at its power-on level: on DCS the factory volume is
+   then the board's reset default, `55 AA 67 98`, and the board is recorded at the
+   reference and scaled as above; on WPCS and Whitestar the tool sends nothing, records
+   the board at that power-on level and does not scale it. `recorded_volume` in the
+   manifest says, per board, which volume the files are at, where it comes from and the
+   gain applied (`gain_db`). Nothing is lowered to avoid clipping: a file that reached full
+   scale in the recording (PinMAME's mixer sums the chips in float and clips once, to 16
+   bits) is listed in `clipped_files` and on a `CLIPPED` line of the summary.
+   `--volume reference` writes the files at the reference volume (below) instead, as 0.2.1
+   did; giving `--dcs-volume`, `--wpcs-volume` or `--whitestar-volume` implies it, unless
+   `--volume factory` is given too.
 4. Factory offset pass (after the retry pass and the master volume check), per board that
-   has a master volume, for information: up to 5 written non-loop files are played again
-   at the other volume (the reference volume; with `--volume reference`, the factory one,
-   which on DCS is the board's reset default `67` if the game sent none). They are the
+   has a master volume: up to 5 written non-loop files are played again at the factory
+   volume (on DCS the board's reset default `67` if the game sent none). They are the
    loudest files at most 5 LU above the median file (louder ones are the volume check's
-   suspects), at least 1 s long and not clipped. These replays are measured, never
-   written. When the factory volume is the reference (WPCS `79 0C F3`) nothing is played
-   and the offset is 0. `factory_offset_db` is the median of factory `level_lufs` minus
-   reference `level_lufs` (negative where the factory volume is quieter: afm_113b -22.4
-   dB); `factory_offset` in the manifest lists the files, both levels, the move and the
-   spread. Boards without a master volume (Data East, System 11) record at their only
-   level: offset 0. With `--volume reference`, `loudness.as_shipped` is the loudness report
-   shifted by the offset: what the files measure at the game's factory volume.
+   suspects), at least 1 s long and not clipped; when fewer qualify (a short run, `--only`,
+   `--limit`) they are topped up with the other written non-loop files, the loudest first.
+   In factory mode the files flagged `ignores_master_volume` (step 9 of "How it works")
+   are played again at the factory volume too, each for its own gain (they would not
+   follow the board's). These replays are measured, never written. When the factory volume is the reference
+   (WPCS `79 0C F3`) nothing is played and the offset is 0. The board's offset is the
+   median of factory `level_lufs` minus reference `level_lufs` (negative where the factory
+   volume is quieter: afm_113b -22.44 dB, spread 0.00 to 0.02 dB); `factory_offset` in the
+   manifest lists the files, both levels, the move and the spread, and `factory_offset_db`
+   is the ROM's. Boards without a master volume record at their only level: offset 0.
+   With `--volume reference`, `loudness.as_shipped` is the loudness report shifted by the
+   offset: what the files measure at the game's factory volume.
+5. Factory mode: each board's files are scaled by its offset (`factory_gain`: `gain_db`,
+   the linear `gain`, per board), a file flagged `ignores_master_volume` by its own move
+   from the reference to the factory volume (`factory_gain.own_gains`: `id`, both levels,
+   `gain_db`; 0 dB when its replay could not be measured). So is a replayed file of step 4
+   whose move is more than 3 dB away from the board's median (a sound that does not follow
+   the master volume but that the volume check could not flag, on a short run: monopole
+   `--only` with `0x1E`, which moves by 0.0 dB when the others move by -24.7); the board's
+   gain is then the median of the other files. First the levels (every per-sound level and the loudness
+   totals move by the gain, so `manifest.json` and the summary describe the files as
+   written); then, after the pack, every file of the board: the recording, read back,
+   times the gain in floating point, plus a TPDF dither of ±1 LSB (the difference of two
+   uniform values from xorshift128 generators seeded by the file name, as PinMAME's
+   `mixer_sh_update` dithers its own output), rounded to the nearest 16-bit value and
+   clamped (a gain above 0 dB only can clamp; `factory_gain.rewritten.clamped_samples`).
+   The loop body (`-loop.wav`) and the extended file are cut again from the scaled
+   recording, sample for sample consistent with it, and the `smpl` loop points written
+   again. Each replayed file of step 4 checks the result: `scaled_minus_replay_db`, the
+   scaled file's level minus what PinMAME plays at the factory volume (afm_113b: -0.008
+   to +0.017 dB; monopole -0.24 to +0.23 dB over a full run: Whitestar sounds follow the
+   master volume within a few tenths of a dB, depending on the context they are played in,
+   since the same files measure within 0.05 dB of each other when played alone). If the offset could not be measured, the board's files stay at the
+   reference volume and `recorded_volume` says so.
 
-**Precision at the factory volume.** The DCS factory volume is about 22 dB below the
-reference, so the files are quieter by as much. Nothing is lost on the way but the last
-rounding: PinMAME applies the master volume in its mixer, which sums every channel in
-float and rounds once to 16 bits (with ±1 LSB TPDF dither), and that is the sample the
-tool receives and writes. It is what PinMAME itself plays at that volume, sample for
-sample. A 24-bit or float WAV would not hold more: libpinmame's float output is the same
-16-bit mix converted (`src_short_to_float_array`), and its mixer has no wider output. The
-consumers would read one (libaltsound decodes with miniaudio, whose WAV decoder reads
-16-, 24- and 32-bit PCM and float), so the format stays 16-bit PCM. At -22 dB the dither
-floor is about 74 dB below the files' own peaks instead of 96.
+**Why record at the reference and scale.** Recorded straight at the DCS factory volume,
+22 dB lower, the files' content is the same but PinMAME's ±1 LSB dither (added once, to
+16 bits) weighs 22 dB more against the signal: the loop checks' residuals rose (afm_113b
+`0x0001`: -35.5 dB instead of -47.3), the audio method picked another, worse loop on
+`0x0013` (0.461 s at -1.3 dB, against -15.5 dB at the reference), the silence trim fell a
+few samples apart and no twin passed the twin test. Recorded at the reference and scaled
+after, every analysis is that of the reference volume (`0x0001` -48.0 dB, `0x0013` -15.6
+dB, the twin test back to 0.2.1's) and the files are at the factory level all the same.
+The scaled file and a recording at the factory volume differ only by their dither: both
+are PinMAME's float mix at that level rounded once to 16 bits (the recording at the
+reference carries its own dither too, 22 dB down after the gain). A 24-bit or float WAV
+would not hold more: libpinmame's float output is the same 16-bit mix converted
+(`src_short_to_float_array`), and its mixer has no wider output. The consumers would read
+one (libaltsound decodes with miniaudio, whose WAV decoder reads 16-, 24- and 32-bit PCM
+and float), so the format stays 16-bit PCM. At -22 dB the dither floor is about 74 dB
+below the files' own peaks instead of 96.
 
 ### Reference volume
 
-Used with `--volume reference` (the default until 0.2.1), and in factory mode as the point
-the factory offset is measured against. Per board family, the loudest master volume at
+Used with `--volume reference` (the default until 0.2.1), and in factory mode as the volume
+the boards are recorded and analysed at, before their files are scaled to the factory
+volume. Per board family, the loudest master volume at
 which no file of our ROMs clips in emulation, apart from isolated clicks. Measured with full
 sweeps (written files with raw samples at +32767/-32768):
 
@@ -798,8 +858,18 @@ music scripts, plus 4 false positives (headers with field 4 != 1, decoding to no
 opcode parser finds neither.
 
 **Levels**: the files are the samples as decoded, scaled by the factory DAC attenuation
-the game writes on the warm boot (acd_168h `E8`: -11.5 dB, in the PCM1755's 0.5 dB steps,
-not PinMAME's linear mapping of the same register), then rounded to 16 bits. With
+the game writes on the warm boot, as PinMAME plays it: sam.c turns the register into a
+mixer level of `(v & 7F) * 100 / 7F` percent (integer division), so acd_168h's `E8` plays
+at 81 %, -1.83 dB (`factory_gain`), then rounded to the nearest 16-bit value (no dither:
+these samples do not come from PinMAME's mixer). That is what VPX players hear today. The
+PCM1755 datasheet gives -0.5 dB per step from `FF` (`E8` = -11.5 dB, `datasheet_offset_db`
+and `factory_volume.attenuation_db` in the manifest): the real machine plays about 9.7 dB
+quieter than PinMAME at the factory setting, and the two drift further apart as the
+attenuation grows (`C0`: -6.0 dB in PinMAME, -31.5 dB by the datasheet); PinMAME's own
+comment in sam.c has the datasheet's rule ("For ATx[7:0]DEC = 0 through 128, attenuation
+is set to infinite attenuation") but maps the rest linearly. The files follow PinMAME, so
+that a pack sounds like the game in VPX; should PinMAME follow the datasheet one day, the
+gain would follow it. With
 `--volume reference`, or when the attenuation is not known (the boot failed, `--no-factory`),
 they are at full scale: what the DAC plays at 0 dB (attenuation `FF`), and
 `recorded_volume` says so. At full scale, 855 of the 1037 acd_168h files reach
@@ -821,9 +891,9 @@ runs): it decodes the same serial words, logs them with the emulated time and ca
 handler, which still does the work; PinMAME is not modified. The cold boot (child process,
 no nvram) and the warm boot (from the cold boot's nvram) each run until the DAC has been
 quiet for 3 s after `--boot-secs`. acd_168h writes `10 E8` and `11 E8` 0.37 s into every
-boot, cold or warm, and nothing more in 120 s of attract mode: -11.5 dB
-(`factory_offset_db`). PinMAME plays that register as a linear mixer level,
-`(v & 7F) * 100 / 7F` = 81 % (-1.8 dB), not as the DAC does. `E8` = `80 + 2 x 52`.
+boot, cold or warm, and nothing more in 120 s of attract mode: PinMAME plays it at
+`(v & 7F) * 100 / 7F` = 81 %, -1.83 dB (`factory_offset_db`, the files' gain), where the
+DAC's datasheet says -11.5 dB (`datasheet_offset_db`). `E8` = `80 + 2 x 52`.
 
 That register **is the operator's volume setting** (`factory_offset.verified` true,
 `verified_by`), measured with the hidden `--sam-volume-test N`: it boots from the nvram in
@@ -1179,11 +1249,16 @@ are recorded at with `--volume reference`, what the offset is measured against i
 mode), `levels_note`, `factory_offset_db` (the ROM's offset: 0
 without a master volume, null if not measured), `factory_offset` (`method`, per board the
 `reference_volume`, `factory_volume` and where it comes from, `factory_offset_db`,
-`spread_db` and the `samples`: `id`, `reference_lufs`, `factory_lufs`, `delta_db`, plus a
-`note`) and `loudness.as_shipped` (`factory_offset_db`, `all_lufs`, `excluding_loops_lufs`,
+`spread_db` and the `samples`: `id`, `reference_lufs`, `factory_lufs`, `delta_db`, in
+factory mode `scaled_minus_replay_db`, plus a `note`), `factory_gain` (factory mode:
+`method`, `rounding`, per board `recorded_at`, `written_at`, `gain_db`, `gain`,
+`spread_db`, `files`, `note`, `own_gains`, and `rewritten`: `files` written again, `clamped_samples`;
+`gain_db` is also in each `recorded_volume`) and `loudness.as_shipped` (`factory_offset_db`, `all_lufs`, `excluding_loops_lufs`,
 `median_file_lufs`, `loudest_true_peak_dbtp`; `--volume reference` only). Every per-sound
-level is at the volume the files are recorded at (`volume_init`, e.g. `factory 55AA6798`
-or `reference 55AAEF10`).
+level is that of the file as written (`volume_init`, e.g. `factory 55AA6798 (from
+reference 55AAEF10, -22.44 dB)` or `reference 55AAEF10`): in factory mode, measured on the
+recording and moved by the board's gain; `clipped_samples` and `master_volume_check` are
+those of the recording.
 
 ## Factory results for our ROMs
 
@@ -1276,8 +1351,9 @@ Two rounds before:
   family"); only one program per board was tried (vikingb, xenon, eballdlx), and the
   -32/-50 not at all.
 - **Stern SAM**: the AltSound files do not play in PinMAME (no sound command); the scripts'
-  volume ramps and the game's mixing are not reproduced; the factory volume is the DAC's,
-  not verified against the operator setting; only acd_168h was checked.
+  volume ramps and the game's mixing are not reproduced; the factory volume is PinMAME's
+  linear reading of the DAC register, about 10 dB louder than the datasheet's at `E8`;
+  only acd_168h was checked.
 - **DCS first-try losses.** About one command in 200 on rs_l6 (none of 893 on mm_109c with
   the current pacing) plays nothing on its first try and plays normally on the retry. Which
   ones depends on the boot's timing, which varies by a frame or two from run to run (the WPC

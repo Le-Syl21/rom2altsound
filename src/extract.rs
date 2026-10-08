@@ -325,6 +325,9 @@ const DCS_RESET_DEFAULT: u8 = 0x67;
 /// `OFFSET_MIN_SECS` long, not clipped), and the offset is the median of their level moves.
 const OFFSET_FILES: usize = 5;
 const OFFSET_MIN_SECS: f64 = 1.0;
+/// Factory mode: a replayed file whose move is this far from its board's offset does not
+/// follow the master volume, and is scaled by its own move.
+const OWN_GAIN_MIN_DB: f64 = 3.0;
 
 /// One action for the sound board, paced like PinMAME's commander.
 #[derive(Clone, Copy, Debug)]
@@ -410,6 +413,9 @@ struct AltVolume {
     levels: i32,
     /// This is the reference file of its board, not a suspect.
     reference: bool,
+    /// Factory offset pass: a file flagged `ignores_master_volume`, measured for itself
+    /// (`OwnGain`) instead of counting in its board's offset.
+    own: bool,
 }
 
 struct Recording {
@@ -759,6 +765,9 @@ pub struct VolumeCheck {
 /// One file played again at the factory volume.
 #[derive(Clone, Serialize)]
 pub struct OffsetSample {
+    /// The result index.
+    #[serde(skip)]
+    pub index: usize,
     pub id: String,
     /// `level_lufs` at the reference volume and at the factory volume (one of them is the
     /// written file, the other the replay).
@@ -766,6 +775,11 @@ pub struct OffsetSample {
     pub factory_lufs: Option<f64>,
     /// Factory minus reference, in dB.
     pub delta_db: Option<f64>,
+    /// Factory mode: the written file (the recording scaled by the board's gain) minus
+    /// the replay at the factory volume, in dB: how far the file is from what PinMAME
+    /// plays at the factory volume.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scaled_minus_replay_db: Option<f64>,
 }
 
 /// The dB offset between the reference volume (what the files are recorded at) and the
@@ -786,6 +800,59 @@ pub struct BoardOffset {
     pub samples: Vec<OffsetSample>,
 }
 
+/// Factory mode: the gain one board's files were scaled by, from the reference volume they
+/// were recorded at to the factory volume (manifest `factory_gain`).
+#[derive(Clone, Debug, Serialize)]
+pub struct BoardGain {
+    pub board: c_int,
+    pub family: String,
+    /// The master volume the board was recorded at (hex), and the one its files are
+    /// written at; or what the board has instead.
+    pub recorded_at: String,
+    pub written_at: String,
+    /// The board's measured factory offset, applied to its files, in dB and as the linear
+    /// factor; 0 (1) on a board recorded at its factory volume already; null when the
+    /// offset could not be measured (the files are left at the reference volume).
+    pub gain_db: Option<f64>,
+    pub gain: Option<f64>,
+    /// Max - min of the offset's samples, in dB.
+    pub spread_db: Option<f64>,
+    /// Written files of this board.
+    pub files: usize,
+    pub note: String,
+}
+
+/// Factory mode: a file flagged `ignores_master_volume`, scaled by its own move from the
+/// reference to the factory volume (its replay at the factory volume minus its recording),
+/// not by its board's offset; 0 dB when the replay could not be measured (it does not
+/// follow the master volume).
+#[derive(Clone, Debug, Serialize)]
+pub struct OwnGain {
+    #[serde(skip)]
+    pub index: usize,
+    pub id: String,
+    pub reference_lufs: Option<f64>,
+    pub factory_lufs: Option<f64>,
+    pub gain_db: Option<f64>,
+}
+
+/// The manifest's `factory_gain`.
+#[derive(Serialize)]
+struct FactoryGainReport<'a> {
+    method: &'static str,
+    rounding: &'static str,
+    boards: &'a [BoardGain],
+    /// The files that do not follow the master volume, each with its own gain.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    own_gains: &'a [OwnGain],
+    /// What `scale_files` did (set once the files are written again).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rewritten: Option<crate::altsound::ScaleReport>,
+}
+
+const FACTORY_GAIN_METHOD: &str = "each board with a master volume is recorded at its reference volume, where every analysis runs (silence trimming, end of sound, loops, twins, chips pass), then its files (recording, loop body, extended file) are written again scaled by its factory offset (factory_offset: the median, over a few files played again at the factory volume, of factory minus reference level); scaled_minus_replay_db in factory_offset compares the scaled files with those replays. A board without a volume stage, or left at its power-on level by the game, is recorded at its only level and not scaled";
+const FACTORY_GAIN_ROUNDING: &str = "gain applied in floating point to the 16-bit recording, then one rounding to 16 bits with a TPDF dither of +-1 LSB, as PinMAME's mixer rounds its own output (mixer.c)";
+
 /// The volume one board's files are recorded at (manifest `recorded_volume`).
 #[derive(Clone, Debug, Serialize)]
 pub struct RecordedVolume {
@@ -794,6 +861,9 @@ pub struct RecordedVolume {
     /// The master volume command (hex), or why there is none.
     pub volume: String,
     pub from: String,
+    /// Factory mode: the gain applied to the board's files, in dB (see `factory_gain`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gain_db: Option<f64>,
 }
 
 /// A written file that reaches full scale (manifest `clipped_files`).
@@ -969,8 +1039,13 @@ struct Manifest<'a> {
     volume_mode: &'static str,
     /// Per board: the volume its files are recorded at, and where that volume comes from.
     recorded_volume: Vec<RecordedVolume>,
+    /// Factory mode: the gain each board's files were scaled by, from the reference volume
+    /// they were recorded at to the factory volume, and how.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    factory_gain: Option<FactoryGainReport<'a>>,
     /// The written files with samples at full scale (+32767/-32768) in PinMAME's own mix
-    /// at the recorded volume, loudest first: reported, never fixed by lowering the volume.
+    /// at the recording volume (in factory mode the reference volume, before the gain),
+    /// loudest first: reported, never fixed by lowering the volume.
     clipped_files: Vec<ClippedFile>,
     /// The reference volume of each board: our master volume command where the board has
     /// one, `volume::FULL_SCALE` where it has no volume stage at all (System 11, Cheap
@@ -1190,6 +1265,13 @@ pub struct Extractor {
     /// Reference mode: the factory offset per board (filled by the `FactoryOffset` pass).
     offsets: Vec<BoardOffset>,
     offset_note: Option<String>,
+    /// Factory mode: the gain of each board, once `apply_factory_gain` has run, and what
+    /// `scale_files` did.
+    gains: Option<Vec<BoardGain>>,
+    own_gains: Vec<OwnGain>,
+    /// The gain of each result's files, in dB, once applied.
+    file_gain_db: Vec<f64>,
+    scaled: Option<crate::altsound::ScaleReport>,
     pub results: Vec<SoundInfo>,
     /// DCS: the board, and what each populated track of its catalog does
     /// (`dcsrom::command_effects`), read once booted.
@@ -1275,6 +1357,10 @@ impl Extractor {
             check_refs: Vec::new(),
             offsets: Vec::new(),
             offset_note: None,
+            gains: None,
+            own_gains: Vec::new(),
+            file_gain_db: Vec::new(),
+            scaled: None,
             results: Vec::new(),
             dcs_board: None,
             dcs_fx: BTreeMap::new(),
@@ -1919,17 +2005,20 @@ impl Extractor {
 
     /// The master volume the tool sets on a board itself, if any: `VolumeInit::Dcs` on DCS
     /// boards; `VolumeInit::Reference` on DCS, WPCS and Whitestar boards; with
-    /// `VolumeInit::Factory`, the game's own factory master volume on those boards (see
-    /// `factory_master`).
+    /// `VolumeInit::Factory`, the same reference volume on those boards when the game has a
+    /// factory master volume (see `factory_master`), the files being scaled to it after the
+    /// recording.
     fn our_master(&self, board: c_int) -> Option<Vec<u8>> {
         match self.opts.volume {
             VolumeInit::Dcs(vv) if self.families[board as usize] == "DCS" => {
                 Some(vec![0x55, 0xAA, vv, !vv])
             }
             VolumeInit::Reference(_) => self.reference_master(board),
+            // Recorded at the reference volume and scaled to the factory volume afterwards
+            // (`apply_factory_gain`); a board the game left at its power-on level stays there.
             VolumeInit::Factory(_) => {
-                self.reference_master(board)?;
-                self.factory_master(board).map(|f| f.0)
+                self.factory_master(board)?;
+                self.reference_master(board)
             }
             _ => None,
         }
@@ -1996,10 +2085,9 @@ impl Extractor {
             return None;
         }
         let label = parts.join(" ");
-        Some(if self.is_reference() {
+        // Factory mode records at the reference volume too (`apply_factory_gain`).
+        Some(if self.compares_volumes() {
             format!("reference {label}")
-        } else if self.is_factory_volume() {
-            format!("factory {label}")
         } else {
             label
         })
@@ -2046,11 +2134,37 @@ impl Extractor {
         self.board_list()
             .map(|b| {
                 let family = self.family_label(b);
-                let (volume, from) = if let Some(bytes) = self.our_master(b) {
+                let gain = self.gains.as_ref().and_then(|g| g.iter().find(|g| g.board == b));
+                let (volume, from) = if let (Some(bytes), true) =
+                    (self.our_master(b), self.is_factory_volume())
+                {
+                    let (factory, from) = self.factory_master(b).unwrap_or_default();
+                    match gain.and_then(|g| g.gain_db) {
+                        Some(0.0) => (
+                            hex(&factory),
+                            format!("factory: {from}; the reference volume too, not scaled"),
+                        ),
+                        Some(d) => (
+                            hex(&factory),
+                            format!(
+                                "factory: {from}; recorded at the reference volume {} and scaled {d:+.2} dB (the measured factory offset)",
+                                hex(&bytes)
+                            ),
+                        ),
+                        None if gain.is_some() => (
+                            hex(&bytes),
+                            "the reference volume: the factory offset could not be measured, so the files were not scaled".into(),
+                        ),
+                        None => (
+                            hex(&factory),
+                            format!(
+                                "factory: {from}; recorded at the reference volume {}, to be scaled once the factory offset is measured",
+                                hex(&bytes)
+                            ),
+                        ),
+                    }
+                } else if let Some(bytes) = self.our_master(b) {
                     let from = match self.opts.volume {
-                        VolumeInit::Factory(_) => self
-                            .factory_master(b)
-                            .map_or_else(String::new, |f| format!("factory: {}", f.1)),
                         VolumeInit::Reference(_) => "the reference volume".into(),
                         _ => "--dcs-volume".into(),
                     };
@@ -2076,6 +2190,7 @@ impl Extractor {
                     family,
                     volume,
                     from,
+                    gain_db: gain.and_then(|g| g.gain_db),
                 }
             })
             .collect()
@@ -2098,6 +2213,267 @@ impl Extractor {
             .collect();
         v.sort_by_key(|c| std::cmp::Reverse(c.clipped_samples));
         v
+    }
+
+    /// Factory mode, once every pass has run: the gain of each board (its measured factory
+    /// offset, see `BoardGain`), and every level of its written files (`SoundInfo` levels,
+    /// the loudness totals) moved by it, as the files will be once `scale_files` has
+    /// written them again. The analyses (loops, twins) stay those of the recordings.
+    pub fn apply_factory_gain(&mut self) {
+        if !self.is_factory_volume() || self.gains.is_some() {
+            return;
+        }
+        let mut gains = Vec::new();
+        let mut outliers = Vec::new();
+        for b in self.board_list() {
+            let family = self.family_label(b);
+            let files = (0..self.results.len())
+                .filter(|&i| {
+                    self.results[i].file.is_some()
+                        && self.main_cmds.get(i).is_some_and(|c| c.board_no == b)
+                })
+                .count();
+            let g = match (self.our_master(b), self.factory_master(b)) {
+                (Some(reference), Some((factory, from))) => {
+                    let o = self.offsets.iter().find(|o| o.board == b);
+                    // The median of the samples that follow it: a replay that moved far
+                    // from the median does not follow the master volume (a file the volume
+                    // check could not flag) and gets its own gain instead.
+                    let median = o.and_then(|o| o.factory_offset_db);
+                    let mut inliers = Vec::new();
+                    for smp in o.map_or(&[][..], |o| &o.samples[..]) {
+                        match (smp.delta_db, median) {
+                            (Some(d), Some(m)) if (d - m).abs() > OWN_GAIN_MIN_DB => {
+                                if !self.own_gains.iter().any(|g| g.index == smp.index) {
+                                    outliers.push(OwnGain {
+                                        index: smp.index,
+                                        id: smp.id.clone(),
+                                        reference_lufs: smp.reference_lufs,
+                                        factory_lufs: smp.factory_lufs,
+                                        gain_db: Some(d),
+                                    });
+                                }
+                            }
+                            (Some(d), _) => inliers.push(d),
+                            _ => {}
+                        }
+                    }
+                    let gain_db = loudness::median(inliers).map(round3).or(median);
+                    BoardGain {
+                        board: b,
+                        family,
+                        recorded_at: hex(&reference),
+                        written_at: if gain_db.is_some() {
+                            hex(&factory)
+                        } else {
+                            hex(&reference)
+                        },
+                        gain_db,
+                        gain: gain_db.map(|g| 10f64.powf(g / 20.0)),
+                        spread_db: o.and_then(|o| o.spread_db),
+                        files,
+                        note: match gain_db {
+                            Some(0.0) => format!(
+                                "the factory volume is the reference volume ({from}): not scaled"
+                            ),
+                            Some(g) => format!(
+                                "factory {} ({from}): recorded at reference {}, scaled {g:+.3} dB",
+                                hex(&factory),
+                                hex(&reference)
+                            ),
+                            None => format!(
+                                "the factory offset could not be measured: the files are left at the reference volume {}",
+                                hex(&reference)
+                            ),
+                        },
+                    }
+                }
+                _ => {
+                    let only = volume::full_scale(&family);
+                    BoardGain {
+                        board: b,
+                        recorded_at: only.map_or_else(
+                            || "the board's power-on level".to_string(),
+                            str::to_owned,
+                        ),
+                        written_at: only.map_or_else(
+                            || "the board's power-on level".to_string(),
+                            str::to_owned,
+                        ),
+                        gain_db: Some(0.0),
+                        gain: Some(1.0),
+                        spread_db: None,
+                        files,
+                        note: if only.is_some() {
+                            "no volume stage: recorded at the board's only level, not scaled".into()
+                        } else {
+                            format!(
+                                "the game sent no master volume at boot ({}): recorded at the board's power-on level, as the game plays, not scaled",
+                                volume::none_reason(&family)
+                            )
+                        },
+                        family,
+                    }
+                }
+            };
+            gains.push(g);
+        }
+        self.own_gains.extend(outliers);
+        let gain_of = |b: c_int| {
+            gains
+                .iter()
+                .find(|g| g.board == b)
+                .and_then(|g| g.gain_db)
+                .unwrap_or(0.0)
+        };
+        let own = |i: usize| {
+            self.own_gains
+                .iter()
+                .find(|o| o.index == i)
+                .map(|o| o.gain_db.unwrap_or(0.0))
+        };
+        // A board whose offset is not measured stays at the reference volume, own gains
+        // included.
+        let measured = |b: c_int| gains.iter().any(|g| g.board == b && g.gain_db.is_some());
+        let file_gain: Vec<f64> = (0..self.results.len())
+            .map(|i| match self.main_cmds.get(i) {
+                Some(c) if measured(c.board_no) => own(i).unwrap_or_else(|| gain_of(c.board_no)),
+                _ => 0.0,
+            })
+            .collect();
+        for (i, &g) in file_gain.iter().enumerate() {
+            if g == 0.0 || self.results[i].file.is_none() {
+                continue;
+            }
+            let shift = |x: &mut Option<f64>| *x = x.map(|v| round3(v + g));
+            let s = &mut self.results[i];
+            shift(&mut s.lufs);
+            shift(&mut s.true_peak_dbtp);
+            shift(&mut s.level_lufs);
+            shift(&mut s.peak_dbfs);
+            shift(&mut s.rms_dbfs);
+            if let Some(Some(l)) = self.loud.get_mut(i) {
+                shift(&mut l.lufs);
+                shift(&mut l.true_peak_dbtp);
+                shift(&mut l.level_lufs);
+                let k = 10f64.powf(g / 10.0);
+                l.blocks.iter_mut().for_each(|e| *e *= k);
+            }
+        }
+        for o in &mut self.offsets {
+            for smp in &mut o.samples {
+                let g = file_gain.get(smp.index).copied().unwrap_or(0.0);
+                smp.scaled_minus_replay_db = smp
+                    .reference_lufs
+                    .zip(smp.factory_lufs)
+                    .map(|(r, f)| round3(r + g - f));
+            }
+        }
+        self.gains = Some(gains);
+        self.file_gain_db = file_gain;
+        let label = self.gain_label();
+        for s in self.results.iter_mut().filter(|s| s.file.is_some()) {
+            s.volume_init = label.clone();
+        }
+        for o in &self.own_gains {
+            let g = self.file_gain_db.get(o.index).copied().unwrap_or(0.0);
+            if let Some(s) = self.results.get_mut(o.index) {
+                s.volume_init = Some(format!(
+                    "{}; this file {g:+.2} dB, its own move (it does not follow the master volume)",
+                    label.as_deref().unwrap_or("factory")
+                ));
+            }
+        }
+    }
+
+    /// Factory mode: the files that do not follow the master volume, with their own gain.
+    pub fn own_gains(&self) -> &[OwnGain] {
+        &self.own_gains
+    }
+
+    /// Factory mode, once the gains are known: "factory 55AA6798 (from reference 55AAEF10,
+    /// -22.44 dB)", per board scaled.
+    fn gain_label(&self) -> Option<String> {
+        let gains = self.gains.as_ref()?;
+        let parts: Vec<String> = gains
+            .iter()
+            .filter(|g| g.recorded_at != g.written_at || g.gain_db.is_none())
+            .map(|g| {
+                let board = if self.mask == 3 {
+                    format!("board {} ", g.board)
+                } else {
+                    String::new()
+                };
+                match g.gain_db {
+                    Some(d) => format!(
+                        "{board}factory {} (from reference {}, {d:+.2} dB)",
+                        g.written_at, g.recorded_at
+                    ),
+                    None => format!(
+                        "{board}reference {} (factory offset not measured, not scaled)",
+                        g.recorded_at
+                    ),
+                }
+            })
+            .collect();
+        if parts.is_empty() {
+            // Every board at its factory volume as recorded (WPCS, offset 0).
+            return self
+                .volume_sent
+                .as_ref()
+                .map(|v| match v.strip_prefix("reference ") {
+                    Some(rest) => format!("factory {rest} (the reference volume)"),
+                    None => v.clone(),
+                });
+        }
+        Some(parts.join(" "))
+    }
+
+    /// Factory mode: the linear gain of each result's files (1: unchanged).
+    fn file_gains(&self) -> Vec<f64> {
+        (0..self.results.len())
+            .map(|i| {
+                self.file_gain_db
+                    .get(i)
+                    .map_or(1.0, |&g| 10f64.powf(g / 20.0))
+            })
+            .collect()
+    }
+
+    /// Factory mode, after the pack (built from the recordings at the reference volume):
+    /// writes the files again at the factory volume (`altsound::scale_files`; `extended`
+    /// from `PackReport::extended`, `smpl` when the pack wrote loop points), and notes it in
+    /// `manifest.json` (`factory_gain.rewritten`), keeping what the pack added there.
+    pub fn scale_files(
+        &mut self,
+        extended: &[(usize, String, usize)],
+        smpl: bool,
+    ) -> Result<Option<crate::altsound::ScaleReport>, String> {
+        if self.gains.is_none() {
+            return Ok(None);
+        }
+        let r = crate::altsound::scale_files(
+            &self.opts.out_dir,
+            &self.results,
+            &self.file_gains(),
+            extended,
+            smpl,
+        )?;
+        self.scaled = Some(r);
+        let path = self.opts.out_dir.join("manifest.json");
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut m: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        m["factory_gain"]["rewritten"] = serde_json::to_value(r).unwrap_or_default();
+        std::fs::write(&path, serde_json::to_string_pretty(&m).unwrap())
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(Some(r))
+    }
+
+    /// Factory mode: the gain of each board, once applied.
+    pub fn gains(&self) -> Option<&[BoardGain]> {
+        self.gains.as_deref()
     }
 
     /// The master volume value (`vv` or `xx`) the board is playing at: ours, else the game's.
@@ -2547,12 +2923,10 @@ impl Extractor {
                 ));
                 continue;
             };
-            // The files are at `ours`; the replays at the other one.
-            let (ours, other) = if self.is_reference() {
-                (reference.clone(), factory.clone())
-            } else {
-                (factory.clone(), reference.clone())
-            };
+            // The recordings are at the reference volume (in factory mode too: they are scaled
+            // to the factory volume afterwards, by the offset measured here); the replays at
+            // the factory volume.
+            let (ours, other) = (reference.clone(), factory.clone());
             if ours == other {
                 notes.push(format!(
                     "board {b} ({}): the factory volume is the reference volume ({}), offset 0",
@@ -2588,9 +2962,37 @@ impl Extractor {
                 l(y).total_cmp(&l(x))
             });
             files.truncate(OFFSET_FILES);
+            if files.len() < OFFSET_FILES {
+                // Too few (a short run, `--only`, `--limit`): topped up with the other written
+                // non-loop files, the loudest first (`level_lufs` also measures a file under
+                // 400 ms).
+                let mut more: Vec<usize> = self
+                    .counted(false)
+                    .filter(|&i| self.main_cmds.get(i).is_some_and(|c| c.board_no == b))
+                    .filter(|i| !files.contains(i))
+                    .filter(|&i| {
+                        let s = &self.results[i];
+                        s.clipped_samples == 0 && s.level_lufs.is_some()
+                    })
+                    .collect();
+                more.sort_by(|&x, &y| {
+                    let l = |i: usize| self.results[i].level_lufs.unwrap_or(f64::NEG_INFINITY);
+                    l(y).total_cmp(&l(x))
+                });
+                more.truncate(OFFSET_FILES - files.len());
+                if !more.is_empty() {
+                    notes.push(format!(
+                        "board {b}: {} file(s) of at least {OFFSET_MIN_SECS} s within the median's limit, topped up with {} other written non-loop file(s)",
+                        files.len(),
+                        more.len()
+                    ));
+                }
+                files.extend(more);
+            }
+            files.truncate(OFFSET_FILES);
             if files.is_empty() {
                 notes.push(format!(
-                    "board {b}: no non-loop file of at least {OFFSET_MIN_SECS} s to play again, offset not measured"
+                    "board {b}: no written non-loop file to play again, offset not measured"
                 ));
             }
             let alt = AltVolume {
@@ -2598,12 +3000,41 @@ impl Extractor {
                 bytes: hex(&other),
                 levels: master_level(&other) - master_level(&ours),
                 reference: false,
+                own: false,
             };
             for &i in &files {
                 let mut c = self.main_cmds[i].clone();
                 c.slot = Some(i);
                 c.alt = Some(alt.clone());
                 cmds.push(c);
+            }
+            // Factory mode: a file that does not follow the master volume would not follow
+            // the board's gain either; it is played at the factory volume too and gets its
+            // own (`OwnGain`).
+            if self.is_factory_volume() {
+                let flagged: Vec<usize> = (0..self.results.len())
+                    .filter(|&i| {
+                        let s = &self.results[i];
+                        s.ignores_master_volume
+                            && s.file.is_some()
+                            && self.main_cmds.get(i).is_some_and(|c| c.board_no == b)
+                    })
+                    .collect();
+                if !flagged.is_empty() {
+                    notes.push(format!(
+                        "board {b}: {} file(s) that do not follow the master volume played again for their own gain",
+                        flagged.len()
+                    ));
+                }
+                for i in flagged {
+                    let mut c = self.main_cmds[i].clone();
+                    c.slot = Some(i);
+                    c.alt = Some(AltVolume {
+                        own: true,
+                        ..alt.clone()
+                    });
+                    cmds.push(c);
+                }
             }
             self.offsets.push(BoardOffset {
                 board: b,
@@ -2619,15 +3050,7 @@ impl Extractor {
         if !cmds.is_empty() {
             notes.insert(
                 0,
-                format!(
-                    "{} file(s) played again at the {} volume",
-                    cmds.len(),
-                    if self.is_reference() {
-                        "factory"
-                    } else {
-                        "reference"
-                    }
-                ),
+                format!("{} file(s) played again at the factory volume", cmds.len()),
             );
         }
         self.offset_note = (!notes.is_empty()).then(|| notes.join("; "));
@@ -3328,6 +3751,7 @@ impl Extractor {
             bytes: hex(&bytes),
             levels: alt as i32 - level as i32,
             reference: false,
+            own: false,
         })
     }
 
@@ -3344,12 +3768,7 @@ impl Extractor {
                 format!("{} (at {}, {:+} levels)", cmd.id, a.bytes, a.levels)
             }
             (Pass::FactoryOffset, Some(a)) => {
-                let at = if self.is_reference() {
-                    "factory"
-                } else {
-                    "reference"
-                };
-                format!("{} (at {at} {}, {:+} levels)", cmd.id, a.bytes, a.levels)
+                format!("{} (at factory {}, {:+} levels)", cmd.id, a.bytes, a.levels)
             }
             (Pass::DuckCheck, _) => format!("{} (ducking check)", cmd.id),
             (Pass::Chips, _) => match cmd.check.map(|c| c.kind) {
@@ -3967,19 +4386,27 @@ impl Extractor {
         let Some(written) = self.results[i].level_lufs else {
             return;
         };
-        // Reference mode: the files at the reference, the replay at the factory volume;
-        // factory mode the other way round. Either way, delta = factory - reference.
-        let (factory, reference) = if self.is_reference() {
-            (level, Some(written))
-        } else {
-            (Some(written), level)
-        };
+        // The recordings at the reference, the replay at the factory volume (factory mode
+        // too: the gain is applied after the passes).
+        let (factory, reference) = (level, Some(written));
         let delta = factory.zip(reference).map(|(f, r)| round3(f - r));
+        let own = rec.cmd.alt.as_ref().is_some_and(|a| a.own);
         eprintln!(
-            " level {} ({})  [{ended_by}]",
+            " level {} ({}){}  [{ended_by}]",
             level.map_or("n/a".into(), |l| format!("{l:.1} LUFS")),
             delta.map_or("n/a".into(), |d| format!("{d:+.1} dB")),
+            if own { "  (its own gain)" } else { "" },
         );
+        if own {
+            self.own_gains.push(OwnGain {
+                index: i,
+                id: rec.cmd.id,
+                reference_lufs: reference,
+                factory_lufs: factory,
+                gain_db: delta,
+            });
+            return;
+        }
         let Some(o) = self
             .offsets
             .iter_mut()
@@ -3988,10 +4415,12 @@ impl Extractor {
             return;
         };
         o.samples.push(OffsetSample {
+            index: i,
             id: rec.cmd.id,
             reference_lufs: reference,
             factory_lufs: factory,
             delta_db: delta,
+            scaled_minus_replay_db: None,
         });
         let deltas: Vec<f64> = o.samples.iter().filter_map(|s| s.delta_db).collect();
         o.factory_offset_db = loudness::median(deltas.clone());
@@ -4005,6 +4434,9 @@ impl Extractor {
 
     /// The volume the boards play at: ours, or the game's own.
     pub fn volume_label(&self) -> Option<String> {
+        if let Some(l) = self.gain_label() {
+            return Some(l);
+        }
         if let Some(v) = &self.volume_sent {
             return Some(v.clone());
         }
@@ -4052,6 +4484,13 @@ impl Extractor {
             volume_init: self.volume_label(),
             volume_mode: self.volume_mode(),
             recorded_volume: self.recorded_volumes(),
+            factory_gain: self.gains.as_ref().map(|g| FactoryGainReport {
+                method: FACTORY_GAIN_METHOD,
+                rounding: FACTORY_GAIN_ROUNDING,
+                boards: g,
+                own_gains: &self.own_gains,
+                rewritten: self.scaled,
+            }),
             clipped_files: self.clipped_files(),
             reference_volume: self.compares_volumes().then(|| self.reference_volume()),
             levels_note: if self.is_reference() {
@@ -4060,7 +4499,7 @@ impl Extractor {
                 )
             } else if self.is_factory_volume() {
                 Some(
-                    "every level (per sound and in loudness) is measured on the files, recorded at the game's factory volume (recorded_volume), as PinMAME plays the ROM; factory_offset_db (factory minus reference) is for information",
+                    "every level (per sound and in loudness) is that of the files as written, at the game's factory volume (recorded_volume), as PinMAME plays the ROM: measured on the recordings at the reference volume and moved by each board's gain (factory_gain); master_volume_check and clipped_samples are those of the recordings",
                 )
             } else {
                 None
@@ -4068,8 +4507,7 @@ impl Extractor {
             factory_offset_db: self.compares_volumes().then(|| self.rom_offset()),
             factory_offset: self.compares_volumes().then(|| FactoryOffsetReport {
                 method: format!(
-                    "per board with a master volume: up to {OFFSET_FILES} written non-loop files (the loudest at most {VOLUME_CHECK_ABOVE_MEDIAN_LU} LU above the median file, at least {OFFSET_MIN_SECS} s, not clipped) played again at the {} volume; offset = median of (factory level_lufs - reference level_lufs)",
-                    if self.is_reference() { "factory" } else { "reference" }
+                    "per board with a master volume: up to {OFFSET_FILES} written non-loop files (the loudest at most {VOLUME_CHECK_ABOVE_MEDIAN_LU} LU above the median file, at least {OFFSET_MIN_SECS} s, not clipped; topped up with the other written non-loop files, the loudest first, when fewer) recorded at the reference volume and played again at the factory volume; offset = median of (factory level_lufs - reference level_lufs), spread = max - min"
                 ),
                 boards: &self.offsets,
                 note: self.offset_note.clone(),
@@ -4688,6 +5126,56 @@ fn round3(x: f64) -> f64 {
     (x * 1000.0).round() / 1000.0
 }
 
+/// `samples` times `gain`, back to 16 bits the way PinMAME's mixer does it once per sample
+/// (mixer.c `mixer_sh_update`): in floating point, plus a TPDF dither of +-1 LSB (the
+/// difference of two uniform values in [0, 1), from xorshift128 generators), rounded to
+/// the nearest integer and clamped to full scale. `seed` (the file name) seeds the
+/// generators, so that a file is written the same on every run and no two files share
+/// their dither. Returns the samples and how many were clamped.
+pub(crate) fn scale_tpdf(samples: &[i16], gain: f64, seed: &str) -> (Vec<i16>, usize) {
+    // FNV-1a of the seed, spread over the two generators' states.
+    let h = seed.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+    });
+    let mut state = [
+        [
+            0x4b27_a8b8 ^ h as u32,
+            0x0f03_3a28,
+            0x2839_7f11,
+            0x486b_c179 ^ (h >> 32) as u32,
+        ],
+        [
+            0x4371_9fc0 ^ (h >> 16) as u32,
+            0xffb5_a3c0,
+            0x19c2_1d46,
+            0xa877_0a93 ^ h as u32,
+        ],
+    ];
+    // xorshift128, a value in [0, 1) from its top 23 bits (mixer.c `xorshift`).
+    fn next(s: &mut [u32; 4]) -> f64 {
+        let t = s[0] ^ (s[0] << 11);
+        s[0] = s[1];
+        s[1] = s[2];
+        s[2] = s[3];
+        s[3] ^= (s[3] >> 19) ^ t ^ (t >> 8);
+        f64::from(s[3] >> 9) / f64::from(1u32 << 23)
+    }
+    let mut clamped = 0;
+    let out = samples
+        .iter()
+        .map(|&x| {
+            let [a, b] = &mut state;
+            let dither = next(a) - next(b);
+            let v = (f64::from(x) * gain + dither).round();
+            if !(-32768.0..=32767.0).contains(&v) {
+                clamped += 1;
+            }
+            v.clamp(-32768.0, 32767.0) as i16
+        })
+        .collect();
+    (out, clamped)
+}
+
 pub(crate) fn write_wav(
     path: &std::path::Path,
     samples: &[i16],
@@ -4801,6 +5289,33 @@ mod tests {
         s.extend(std::iter::repeat_n([-121, -121], 5000).flatten());
         s.extend(std::iter::repeat_n([0, 0], 50).flatten());
         assert_eq!(held_dc_start(&s, 2, 0, s.len() / 2, 44100), sound_end);
+    }
+
+    #[test]
+    fn scaling_dithers_like_pinmame() {
+        let x: Vec<i16> = (0..20000)
+            .map(|i| ((i * 37) % 2001 - 1000) as i16)
+            .collect();
+        let (a, clamped) = scale_tpdf(&x, 0.25, "a.wav");
+        assert_eq!(clamped, 0);
+        // TPDF of +-1 LSB, then rounding: at most 1.5 LSB from the exact product, zero mean.
+        let err: Vec<f64> = a
+            .iter()
+            .zip(&x)
+            .map(|(&y, &x)| f64::from(y) - f64::from(x) * 0.25)
+            .collect();
+        assert!(err.iter().all(|e| e.abs() <= 1.5));
+        let mean = err.iter().sum::<f64>() / err.len() as f64;
+        assert!(mean.abs() < 0.02, "{mean}");
+        // TPDF variance 1/6, plus 1/12 for the rounding: 0.5 LSB RMS.
+        let rms = (err.iter().map(|e| e * e).sum::<f64>() / err.len() as f64).sqrt();
+        assert!((rms - 0.5).abs() < 0.03, "{rms}");
+        // The same file gets the same dither, another file another.
+        assert_eq!(scale_tpdf(&x, 0.25, "a.wav").0, a);
+        assert_ne!(scale_tpdf(&x, 0.25, "b.wav").0, a);
+        // Clamped at full scale above 0 dB.
+        let (b, clamped) = scale_tpdf(&[30000, -30000, 100], 2.0, "c.wav");
+        assert_eq!((b[0], b[1], clamped), (32767, -32768, 2));
     }
 
     #[test]

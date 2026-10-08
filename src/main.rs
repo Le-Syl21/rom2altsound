@@ -35,7 +35,7 @@ const LONG_ABOUT: &str = "\
 Turn a pinball ROM's sound board into an AltSound pack.
 
 rom2altsound runs PinMAME in-process, plays every sound command of the ROM on the
-emulated sound board, and records each one to its own WAV file at the volume the
+emulated sound board, and writes each one to its own WAV file at the volume the
 game itself sets from its factory settings. Music loops are cut to their intro plus one exact cycle. Each ROM gets a
 folder that VPinball's AltSound plugin reads as is: drop it as
 <table folder>/altsound/<rom>/.
@@ -102,12 +102,13 @@ struct Cli {
     /// sets there (its factory volume, see --volume)
     #[arg(long)]
     no_factory: bool,
-    /// Which master volume the boards are recorded at, with the factory settings. factory:
-    /// the one the game itself sets at boot (DCS 55 AA 67 98 on most games, WPCS 79 0C F3,
-    /// Whitestar FE 2C FD on apollo13), on every board; the offset to the reference volume
-    /// is measured on a few files and goes in the manifest. reference: the loudest master
-    /// volume that does not clip in emulation (DCS 55 AA EF 10, Whitestar FE 11 FD, WPCS 79
-    /// 0C F3). Boards without a volume stage are at full scale either way
+    /// Which master volume the files are at, with the factory settings. factory: the one
+    /// the game itself sets at boot (DCS 55 AA 67 98 on most games, WPCS 79 0C F3,
+    /// Whitestar FE 2C FD on apollo13), on every board: recorded and analysed at the
+    /// reference volume, then scaled by the factory offset, measured on a few files played
+    /// again at the factory volume. reference: the loudest master volume that does not clip
+    /// in emulation (DCS 55 AA EF 10, Whitestar FE 11 FD, WPCS 79 0C F3). Boards without a
+    /// volume stage are at full scale either way
     /// [default: factory, or reference when --dcs-volume, --whitestar-volume or --wpcs-volume
     /// is given]
     #[arg(long, value_enum, conflicts_with_all = ["no_factory", "no_volume_init", "cold_boot_only"])]
@@ -524,7 +525,7 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
     }
     unsafe { ffi::PinmameStop() };
 
-    let x = STATE.lock().unwrap().take().unwrap();
+    let mut x = STATE.lock().unwrap().take().unwrap();
     if let Some(e) = &x.error {
         return Err(e.clone());
     }
@@ -541,6 +542,8 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             .map_err(|e| format!("{}: {e}", path.display()))?;
         return Ok(());
     }
+    // Factory mode: the levels at the factory volume (the files follow after the pack).
+    x.apply_factory_gain();
     x.write_manifest();
     summary(&job.rom, &x, wall.elapsed().as_secs_f64());
     let counts = x.counts();
@@ -552,8 +555,10 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             counts.tried, counts.with_sound
         ));
     }
+    let mut extended = Vec::new();
     if !cli.no_altsound {
         let r = altsound::write_pack(&job.out, &x.results, cli.merge_twins, cli.intro_loop_secs)?;
+        extended = r.extended.clone();
         println!(
             "  altsound: {} row(s), {} loop(s) with loop points ({} with an intro of their own, extended to {:.0} s), {} twin(s){}, {} file(s) referenced",
             r.rows,
@@ -599,6 +604,21 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
                 d.stop_rows,
             );
         }
+    }
+    // Factory mode: the pack was built from the recordings at the reference volume (loops,
+    // twins); now every file goes to the factory volume.
+    if let Some(r) = x.scale_files(&extended, !cli.no_altsound)?
+        && r.files > 0
+    {
+        println!(
+            "  factory volume: {} file(s) written again at the factory volume{}",
+            r.files,
+            if r.clamped_samples > 0 {
+                format!(", {} sample(s) clamped at full scale", r.clamped_samples)
+            } else {
+                String::new()
+            }
+        );
     }
     Ok(())
 }
@@ -791,7 +811,7 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
             .map(|c| format!("{} ({})", c.id, c.clipped_samples))
             .collect();
         println!(
-            "  CLIPPED at the recorded volume (PinMAME's own mix, not lowered): {} file(s), {} sample(s): {}{}",
+            "  CLIPPED in the recording (PinMAME's own mix at the recording volume, not lowered): {} file(s), {} sample(s): {}{}",
             clipped.len(),
             clipped.iter().map(|c| c.clipped_samples).sum::<usize>(),
             list.join(" "),
@@ -836,6 +856,53 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
         }
         if let Some(n) = x.offset_note() {
             println!("    factory offset: {n}");
+        }
+        for g in x.gains().unwrap_or_default() {
+            println!(
+                "    factory gain: board {} ({}): {}{} ({} file(s)): {}",
+                g.board,
+                g.family,
+                g.gain_db
+                    .map_or("not applied".into(), |d| format!("{d:+.3} dB")),
+                g.gain.map_or(String::new(), |k| format!(" (x{k:.5})")),
+                g.files,
+                g.note
+            );
+        }
+        let own: Vec<String> = x
+            .own_gains()
+            .iter()
+            .map(|o| {
+                format!(
+                    "{} {}",
+                    o.id,
+                    o.gain_db
+                        .map_or("0 dB (not measured)".into(), |d| format!("{d:+.2} dB"))
+                )
+            })
+            .collect();
+        if !own.is_empty() && x.gains().is_some() {
+            println!(
+                "    factory gain: own gain for the file(s) that do not follow the master volume: {}",
+                own.join(", ")
+            );
+        }
+        for o in x.offsets() {
+            let e: Vec<f64> = o
+                .samples
+                .iter()
+                .filter_map(|s| s.scaled_minus_replay_db)
+                .collect();
+            if let (Some(lo), Some(hi)) = (
+                e.iter().copied().reduce(f64::min),
+                e.iter().copied().reduce(f64::max),
+            ) {
+                println!(
+                    "    factory check: board {}: scaled files minus their replays at the factory volume {lo:+.3} to {hi:+.3} dB ({} file(s))",
+                    o.board,
+                    e.len()
+                );
+            }
         }
         match &l.as_shipped {
             Some(s) => println!(

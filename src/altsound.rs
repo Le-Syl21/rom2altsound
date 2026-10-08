@@ -36,32 +36,19 @@ pub const GSOUND_CSV: &str = "g-sound.csv";
 pub const ALTSOUND_INI: &str = "altsound.ini";
 
 /// Twin test thresholds. A pair is a twin only when all three hold.
-/// - Lengths within `TWIN_MAX_LENGTH_DIFF` samples of each other.
+/// - Lengths within one sample of each other.
 /// - Integrated loudness within 0.01 LU.
 /// - After aligning the two files to a fraction of a sample, the residual is at the level
-///   of 16-bit dither / resampling noise: -60 dB relative to the signal, or, for quiet
-///   files, at most `TWIN_MAX_RESIDUAL_LSB` RMS (and still `TWIN_MAX_RESIDUAL_QUIET_DB`
-///   below the signal).
-///
-/// At the factory volume (afm_113b `55 AA 67 98`, 22 dB below the reference) the ±1 LSB
-/// dither of PinMAME's mixer is 22 dB closer to the signal, and the silence trim (2 LSB)
-/// falls a few samples apart on the decaying tails: the twins of the reference volume
-/// (0 to 1 sample apart, -64 to -80 dB) were 1 to 105 samples apart and at -22 to -28 dB
-/// with integer lags only. Different sounds of nearly the same length stay above 0 dB.
-pub const TWIN_MAX_LENGTH_DIFF: usize = 256;
+///   of 16-bit dither / resampling noise relative to the signal.
+pub const TWIN_MAX_LENGTH_DIFF: usize = 1;
 pub const TWIN_MAX_LUFS_DIFF: f64 = 0.01;
 pub const TWIN_MAX_RESIDUAL_DB: f64 = -60.0;
-pub const TWIN_MAX_RESIDUAL_LSB: f64 = 4.0;
-pub const TWIN_MAX_RESIDUAL_QUIET_DB: f64 = -30.0;
 /// Integer lags tried before the sub-sample refinement (the boards can start a sound one
-/// or two samples apart, and on a quiet file the silence trim can fall dozens of samples
-/// apart).
+/// or two samples apart).
 ///
 /// Measured on afm_113b: the 303 pairs that pass the length and loudness tests are at
 /// -64 to -80 dB once aligned; different sounds of nearly the same length are above 0 dB.
-const TWIN_MAX_LAG: isize = 128;
-/// The lags tried first.
-const TWIN_NEAR_LAG: isize = 3;
+const TWIN_MAX_LAG: isize = 3;
 
 /// A loop is played from an extended file (intro + cycles) when its intro holds at least
 /// this much audio of its own, before the repetition starts. Shorter, the "intro" is only
@@ -127,6 +114,9 @@ pub struct PackReport {
     /// WPCS and System 11: how the chips pass (`SoundInfo::mix`) was mapped onto the pack.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chips: Option<ChipsPack>,
+    /// The extended files written: (sound index, file, cycles), for `scale_files`.
+    #[serde(skip)]
+    pub extended: Vec<(usize, String, usize)>,
 }
 
 /// WPCS and System 11: the rows' CHANNEL, TYPE, DUCK and STOP from the chips pass.
@@ -621,6 +611,81 @@ fn write_extended(
     Ok(Some((name, cycles)))
 }
 
+/// What `scale_files` did.
+#[derive(Debug, Default, Clone, Copy, serde::Serialize)]
+pub struct ScaleReport {
+    /// Files written again (recordings, loop bodies, extended files).
+    pub files: usize,
+    /// Samples that reached full scale once scaled (a gain above 0 dB only).
+    pub clamped_samples: usize,
+}
+
+/// Factory volume: writes every file of each sound again at `gains[i]` (linear; 1 leaves
+/// the sound alone), from its recording made at the reference volume once the pack has
+/// been built from it. The recording is scaled once (`extract::scale_tpdf`); its loop body
+/// (`-loop.wav`) and its extended file (`extended`: sound index, file, cycles, from
+/// `PackReport::extended`) are cut from the scaled recording again, so that the three stay
+/// sample for sample consistent, and the `smpl` loop points are written again when
+/// `smpl` (the pack wrote them). Files that are not on disk (a merged twin's) are skipped.
+pub fn scale_files(
+    out_dir: &Path,
+    sounds: &[SoundInfo],
+    gains: &[f64],
+    extended: &[(usize, String, usize)],
+    smpl: bool,
+) -> Result<ScaleReport, String> {
+    let err = |p: &Path, e: &dyn std::fmt::Display| format!("{}: {e}", p.display());
+    let mut report = ScaleReport::default();
+    for (i, s) in sounds.iter().enumerate() {
+        let gain = gains.get(i).copied().unwrap_or(1.0);
+        let Some(file) = &s.file else { continue };
+        let path = out_dir.join(file);
+        if gain == 1.0 || !path.is_file() {
+            continue;
+        }
+        let r = hound::WavReader::open(&path).map_err(|e| err(&path, &e))?;
+        let spec = r.spec();
+        let (ch, rate) = (spec.channels as usize, spec.sample_rate);
+        let samples: Vec<i16> = r
+            .into_samples::<i16>()
+            .collect::<Result<_, _>>()
+            .map_err(|e| err(&path, &e))?;
+        let (scaled, clamped) = crate::extract::scale_tpdf(&samples, gain, file);
+        report.clamped_samples += clamped;
+        write_wav(&path, &scaled, ch as u16, rate).map_err(|e| err(&path, &e))?;
+        report.files += 1;
+        let Some(l) = &s.loop_info else { continue };
+        let (start, end) = (l.intro_samples, l.intro_samples + l.period_samples);
+        if smpl {
+            write_smpl(&path, start as u32, end.saturating_sub(1) as u32)
+                .map_err(|e| err(&path, &e))?;
+        }
+        if let Some(f) = &l.loop_file
+            && end * ch <= scaled.len()
+        {
+            let p = out_dir.join(f);
+            if p.is_file() {
+                write_wav(&p, &scaled[start * ch..end * ch], ch as u16, rate)
+                    .map_err(|e| err(&p, &e))?;
+                report.files += 1;
+            }
+        }
+        if let Some((_, f, cycles)) = extended.iter().find(|x| x.0 == i)
+            && end * ch <= scaled.len()
+        {
+            let p = out_dir.join(f);
+            if p.is_file() {
+                let x = extend_loop(&scaled, ch, start, l.period_samples, *cycles);
+                write_wav(&p, &x, ch as u16, rate).map_err(|e| err(&p, &e))?;
+                write_smpl(&p, start as u32, end.saturating_sub(1) as u32)
+                    .map_err(|e| err(&p, &e))?;
+                report.files += 1;
+            }
+        }
+    }
+    Ok(report)
+}
+
 /// `0x0009-afm_113b.wav` -> `0x0009-afm_113b-extended.wav`.
 pub fn extended_name(file: &str) -> String {
     match file.strip_suffix(".wav") {
@@ -705,17 +770,10 @@ fn residual_at(a: &[f64], b: &[f64], lag: f64, range: std::ops::Range<usize>) ->
 pub fn aligned_residual(a: &[f64], b: &[f64]) -> (f64, f64) {
     let n = a.len().min(b.len());
     let mut best = (f64::INFINITY, 0.0);
-    // The nearest lags first; further ones only when those do not align the files (on a
-    // periodic sound a lag of one period would fit as well, and the nearest is the one).
-    for max in [TWIN_NEAR_LAG, TWIN_MAX_LAG] {
-        for l in -max..=max {
-            let r = residual_at(a, b, l as f64, 0..n);
-            if r < best.0 {
-                best = (r, l as f64);
-            }
-        }
-        if best.0 <= TWIN_MAX_RESIDUAL_QUIET_DB {
-            break;
+    for l in -TWIN_MAX_LAG..=TWIN_MAX_LAG {
+        let r = residual_at(a, b, l as f64, 0..n);
+        if r < best.0 {
+            best = (r, l as f64);
         }
     }
     if best.0 == f64::NEG_INFINITY {
@@ -747,17 +805,6 @@ pub fn aligned_residual(a: &[f64], b: &[f64]) -> (f64, f64) {
     if r < best.0 { (r, lag) } else { best }
 }
 
-/// The residual of `aligned_residual` (`residual_db`, relative to `a`) in LSB RMS, over
-/// the overlap of the two files.
-fn residual_rms(a: &[f64], b: &[f64], residual_db: f64) -> f64 {
-    let n = a.len().min(b.len());
-    if n == 0 {
-        return f64::INFINITY;
-    }
-    let p = a[..n].iter().map(|v| v * v).sum::<f64>() / n as f64;
-    (p * 10f64.powf(residual_db / 10.0)).sqrt()
-}
-
 /// Finds twins among the written sounds. Each sound is compared to the earlier sounds
 /// that are not twins themselves; the first that passes all three tests is its original.
 pub fn find_twins(out_dir: &Path, sounds: &[SoundInfo]) -> Vec<Twin> {
@@ -783,17 +830,14 @@ pub fn find_twins(out_dir: &Path, sounds: &[SoundInfo]) -> Vec<Twin> {
                 return None;
             }
             let (residual_db, lag) = aligned_residual(&o.audio, &audio);
-            (residual_db <= TWIN_MAX_RESIDUAL_DB
-                || (residual_db <= TWIN_MAX_RESIDUAL_QUIET_DB
-                    && residual_rms(&o.audio, &audio, residual_db) <= TWIN_MAX_RESIDUAL_LSB))
-                .then_some(Twin {
-                    index,
-                    of: o.index,
-                    residual_db,
-                    lag,
-                    length_diff,
-                    lufs_diff,
-                })
+            (residual_db <= TWIN_MAX_RESIDUAL_DB).then_some(Twin {
+                index,
+                of: o.index,
+                residual_db,
+                lag,
+                length_diff,
+                lufs_diff,
+            })
         });
         match found {
             Some(t) => twins.push(t),
@@ -848,6 +892,10 @@ pub fn write_pack(
         }
     }
     report.intro_loops_extended = extended.len();
+    report.extended = extended
+        .iter()
+        .map(|(&i, (f, c))| (i, f.clone(), *c))
+        .collect();
 
     let twins = find_twins(out_dir, sounds);
     report.twins = twins.len();
@@ -1215,8 +1263,6 @@ fn annotate_manifest(
             "max_length_diff_samples": TWIN_MAX_LENGTH_DIFF,
             "max_lufs_diff": TWIN_MAX_LUFS_DIFF,
             "max_residual_db": TWIN_MAX_RESIDUAL_DB,
-            "max_residual_lsb": TWIN_MAX_RESIDUAL_LSB,
-            "max_residual_quiet_db": TWIN_MAX_RESIDUAL_QUIET_DB,
         },
     });
     fs::write(&path, serde_json::to_string_pretty(&m).unwrap())
@@ -1617,5 +1663,60 @@ mod tests {
         assert_eq!(parse_id("0x0392"), Some(0x392));
         assert_eq!(parse_id("0x55AAEF10"), Some(0x55AA_EF10));
         assert_eq!(parse_id("x"), None);
+    }
+
+    #[test]
+    fn scaled_files_stay_consistent() {
+        let dir = std::env::temp_dir().join(format!("r2a-scale-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        // A loop of 300 frames of intro and 200 of body, stereo.
+        let (intro, period, ch) = (300, 200, 2);
+        let rec: Vec<i16> = (0..(intro + period) * ch)
+            .map(|i| ((i as f64 * 0.07).sin() * 20000.0) as i16)
+            .collect();
+        let main = "0x0009-t.wav";
+        write_wav(&dir.join(main), &rec, ch as u16, 44100).unwrap();
+        write_smpl(&dir.join(main), intro as u32, (intro + period - 1) as u32).unwrap();
+        write_wav(
+            &dir.join("0x0009-t-loop.wav"),
+            &rec[intro * ch..],
+            ch as u16,
+            44100,
+        )
+        .unwrap();
+        let x = extend_loop(&rec, ch, intro, period, 3);
+        write_wav(&dir.join("0x0009-t-extended.wav"), &x, ch as u16, 44100).unwrap();
+        let mut s = SoundInfo::for_test("0x0009", "Music", effects(0, &[0], None, &[]));
+        s.file = Some(main.into());
+        let mut l = crate::extract::LoopInfo::for_test(intro, period);
+        l.loop_file = Some("0x0009-t-loop.wav".into());
+        s.loop_info = Some(l);
+        let ext = vec![(0, "0x0009-t-extended.wav".to_string(), 3)];
+        let r = scale_files(&dir, &[s], &[0.1], &ext, true).unwrap();
+        assert_eq!((r.files, r.clamped_samples), (3, 0));
+        let (scaled, _) = read_wav(&dir.join(main)).unwrap();
+        // Within the dither (+-1 LSB) and the rounding of the exact product.
+        assert!(
+            scaled
+                .iter()
+                .zip(&rec)
+                .all(|(&y, &x)| (f64::from(y) - f64::from(x) * 0.1).abs() <= 1.5)
+        );
+        // The body and the extended file are cut from the same scaled samples.
+        let (body, _) = read_wav(&dir.join("0x0009-t-loop.wav")).unwrap();
+        assert_eq!(body, scaled[intro * ch..]);
+        let (ext_s, _) = read_wav(&dir.join("0x0009-t-extended.wav")).unwrap();
+        assert_eq!(ext_s, extend_loop(&scaled, ch, intro, period, 3));
+        // The loop points are still there.
+        let bytes = fs::read(dir.join(main)).unwrap();
+        assert_eq!(&bytes[bytes.len() - 68..bytes.len() - 64], b"smpl");
+        // A gain of 1 leaves the files alone.
+        let again = fs::read(dir.join(main)).unwrap();
+        let mut s = SoundInfo::for_test("0x0009", "Music", effects(0, &[0], None, &[]));
+        s.file = Some(main.into());
+        let r = scale_files(&dir, &[s], &[1.0], &[], true).unwrap();
+        assert_eq!(r.files, 0);
+        assert_eq!(fs::read(dir.join(main)).unwrap(), again);
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

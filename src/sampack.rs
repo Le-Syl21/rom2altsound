@@ -6,9 +6,11 @@
 //!   named after the first sample id that plays it (`s0123-<rom>.wav`, `s0123-l2-<rom>.wav`
 //!   for a language other than the first), and every music script (song versions, loop
 //!   beds) as one continuous 24 kHz file (`s0172-<rom>.wav`), joins declicked, with a
-//!   `smpl` loop when the script loops. All at the game's factory DAC attenuation (the
-//!   decoded samples scaled by it, in the real DAC's 0.5 dB steps), or at full scale (what
-//!   the DAC plays at 0 dB, attenuation FF) with `--volume reference` or when it is unknown.
+//!   `smpl` loop when the script loops. All at the game's factory DAC attenuation as PinMAME
+//!   plays it (the decoded samples scaled by its linear mapping of the register, `pinmame_db`,
+//!   which is what VPX players hear; not the datasheet's 0.5 dB steps, `dac_db`), or at full
+//!   scale (what the DAC plays at 0 dB, attenuation FF) with `--volume reference` or when it
+//!   is unknown.
 //! - Factory volume: the game sets its master volume in the PCM1755 DAC (registers
 //!   0x10/0x11), from the operator setting in its nvram (`VOLUME_PROOF`). The cold boot
 //!   (child process) writes the factory nvram, the warm boot from it logs the DAC writes
@@ -702,11 +704,17 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
             .and_then(|v| u8::from_str_radix(v, 16).ok());
         l.or(r).map(|l| (l, r.unwrap_or(l)))
     });
-    let offset = dac.and_then(|(l, r)| match (dac_db(l), dac_db(r)) {
-        (Some(a), Some(b)) => Some((a + b) / 2.0),
-        _ => None,
-    });
-    // The files are written at the factory attenuation (the real DAC's 0.5 dB steps), unless
+    // The factory offset as PinMAME plays it (its linear mapping of the register, sam.c),
+    // which is what VPX players hear; the datasheet's 0.5 dB steps, for information.
+    let mean = |f: fn(u8) -> Option<f64>| {
+        dac.and_then(|(l, r)| match (f(l), f(r)) {
+            (Some(a), Some(b)) => Some(round3((a + b) / 2.0)),
+            _ => None,
+        })
+    };
+    let offset = mean(pinmame_db);
+    let datasheet_offset = mean(dac_db);
+    // The files are written at the factory attenuation as PinMAME plays it, unless
     // `--volume reference` or the attenuation is unknown (then full scale, said so).
     let at_factory = cli.factory() && cli.volume_mode() == crate::VolumeMode::Factory;
     let gain_db = if at_factory { offset } else { None };
@@ -787,7 +795,7 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
             "attenuation_db": dac.map(|(l, r)| json!({"left": dac_db(l), "right": dac_db(r)})),
             "attenuation_scale": "PCM1755 datasheet: FF = 0 dB, -0.5 dB per step, 80 and below = mute",
             "pinmame_db": dac.map(|(l, r)| json!({"left": pinmame_db(l).map(round1), "right": pinmame_db(r).map(round1)})),
-            "pinmame_note": "PinMAME maps the register linearly to its mixer ((v & 7F) * 100 / 7F percent, sam.c), not in 0.5 dB steps: its level differs from the machine's",
+            "pinmame_note": "PinMAME maps the register linearly to its mixer ((v & 7F) * 100 / 7F percent, integer, sam.c), not in the datasheet's 0.5 dB steps: E8 plays at 81 % (-1.8 dB) instead of -11.5 dB. The files follow PinMAME (what VPX players hear); the datasheet's level is attenuation_db",
             "boot": b,
         })
     });
@@ -996,6 +1004,13 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
             (false, _) => "static (Stern SAM: sounds read from the flash image)",
         },
         "volume_mode": if gain_db.is_some() { "factory" } else { "reference" },
+        "factory_gain": gain_db.map(|d| json!({
+            "gain_db": d,
+            "gain": (10f64.powf(d / 20.0) * 1e5).round() / 1e5,
+            "mapping": "PinMAME's: (attenuation & 7F) * 100 / 7F percent of full scale (sam.c), the mean of left and right",
+            "datasheet_gain_db": datasheet_offset,
+            "rounding": "the decoded samples times the gain, rounded to the nearest 16-bit value (no dither)",
+        })),
         "recorded_volume": [{
             "board": 0,
             "family": "SAM",
@@ -1004,7 +1019,7 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
                 _ => "FF (full scale)".to_string(),
             },
             "from": match gain_db {
-                Some(d) => format!("factory: the PCM1755 attenuation the game wrote on the warm boot, {d:+.1} dB, applied to the decoded samples"),
+                Some(d) => format!("factory: the PCM1755 attenuation the game wrote on the warm boot, played as PinMAME plays it ({d:+.2} dB, its linear mapping of the register; the datasheet says {}), applied to the decoded samples", datasheet_offset.map_or("mute".into(), |v| format!("{v:+.1} dB"))),
                 None if at_factory => format!("full scale: the factory attenuation is not known ({})", factory_note.as_deref().unwrap_or("no DAC write seen")),
                 None => "the reference volume (--volume reference)".to_string(),
             },
@@ -1016,13 +1031,14 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
         "factory_volume": factory_volume,
         "volume_init": gain_db.and(dac).map(|(l, r)| format!("factory {} {}", hex2(l), hex2(r))),
         "levels_note": if gain_db.is_some() {
-            "Every file holds the decoded samples at the game's factory DAC attenuation (recorded_volume), in the real PCM1755's 0.5 dB steps; factory_offset_db (factory minus full scale) is for information. The game's own per-voice volume ramps (script opcode 09) are not applied."
+            "Every file holds the decoded samples at the game's factory DAC attenuation as PinMAME plays it (recorded_volume, factory_gain: its linear mapping of the register, not the datasheet's 0.5 dB steps); factory_offset_db (factory minus full scale) is for information. The game's own per-voice volume ramps (script opcode 09) are not applied."
         } else {
             "Every file holds the decoded samples at full scale: what the DAC plays at 0 dB (attenuation FF), the reference volume. The game's own per-voice volume ramps (script opcode 09) are not applied. Add factory_offset_db to a level to get it at the factory volume."
         },
         "factory_offset_db": offset,
         "factory_offset": {
-            "method": "PCM1755 attenuation (0.5 dB per step from FF) of the master volume the game writes on a warm boot from its factory nvram; the mean of left and right",
+            "method": "the PCM1755 attenuation the game writes on a warm boot from its factory nvram, as PinMAME plays it ((v & 7F) * 100 / 7F percent, sam.c); the mean of left and right. The datasheet's 0.5 dB steps would give datasheet_offset_db",
+            "datasheet_offset_db": datasheet_offset,
             "reference_volume": "FF",
             "factory_volume": dac.map(|(l, r)| format!("{} {}", hex2(l), hex2(r))),
             "verified": factory_note.is_none() && dac.is_some(),
@@ -1124,10 +1140,10 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
     );
     match (&dac, offset) {
         (Some((l, r)), Some(o)) => println!(
-            "  factory_volume: PCM1755 attenuation {} {} = {o:+.1} dB (reference FF = 0 dB; PinMAME plays it at {})",
+            "  factory_volume: PCM1755 attenuation {} {} = {o:+.2} dB as PinMAME plays it (reference FF = 0 dB; the datasheet says {})",
             hex2(*l),
             hex2(*r),
-            pinmame_db(*l).map_or("mute".into(), |v| format!("{v:+.1} dB"))
+            datasheet_offset.map_or("mute".into(), |v| format!("{v:+.1} dB"))
         ),
         (Some((l, r)), None) => println!(
             "  factory_volume: PCM1755 attenuation {} {} (mute)",
@@ -1209,6 +1225,10 @@ mod tests {
         assert_eq!(pinmame_db(0xFF), Some(0.0));
         assert!((pinmame_db(0xC0).unwrap() + 6.02).abs() < 0.01);
         assert_eq!(pinmame_db(0x80), None);
+        // AC/DC's factory E8: 104 * 100 / 127 = 81 % in PinMAME (-1.83 dB), -11.5 dB by the
+        // datasheet.
+        assert!((pinmame_db(0xE8).unwrap() + 1.830).abs() < 0.001);
+        assert_eq!(dac_db(0xE8), Some(-11.5));
     }
 
     #[test]
