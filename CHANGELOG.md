@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.2 (2026-10-08)
 
 - **Every file is now at its board's factory volume**, the master volume the game itself
   sets at boot from its factory settings, for every family and whatever the table (was
