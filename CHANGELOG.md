@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.3 (2026-10-08)
 
 - **Listening page: a table, and names you can type.** The sounds are now a table (play
   buttons, ID, Name, Type, Duration, LUFS, True peak, Loop, Pack, Flags): click a column
