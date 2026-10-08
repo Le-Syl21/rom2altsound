@@ -18,6 +18,8 @@ rom2altsound loop-scan [--hint SECS | --hint-frames F] <wav>...    # the loop de
 rom2altsound dcs-effects <region.bin> <rom> [--json F]   # DCS track programs (diagnostic)
 rom2altsound duck-fit <M.wav> <C.wav> <MC.wav> <at_secs> [--win S]  # music gain under a sound
 rom2altsound drift-check <A.wav> <B.wav>                 # does a board replay sample-exactly?
+rom2altsound roms <dir|zip>... [--json F] [--fix-names DIR] [--deep] [-q] [--dump-table F]
+                                                         # identify and check ROM zips
 ```
 
 The three diagnostics are not in `--help`. `dcs-effects` reads a region dumped with the
@@ -1259,6 +1261,92 @@ level is that of the file as written (`volume_init`, e.g. `factory 55AA6798 (fro
 reference 55AAEF10, -22.44 dB)` or `reference 55AAEF10`): in factory mode, measured on the
 recording and moved by the board's gain; `clipped_samples` and `master_volume_check` are
 those of the recording.
+
+## ROM verification
+
+`rom2altsound roms <dir|zip>...` identifies ROM zips by their content, against the ROM
+tables of the PinMAME linked in (`src/romcheck.rs`, `src/drivers.rs`, the driver table part
+of `shim/shim.c`). Each zip given, each `*.zip` and each subfolder of a folder given is one
+unit; a folder that holds only files is a unit of unzipped ROMs.
+
+**The tables.** The shim walks PinMAME's `drivers[]` and, for each game, its `ROM_START`
+block as MAME's own ROM loader does (`rom_first_region` / `rom_first_file` /
+`rom_first_chunk`): name, size (the sum of the file's chunks, `ROM_CONTINUE` included),
+CRC32 and SHA-1 (`hash_data_extract_printable_checksum`), region, `NO_DUMP`, `BAD_DUMP`,
+`ROM_OPTIONAL`. A file loaded into two regions (Pinball 2000's boot ROM, in the CPU's and
+the sound board's) is one file. The machine driver is expanded (`expand_machine_driver`,
+which only fills a structure) for the CPUs and sound chips. The data is the emulator's own:
+a PinMAME update changes it with no code to touch.
+
+**Sound ROMs.** A ROM is a sound ROM when its region is marked sound-only
+(`ROMREGION_SOUNDONLY`, what `SOUNDREGION` declares: PinMAME does not load it with sound
+off), is a `REGION_SOUNDn`, or is the program region (`REGION_CPUn`) of a CPU flagged
+`CPU_AUDIO_CPU`.
+
+**Matching.** A zip's members are looked up by CRC32 and size, as its central directory
+lists them (no decompression); names play no part in the identification. A set is a
+candidate when one of its files is there. For each candidate, each file with a known dump
+is: good (CRC and size match; one under another name is reported as such), wrong (a
+member has its name but another CRC: a bad dump), or missing (optional files do not
+count). The sets reported are the complete ones, without those whose files are all part
+of another complete set's; when none is complete, the closest one (most files found, then
+fewest wrong or missing; ties are listed). Members no reported set uses are extras: the
+ROM of another set, a duplicate, a known non-ROM (`.vpx`, `.txt`, a nested `.zip`...), or
+unknown (no PinMAME ROM has its CRC). Then, per unit: misnamed (no reported set has the
+zip's name), merged (several sets; their folders inside the zip when not the root), and
+split (a clone zip whose missing files are all in its parent's zip, in the same folder).
+`--deep` decompresses the matched files, which checks their stored CRC, and compares their
+SHA-1 with PinMAME's.
+
+**Sound board.** The family of a game is the board its machine init starts. Most machine
+inits pass on `core_gameData->hw.soundBoard`; that game data is only set by the game's
+init function (`driver_init`), which can also need a machine (the WPC simulators install
+memory handlers there) and crash or exit. So the inits run in a throwaway child process
+(`__driver-boards <start>`, internal), with `Machine->gamedrv` and `Machine->drv` set (some
+inits read the game's name): its first statement sets `core_gameData`, and an exit or a
+crash handler still reports it; the parent starts another child after that driver. A few
+CPU families choose the board in their machine init from the generation instead (WPC,
+System 3 to 11, Data East alphanumeric, Whitestar, Pinball 2000); the shim names a
+driver's machine init by comparing its address with the init of a machine driver of each
+of these families, and `Board::sound_boards` applies that family's `switch`. The whole
+table (2961 sets) takes a few seconds.
+
+### Sound ROM id
+
+The key under which the games that share their sound ROMs are grouped (all the revisions
+of Twilight Zone: 24 sets, one id):
+
+```
+sound_rom_id = SHA-1( s1 + "\n" + s2 + "\n" + ... + sn + "\n" )
+```
+
+where `s1` .. `sn` are the distinct SHA-1s of the game's sound ROMs (as above; `NO_DUMP`
+ROMs left out), each as 40 lowercase hexadecimal digits, sorted in ascending order, and the
+result is written as 40 lowercase hexadecimal digits. It comes from PinMAME's table, not
+from the files, so it is the same for every correct dump; a zip only gets it when all its
+sound ROMs are good (`sound_roms_good`). There is none for a game without sound ROMs (Stern
+SAM, whose sound data is in the main image; discrete boards), or when a sound ROM has no
+SHA-1 in PinMAME's table. The ids of all PinMAME games are in `--dump-table`'s output, and
+the report's `sound_groups` lists those of the zips checked.
+
+### Output
+
+One line per unit (`OK`, `MISNAMED`, `BAD DUMP`, `INCOMPLETE`, `SPLIT`, `NOT PINMAME`,
+`SUPPORT` for bsmt2000.zip), its sets with description, maker and year, the wrong and
+missing files, one `sound:` line per sound ROM id (board, PinMAME's board interface name,
+the first 12 digits of the id, how many other PinMAME sets share it) and the issues; then
+a summary and the verified sound ROMs by board. `--json` writes it all (`units[]` with
+`sets[]`, each set's `wrong`, `missing`, `renamed`, `folders`, `split_with` and `sound`:
+`board`, `board_values`, `interfaces`, `generation`, `core_init`, `sound_rom_id`,
+`sound_roms`, `sound_roms_good`, `shared_with`; `extras[]`; `issues[]`), `--dump-table`
+every PinMAME set with its ROMs, board and id.
+
+`--fix-names <dir>` writes one zip per complete (or split) set into another folder, named
+after the set: a link to the original (a copy on Windows) when it already holds exactly
+that set at its root under the right names, else a new zip with the set's files under
+their PinMAME names, copied as stored (no recompression), the parent's files added to a
+split clone. Nothing is written into a folder being checked, and an existing file is never
+replaced.
 
 ## Factory results for our ROMs
 

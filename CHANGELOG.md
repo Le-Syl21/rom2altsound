@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- **`rom2altsound roms <dir|zip>...`: ROM verification.** Identifies every ROM zip (and
+  folder of unzipped ROMs) by its content, against the ROM tables of the PinMAME linked
+  in, read from the library itself (every driver's `ROM_START` block: name, size, CRC32,
+  SHA-1, region). It reports the set(s) a zip holds, good / bad dump (wrong CRC) / missing
+  files, files under another name, files that are no ROM (a `.vpx`, a readme, a nested
+  zip), zips named after another set, merged zips (clones at the root or in subfolders),
+  split clones that need their parent's zip; `--deep` also checks every file's SHA-1.
+  Text and `--json` output; `--fix-names <dir>` writes correctly named standalone zips (or
+  links) elsewhere, never touching the originals; `--dump-table` writes PinMAME's whole
+  table (2961 sets).
+- **Sound board family and sound ROM id per game**: the board PinMAME's machine init
+  starts (`SNDBRD_*`, both boards on System 11), and the SHA-1 of the sorted SHA-1s of
+  the game's sound ROMs, the same for every revision that kept its sound ROMs (all 24
+  Twilight Zone sets share one): the key of a future pack catalog. See
+  [how it works](docs/how-it-works.md#rom-verification).
+- **[docs/board-support.md](docs/board-support.md)**: every sound board family of PinMAME
+  with its number of games, and a quick survey (first 40 commands, 5 s each) of the 53
+  families we have a ROM for: 31 give sounds, 9 partial or doubtful, 13 none (each with
+  what the game sends, where known). Bally -32 (Lost World) and -61B (Fathom) now verified.
+
 ## 0.2.2 (2026-10-08)
 
 - **Every file is now at its board's factory volume**, the master volume the game itself

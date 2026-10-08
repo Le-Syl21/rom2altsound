@@ -1,6 +1,7 @@
 //! Just enough of the ZIP format to read one member of a ROM zip (stored or deflated):
 //! the central directory, then the member's data, inflated and checked against its CRC32.
-//! Used for the Stern SAM flash image, which rom2altsound reads itself (no emulation).
+//! Used for the Stern SAM flash image, which rom2altsound reads itself (no emulation), and
+//! by the ROM verifier, which also writes correctly named copies of ROM zips ([`Writer`]).
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -72,19 +73,7 @@ pub fn list(path: &Path) -> Result<Vec<Entry>, String> {
 /// Reads one member, inflated, and checks its CRC32.
 pub fn read(path: &Path, e: &Entry) -> Result<Vec<u8>, String> {
     let err = |m: String| format!("{} ({}): {m}", path.display(), e.name);
-    let mut f = File::open(path).map_err(|x| err(x.to_string()))?;
-    let mut lh = [0u8; 30];
-    f.seek(SeekFrom::Start(e.local_header))
-        .and_then(|_| f.read_exact(&mut lh))
-        .map_err(|x| err(x.to_string()))?;
-    if lh[..4] != *b"PK\x03\x04" {
-        return Err(err("bad local header".into()));
-    }
-    let skip = 30 + u16_at(&lh, 26) as u64 + u16_at(&lh, 28) as u64;
-    let mut data = vec![0u8; e.compressed as usize];
-    f.seek(SeekFrom::Start(e.local_header + skip))
-        .and_then(|_| f.read_exact(&mut data))
-        .map_err(|x| err(x.to_string()))?;
+    let data = read_raw(path, e)?;
     let bytes = match e.method {
         0 => data,
         8 => {
@@ -103,6 +92,90 @@ pub fn read(path: &Path, e: &Entry) -> Result<Vec<u8>, String> {
         return Err(err(format!("CRC32 {crc:08x}, {:08x} expected", e.crc32)));
     }
     Ok(bytes)
+}
+
+/// One member's stored bytes, as they are in the zip (compressed with `e.method`), for
+/// copying it into another zip without recompressing it.
+pub fn read_raw(path: &Path, e: &Entry) -> Result<Vec<u8>, String> {
+    let err = |m: String| format!("{} ({}): {m}", path.display(), e.name);
+    let mut f = File::open(path).map_err(|x| err(x.to_string()))?;
+    let mut lh = [0u8; 30];
+    f.seek(SeekFrom::Start(e.local_header))
+        .and_then(|_| f.read_exact(&mut lh))
+        .map_err(|x| err(x.to_string()))?;
+    if lh[..4] != *b"PK\x03\x04" {
+        return Err(err("bad local header".into()));
+    }
+    let skip = 30 + u16_at(&lh, 26) as u64 + u16_at(&lh, 28) as u64;
+    let mut data = vec![0u8; e.compressed as usize];
+    f.seek(SeekFrom::Start(e.local_header + skip))
+        .and_then(|_| f.read_exact(&mut data))
+        .map_err(|x| err(x.to_string()))?;
+    Ok(data)
+}
+
+/// Writes a zip from members given as they are stored (no zip64, no data descriptor).
+#[derive(Default)]
+pub struct Writer {
+    data: Vec<u8>,
+    central: Vec<u8>,
+    count: u16,
+}
+
+impl Writer {
+    /// Adds a member: `stored` is its data compressed with `method` (0 stored, 8 deflate),
+    /// `crc32` and `size` those of the uncompressed data.
+    pub fn add_raw(&mut self, name: &str, method: u16, crc32: u32, size: u64, stored: &[u8]) {
+        let offset = self.data.len() as u32;
+        let header = |sig: &[u8], central: bool| {
+            let mut h = Vec::new();
+            h.extend_from_slice(sig);
+            if central {
+                h.extend_from_slice(&20u16.to_le_bytes()); // made by
+            }
+            h.extend_from_slice(&20u16.to_le_bytes()); // needed to extract
+            h.extend_from_slice(&0u16.to_le_bytes()); // flags
+            h.extend_from_slice(&method.to_le_bytes());
+            h.extend_from_slice(&0u16.to_le_bytes()); // time
+            h.extend_from_slice(&0x0021u16.to_le_bytes()); // date: 1980-01-01
+            h.extend_from_slice(&crc32.to_le_bytes());
+            h.extend_from_slice(&(stored.len() as u32).to_le_bytes());
+            h.extend_from_slice(&(size as u32).to_le_bytes());
+            h.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            h.extend_from_slice(&0u16.to_le_bytes()); // extra
+            if central {
+                h.extend_from_slice(&[0; 6]); // comment length, disk, internal attributes
+                h.extend_from_slice(&0u32.to_le_bytes()); // external attributes
+                h.extend_from_slice(&offset.to_le_bytes());
+            }
+            h.extend_from_slice(name.as_bytes());
+            h
+        };
+        self.data.extend(header(b"PK\x03\x04", false));
+        self.data.extend_from_slice(stored);
+        self.central.extend(header(b"PK\x01\x02", true));
+        self.count += 1;
+    }
+
+    /// Adds a member from its uncompressed data (deflated).
+    pub fn add(&mut self, name: &str, data: &[u8]) {
+        let packed = miniz_oxide::deflate::compress_to_vec(data, 6);
+        self.add_raw(name, 8, crc32(data), data.len() as u64, &packed);
+    }
+
+    pub fn finish(mut self) -> Vec<u8> {
+        let cd_off = self.data.len() as u32;
+        let cd_size = self.central.len() as u32;
+        self.data.extend_from_slice(&self.central);
+        self.data.extend_from_slice(b"PK\x05\x06");
+        self.data.extend_from_slice(&[0, 0, 0, 0]);
+        self.data.extend_from_slice(&self.count.to_le_bytes());
+        self.data.extend_from_slice(&self.count.to_le_bytes());
+        self.data.extend_from_slice(&cd_size.to_le_bytes());
+        self.data.extend_from_slice(&cd_off.to_le_bytes());
+        self.data.extend_from_slice(&[0, 0]);
+        self.data
+    }
 }
 
 /// CRC-32 (IEEE, as zip uses it).
@@ -182,6 +255,25 @@ mod tests {
         assert_eq!(l.len(), 1);
         assert_eq!(l[0].name, "a.bin");
         assert_eq!(read(&p, &l[0]).unwrap(), data);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn writer_round_trip() {
+        let mut w = Writer::default();
+        w.add("a.bin", b"hello hello hello hello");
+        w.add_raw("dir/b.bin", 0, crc32(b"raw"), 3, b"raw");
+        let dir = std::env::temp_dir().join(format!("rom2altsound-zipw-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("w.zip");
+        std::fs::write(&p, w.finish()).unwrap();
+        let l = list(&p).unwrap();
+        assert_eq!(l.len(), 2);
+        assert_eq!(l[0].method, 8);
+        assert_eq!(read(&p, &l[0]).unwrap(), b"hello hello hello hello");
+        assert_eq!(l[1].name, "dir/b.bin");
+        assert_eq!(read(&p, &l[1]).unwrap(), b"raw");
+        assert_eq!(read_raw(&p, &l[1]).unwrap(), b"raw");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

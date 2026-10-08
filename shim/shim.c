@@ -356,3 +356,228 @@ int shim_dac_ac_couple(void) {
     DAC_DC_offset_correction_data_16_w(ii, 0);
   return n;
 }
+
+// ---------------------------------------------------------------------------------------
+// The driver table: every game PinMAME knows, with its ROM list exactly as the ROM_START
+// blocks declare it (name, size, hashes, region). `rom2altsound roms` identifies ROM zips
+// with it, so the data always matches the emulator linked in. Nothing here needs a running
+// machine, except shim_driver_init_board (see there).
+
+#include "hash.h"
+
+int shim_driver_count(void) {
+  static int n = -1;
+  if (n < 0)
+    for (n = 0; drivers[n]; n++) {}
+  return n;
+}
+
+// Text fields of driver i: 0 name, 1 parent's name ("" when none), 2 description, 3 year,
+// 4 manufacturer, 5 source file. NULL when out of range.
+const char *shim_driver_text(int i, int field) {
+  const struct GameDriver *d;
+  if (i < 0 || i >= shim_driver_count())
+    return NULL;
+  d = drivers[i];
+  switch (field) {
+  case 0: return d->name;
+  case 1: return (d->clone_of && !(d->clone_of->flags & NOT_A_DRIVER)) ? d->clone_of->name : "";
+  case 2: return d->description;
+  case 3: return d->year;
+  case 4: return d->manufacturer;
+  case 5: return d->source_file;
+  }
+  return NULL;
+}
+
+unsigned shim_driver_flags(int i) {
+  return (i < 0 || i >= shim_driver_count()) ? 0 : drivers[i]->flags;
+}
+
+// One ROM file of a driver (a ROM_LOAD and its ROM_CONTINUE chunks).
+struct shim_rom {
+  const char *name;
+  unsigned length;        // sum of the file's chunks: the file's size
+  unsigned region;        // REGION_* (common.h)
+  unsigned region_flags;  // ROMREGION_* flags
+  int sound_only;         // ROMREGION_SOUNDONLY: loaded only when sound is on
+  int optional, no_dump, bad_dump, bios;
+  char crc[16];           // lowercase hex, "" when unknown
+  char sha1[48];          // lowercase hex, "" when unknown
+};
+
+// Fills `out` with ROM j of driver i; returns 0 when there is no such ROM.
+int shim_driver_rom(int i, int j, struct shim_rom *out) {
+  const struct RomModule *region, *rom, *chunk;
+  if (i < 0 || i >= shim_driver_count() || !drivers[i]->rom)
+    return 0;
+  for (region = rom_first_region(drivers[i]); region; region = rom_next_region(region))
+    for (rom = rom_first_file(region); rom; rom = rom_next_file(rom)) {
+      const char *h;
+      if (j-- > 0)
+        continue;
+      memset(out, 0, sizeof(*out));
+      h = ROM_GETHASHDATA(rom);
+      out->name = ROM_GETNAME(rom);
+      for (chunk = rom_first_chunk(rom); chunk; chunk = rom_next_chunk(chunk))
+        out->length += ROM_GETLENGTH(chunk);
+      out->region = ROMREGION_GETTYPE(region);
+      out->region_flags = ROMREGION_GETFLAGS(region);
+      out->sound_only = ROMREGION_ISSOUNDONLY(region);
+      out->optional = ROM_ISOPTIONAL(rom);
+      out->no_dump = hash_data_has_info(h, HASH_INFO_NO_DUMP);
+      out->bad_dump = hash_data_has_info(h, HASH_INFO_BAD_DUMP);
+      out->bios = ROM_GETBIOSFLAGS(rom);
+      if (!hash_data_extract_printable_checksum(h, HASH_CRC, out->crc))
+        out->crc[0] = 0;
+      if (!hash_data_extract_printable_checksum(h, HASH_SHA1, out->sha1))
+        out->sha1[0] = 0;
+      return 1;
+    }
+  return 0;
+}
+
+// The driver's CPUs and sound chips, from its machine driver (the constructor only fills a
+// structure). Returns the number of CPUs; `audio_mask` gets bit n set when CPU n is an audio
+// CPU (its ROM region, REGION_CPU1 + n, then holds sound program code).
+static struct InternalMachineDriver shim_mdrv;
+int shim_driver_machine(int i, unsigned *audio_mask) {
+  int ii, n = 0;
+  *audio_mask = 0;
+  if (i < 0 || i >= shim_driver_count() || !drivers[i]->drv)
+    return 0;
+  expand_machine_driver(drivers[i]->drv, &shim_mdrv);
+  for (ii = 0; ii < MAX_CPU; ii++)
+    if (shim_mdrv.cpu[ii].cpu_type) {
+      n++;
+      if (shim_mdrv.cpu[ii].cpu_flags & CPU_AUDIO_CPU)
+        *audio_mask |= 1u << ii;
+    }
+  return n;
+}
+
+// After shim_driver_machine: the name of CPU k / sound chip k, or NULL.
+const char *shim_machine_cpu(int k) {
+  return (k >= 0 && k < MAX_CPU && shim_mdrv.cpu[k].cpu_type)
+    ? cputype_name(shim_mdrv.cpu[k].cpu_type) : NULL;
+}
+const char *shim_machine_sound(int k) {
+  return (k >= 0 && k < MAX_SOUND && shim_mdrv.sound[k].sound_type)
+    ? sound_name(&shim_mdrv.sound[k]) : NULL;
+}
+
+// ---------------------------------------------------------------------------------------
+// Which sound board a game has. Most drivers' machine init hands core_gameData->hw.soundBoard
+// to sndbrd_0_init, but a few CPU families pick the board themselves from the generation
+// (core_gameData->gen) or from their own init: WPC (wpc.c), System 11 and Data East
+// alphanumeric (s11.c), System 3-7 (s4.c, s6.c, s7.c), Whitestar (se.c), Pinball 2000
+// (p2k.c). shim_driver_core_init names the machine init a driver uses, compared by address
+// with the init of a machine driver of each of these families; the Rust side then applies
+// the family's own choice (drivers.rs, `sound_boards`).
+
+extern void construct_wpc_alpha1S(struct InternalMachineDriver *);
+extern void construct_s11_s9S(struct InternalMachineDriver *);
+extern void construct_s11_s9PS(struct InternalMachineDriver *);
+extern void construct_s7(struct InternalMachineDriver *);
+extern void construct_s7S6(struct InternalMachineDriver *);
+extern void construct_s7SND(struct InternalMachineDriver *);
+extern void construct_s7RR(struct InternalMachineDriver *);
+extern void construct_s6(struct InternalMachineDriver *);
+extern void construct_s4(struct InternalMachineDriver *);
+extern void construct_se2aS(struct InternalMachineDriver *);
+extern void construct_se3aS(struct InternalMachineDriver *);
+extern void construct_p2k(struct InternalMachineDriver *);
+
+static struct {
+  const char *name;
+  void (*ctor)(struct InternalMachineDriver *);
+  void (*init)(void);
+} shim_inits[] = {
+  {"wpc", construct_wpc_alpha1S}, {"s11", construct_s11_s9S}, {"s9pf", construct_s11_s9PS},
+  {"s7", construct_s7}, {"s7S6", construct_s7S6}, {"s7nd", construct_s7SND},
+  {"rr", construct_s7RR}, {"s6", construct_s6}, {"s4", construct_s4},
+  {"se", construct_se2aS}, {"se3", construct_se3aS}, {"p2k", construct_p2k},
+};
+
+// The name of driver i's machine init when it is one of the above, else "".
+const char *shim_driver_core_init(int i) {
+  static int ready;
+  static struct InternalMachineDriver m;
+  unsigned k, mask;
+  if (!ready) {
+    for (k = 0; k < sizeof(shim_inits) / sizeof(shim_inits[0]); k++) {
+      expand_machine_driver(shim_inits[k].ctor, &m);
+      shim_inits[k].init = m.pinmame.init;
+    }
+    ready = 1;
+  }
+  if (!shim_driver_machine(i, &mask))
+    return "";
+  for (k = 0; k < sizeof(shim_inits) / sizeof(shim_inits[0]); k++)
+    if (shim_mdrv.pinmame.init && shim_mdrv.pinmame.init == shim_inits[k].init)
+      return shim_inits[k].name;
+  return "";
+}
+
+// The game data of each driver from `start` on, one line each on stdout:
+// "R2A <index> <ok> <hw.soundBoard> <gen> <core init or -> <ok|crash>". The game data is
+// only set by the driver's init function, which may also touch the machine (install
+// handlers...) and crash or exit without one: run this only in a throwaway process. Its
+// first statement sets core_gameData, so a crash or an exit still reports it (marked
+// "crash"), and the caller starts another process after that driver.
+#include <signal.h>
+static volatile int shim_cur = -1;
+static const char *shim_cur_init = "-";
+static void shim_board_line(const char *how) {
+  if (shim_cur < 0)
+    return;
+  printf("R2A\t%d\t%d\t%u\t%llu\t%s\t%s\n", shim_cur, core_gameData ? 1 : 0,
+         core_gameData ? (unsigned)core_gameData->hw.soundBoard : 0u,
+         core_gameData ? (unsigned long long)core_gameData->gen : 0ull,
+         shim_cur_init, how);
+  fflush(stdout);
+  shim_cur = -1;
+}
+static void shim_board_at_exit(void) { shim_board_line("crash"); }
+static void shim_board_on_signal(int sig) { (void)sig; shim_board_line("crash"); _Exit(3); }
+
+void shim_print_driver_boards(int start) {
+  int i, n = shim_driver_count();
+  atexit(shim_board_at_exit);
+  signal(SIGSEGV, shim_board_on_signal);
+  signal(SIGABRT, shim_board_on_signal);
+  signal(SIGFPE, shim_board_on_signal);
+  signal(SIGILL, shim_board_on_signal);
+  for (i = start < 0 ? 0 : start; i < n; i++) {
+    const char *init = shim_driver_core_init(i);
+    shim_cur_init = *init ? init : "-";
+    core_gameData = NULL;
+    // Some inits look at the game's name (fh.c: fh_pa1 has its own game data).
+    Machine->gamedrv = drivers[i];
+    Machine->drv = &shim_mdrv;  // expanded by shim_driver_core_init
+    shim_cur = i;
+    if (drivers[i]->driver_init && !(drivers[i]->flags & NOT_A_DRIVER))
+      drivers[i]->driver_init();
+    shim_board_line("ok");
+  }
+}
+
+// The interface name of a sound board type (SNDBRD_TYPE(index, sub)), e.g. "WMSDCS", or NULL.
+const char *shim_sndbrd_name(unsigned type) {
+  const unsigned idx = type >> 8;
+  if (idx == 0 || idx >= sizeof(shim_boards) / sizeof(shim_boards[0]) || !shim_boards[idx])
+    return NULL;
+  return shim_boards[idx]->typestr;
+}
+
+// The name of a REGION_* value ("cpu1", "sound1", "user2"...), or NULL.
+const char *shim_region_name(unsigned r) {
+  static char buf[16];
+  if (r >= REGION_CPU1 && r < REGION_GFX1) { sprintf(buf, "cpu%u", r - REGION_CPU1 + 1); return buf; }
+  if (r >= REGION_GFX1 && r < REGION_PROMS) { sprintf(buf, "gfx%u", r - REGION_GFX1 + 1); return buf; }
+  if (r == REGION_PROMS) return "proms";
+  if (r >= REGION_SOUND1 && r < REGION_USER1) { sprintf(buf, "sound%u", r - REGION_SOUND1 + 1); return buf; }
+  if (r >= REGION_USER1 && r < REGION_DISKS) { sprintf(buf, "user%u", r - REGION_USER1 + 1); return buf; }
+  if (r == REGION_DISKS) return "disks";
+  return NULL;
+}

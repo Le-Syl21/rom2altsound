@@ -33,6 +33,22 @@ pub struct Game {
     pub found: i32,
 }
 
+/// `struct shim_rom` (shim/shim.c): one ROM file of a driver.
+#[repr(C)]
+pub struct ShimRom {
+    pub name: *const c_char,
+    pub length: c_uint,
+    pub region: c_uint,
+    pub region_flags: c_uint,
+    pub sound_only: c_int,
+    pub optional: c_int,
+    pub no_dump: c_int,
+    pub bad_dump: c_int,
+    pub bios: c_int,
+    pub crc: [c_char; 16],
+    pub sha1: [c_char; 48],
+}
+
 type Cb = Option<unsafe extern "C" fn()>;
 pub type AudioAvailableCb = unsafe extern "C" fn(*mut AudioInfo, *mut c_void) -> c_int;
 pub type AudioUpdatedCb = unsafe extern "C" fn(*mut c_void, c_int, *mut c_void) -> c_int;
@@ -116,6 +132,16 @@ unsafe extern "C" {
     pub fn shim_nibble_cmd(board: c_int, data: c_int);
     pub fn shim_nibble_reads() -> c_int;
     pub fn shim_data_burst(board: c_int, bytes: *const u8, n: c_int) -> c_int;
+    pub fn shim_driver_count() -> c_int;
+    pub fn shim_driver_text(i: c_int, field: c_int) -> *const c_char;
+    pub fn shim_driver_flags(i: c_int) -> c_uint;
+    pub fn shim_driver_rom(i: c_int, j: c_int, out: *mut ShimRom) -> c_int;
+    pub fn shim_driver_machine(i: c_int, audio_mask: *mut c_uint) -> c_int;
+    pub fn shim_machine_cpu(k: c_int) -> *const c_char;
+    pub fn shim_machine_sound(k: c_int) -> *const c_char;
+    pub fn shim_print_driver_boards(start: c_int);
+    pub fn shim_sndbrd_name(board: c_uint) -> *const c_char;
+    pub fn shim_region_name(region: c_uint) -> *const c_char;
     pub static mut shim_log_min_level: c_int;
     pub fn shim_log(level: c_int, format: *const c_char, args: *mut c_void, user: *mut c_void);
 }

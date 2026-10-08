@@ -5,16 +5,19 @@ mod altsound;
 mod batch;
 mod bsmtfw;
 mod dcsrom;
+mod drivers;
 mod ducking;
 mod extract;
 mod ffi;
 mod listen;
 mod looping;
 mod loudness;
+mod romcheck;
 mod sam;
 mod sampack;
 mod seqloop;
 mod seqstate;
+mod sha1;
 mod soundsdat;
 mod volume;
 mod zipread;
@@ -56,6 +59,8 @@ Examples:
   rom2altsound ~/roms/mm_109c.zip       ROM given by its zip, pack in ./mm_109c/
   rom2altsound afm_113b cv_20h rs_l6 --roms ~/vpinball/roms --out ~/packs
                                         three ROMs, 2 at a time, packs in ~/packs/<rom>/
+  rom2altsound roms ~/vpinball/roms     check a ROM folder: what each zip holds, bad dumps,
+                                        misnamed zips (rom2altsound roms --help)
 
 Each ROM folder holds the WAV files, altsound.csv, g-sound.csv, altsound.ini,
 manifest.json, cold-boot.json and factory-nvram/.
@@ -348,6 +353,10 @@ fn main() {
         Some("seq-scan") => return seqloop::scan_cli(std::env::args().skip(2).collect()),
         Some("seq-audio") => return seqloop::audio_cli(std::env::args().skip(2).collect()),
         Some("page") => return listen::page_cli(std::env::args().skip(2).collect()),
+        Some("roms") => std::process::exit(romcheck::cli(std::env::args().skip(2).collect())),
+        Some("__driver-boards") => {
+            return drivers::print_boards(std::env::args().skip(2).collect());
+        }
         _ => {}
     }
     let cli = Cli::parse();

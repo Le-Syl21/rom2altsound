@@ -81,6 +81,20 @@ Several ROMs run two at a time by default (`--jobs` to change it); then each ROM
 goes to `rom2altsound.log` in its folder. A ROM that fails does not stop the others, and a
 recap is printed at the end.
 
+To check a ROM folder first:
+
+```
+rom2altsound roms ~/vpinball/roms                  # what each zip really holds
+rom2altsound roms ~/vpinball/roms --fix-names ~/roms-fixed --json roms.json
+```
+
+Each zip is identified by its content, against the ROM tables of the PinMAME built in, not
+by its name: the set(s) it holds, a bad dump (a file with a wrong CRC), missing files,
+files that are no ROM, a zip named after another set, merged zips. Each game also gets its
+sound board and its sound ROM id, the same for all the revisions of a game that share
+their sound ROMs. Nothing is changed in your folder; `--fix-names` writes correctly named
+zips (or links) to another one. See [how it works](docs/how-it-works.md#rom-verification).
+
 Then copy the ROM's folder next to your table, as `<table folder>/altsound/<rom>/` (for
 example `Tables/Attack from Mars/altsound/afm_113b/`), and turn on the AltSound plugin in
 VPinball.
@@ -176,7 +190,11 @@ What rom2altsound gets out of each sound board family:
 | Bally Sounds Plus -51 (1979-1983) ¹² | ✅ ¹³ | ⚠️ ¹³ | ✅ ⁴ | ❌ | ❌ | ❌ |
 | Bally Sounds Plus -56, with speech (1980-1981) ¹² | ✅ ¹³ | ⚠️ ¹³ | ✅ ⁴ | ❌ | ❌ | ❌ |
 | Bally Squawk & Talk -61 (1981-1982) ¹² | ✅ ¹⁴ | ❌ ¹⁴ | ⚠️ ¹⁴ | ❌ | ❌ | ❌ |
-| Bally -32 / -50 (1978-1980) ¹² | ❔ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Bally -32 / -50 (1978-1980) ¹² | ✅ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
+
+Every sound board family of PinMAME, with its number of games and a quick survey of
+those we have a ROM for (17 more families give sounds): [board
+support](docs/board-support.md).
 
 ✅ verified, ⚠️ partial, ❌ not available, ❔ untested. "Factory volume": every file at the
 master volume the game itself sets at boot from its factory settings (DCS `55 AA 67 98`
@@ -278,10 +296,11 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
     for the speech, that the game sets with commands (`DF`..`FE`), but PinMAME does not
     emulate them: the files are at full scale (`full_scale (volume lines not emulated in
     PinMAME)`) and the game's own volume is not known. Five speech
-    lines touch full scale for 2 or 3 samples, in PinMAME's own mix. The -61B variant
-    (8 games) was not tried.
-15. No sound processor: one tone per command, `00`..`1F` swept, `0F` as the stop. Read in
-    PinMAME's code, not tried: no ROM at hand.
+    lines touch full scale for 2 or 3 samples, in PinMAME's own mix. The -61B variant gives
+    sounds too (Fathom, quick survey: 32 of its first 40 commands).
+15. No sound processor: one tone per command, `00`..`1F` swept, `0F` as the stop. Verified
+    on Lost World (quick survey, see [board support](docs/board-support.md)): 15 tones from
+    its 32 commands.
 
 ### Volume
 
@@ -545,6 +564,21 @@ Plusieurs ROM sont traitées deux à la fois par défaut (`--jobs` pour changer)
 de chacune va alors dans `rom2altsound.log`, dans son dossier. Une ROM qui échoue n'arrête
 pas les autres, et un récapitulatif s'affiche à la fin.
 
+Pour vérifier d'abord un dossier de ROM :
+
+```
+rom2altsound roms ~/vpinball/roms                  # ce que contient vraiment chaque zip
+rom2altsound roms ~/vpinball/roms --fix-names ~/roms-corrigees --json roms.json
+```
+
+Chaque zip est reconnu par son contenu, d'après les tables de ROM du PinMAME intégré, et
+non par son nom : le ou les jeux qu'il contient, un mauvais dump (un fichier au CRC faux),
+les fichiers manquants, ceux qui ne sont pas des ROM, un zip qui porte le nom d'un autre
+jeu, les zips fusionnés. Chaque jeu reçoit aussi sa carte son et l'identifiant de ses ROM
+son, le même pour toutes les révisions d'un jeu qui partagent leurs ROM son. Rien n'est
+modifié dans votre dossier ; `--fix-names` écrit des zips correctement nommés (ou des
+liens) dans un autre. Voir [le fonctionnement](docs/how-it-works.md#rom-verification).
+
 Copiez ensuite le dossier de la ROM à côté de votre table, en
 `<dossier de la table>/altsound/<rom>/` (par exemple
 `Tables/Attack from Mars/altsound/afm_113b/`), et activez le plugin AltSound dans VPinball.
@@ -641,7 +675,11 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 | Bally Sounds Plus -51 (1979-1983) ¹² | ✅ ¹³ | ⚠️ ¹³ | ✅ ⁴ | ❌ | ❌ | ❌ |
 | Bally Sounds Plus -56, avec voix (1980-1981) ¹² | ✅ ¹³ | ⚠️ ¹³ | ✅ ⁴ | ❌ | ❌ | ❌ |
 | Bally Squawk & Talk -61 (1981-1982) ¹² | ✅ ¹⁴ | ❌ ¹⁴ | ⚠️ ¹⁴ | ❌ | ❌ | ❌ |
-| Bally -32 / -50 (1978-1980) ¹² | ❔ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Bally -32 / -50 (1978-1980) ¹² | ✅ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
+
+Toutes les familles de cartes son de PinMAME, avec leur nombre de jeux et un survol rapide
+de celles dont nous avons une ROM (17 autres familles donnent des sons) :
+[cartes prises en charge](docs/board-support.md) (en anglais).
 
 ✅ vérifié, ⚠️ partiel, ❌ non disponible, ❔ non testé. « Volume d'usine » : tous les fichiers
 sont au volume général que le jeu règle lui-même au démarrage d'après ses réglages
@@ -755,9 +793,11 @@ reste joué en parallèle.
     fichiers sont à pleine échelle (`full_scale (volume lines not emulated in
     PinMAME)`) et le volume du jeu n'est pas connu. Cinq voix touchent la
     pleine échelle sur 2 ou 3 échantillons, dans le mixage de PinMAME lui-même. La
-    variante -61B (8 jeux) n'a pas été essayée.
+    variante -61B donne aussi des sons (Fathom, survol rapide : 32 de ses 40 premières
+    commandes).
 15. Pas de processeur son : une tonalité par commande, `00`..`1F` balayées, `0F` comme
-    arrêt. Lu dans le code de PinMAME, pas essayé : aucune ROM sous la main.
+    arrêt. Vérifié sur Lost World (survol rapide, voir
+    [cartes prises en charge](docs/board-support.md)) : 15 tonalités pour ses 32 commandes.
 
 ### Volume
 
