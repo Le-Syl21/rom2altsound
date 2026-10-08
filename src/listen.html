@@ -9,14 +9,16 @@
 :root {
   --bg: #fbfbfa; --fg: #1d1d1f; --muted: #6b6b70; --line: #e3e3e0; --card: #ffffff;
   --accent: #2459c9; --accent-fg: #ffffff; --warn: #a3410b; --warn-bg: #fdeee4;
-  --tag-bg: #eef0f3; --row-hi: #edf2fd; --focus: #2459c9;
+  --tag-bg: #eef0f3; --row-hi: #edf2fd; --focus: #2459c9; --head-bg: #f3f3f1;
+  --edit: #6a3fb5; --edit-bg: #f1ebfb;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #17181a; --fg: #e8e8ea; --muted: #9a9aa2; --line: #2e3034; --card: #1f2023;
     --accent: #7ea6ff; --accent-fg: #0f1115; --warn: #ffb27a; --warn-bg: #3a2416;
-    --tag-bg: #2a2c31; --row-hi: #22293a; --focus: #7ea6ff;
+    --tag-bg: #2a2c31; --row-hi: #22293a; --focus: #7ea6ff; --head-bg: #1c1d20;
+    --edit: #c9a8ff; --edit-bg: #2d2540;
     color-scheme: dark;
   }
 }
@@ -26,24 +28,23 @@ html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  padding-bottom: 92px;
+  padding-bottom: 92px; overflow-x: hidden;
 }
-.wrap { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
+.wrap { max-width: 1400px; margin: 0 auto; padding: 0 16px; }
 header { padding: 20px 0 8px; }
 h1 { font-size: 22px; margin: 0 0 4px; }
 h1 small { font-weight: normal; color: var(--muted); font-size: 15px; }
 .meta { color: var(--muted); font-size: 13px; margin: 2px 0; }
 .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.92em; }
+.tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 0; font-size: 13px; }
+.tools .lbl { color: var(--muted); }
+#names-status { color: var(--muted); }
 .bar {
   position: sticky; top: 0; z-index: 2; background: var(--bg);
   border-bottom: 1px solid var(--line); padding: 8px 0;
 }
 .bar .wrap { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-input[type=search], select {
-  font: inherit; color: var(--fg); background: var(--card);
-  border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-height: 34px;
-}
-input[type=search], input[type=text] {
+input[type=search], input[type=text], select {
   font: inherit; color: var(--fg); background: var(--card);
   border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-height: 34px;
 }
@@ -51,14 +52,6 @@ input[type=search] { flex: 1 1 200px; min-width: 0; }
 input#cmp { flex: 1 1 220px; min-width: 0; }
 label.chk { display: inline-flex; gap: 4px; align-items: center; font-size: 14px; white-space: nowrap; }
 #shown { color: var(--muted); font-size: 13px; margin-left: auto; }
-ul#list { list-style: none; margin: 0; padding: 0; }
-li.row {
-  display: grid; grid-template-columns: auto 1fr auto; gap: 2px 12px; align-items: center;
-  padding: 8px 6px; border-bottom: 1px solid var(--line); border-radius: 4px;
-}
-li.row:focus { outline: 2px solid var(--focus); outline-offset: -2px; }
-li.row.playing { background: var(--row-hi); }
-.btns { display: flex; gap: 4px; grid-row: span 2; }
 button {
   font: inherit; font-size: 13px; cursor: pointer; color: var(--fg); background: var(--card);
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; min-height: 32px;
@@ -67,13 +60,39 @@ button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 button[aria-pressed=true] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 button.pk { border-color: var(--accent); }
 button.link { border: 0; background: none; color: var(--accent); padding: 0; min-height: 0; text-decoration: underline; }
-.title { min-width: 0; overflow-wrap: anywhere; }
-.title .id { font-weight: 600; margin-right: 6px; }
-.title .unnamed { color: var(--muted); font-style: italic; }
-.nums { text-align: right; font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.nums .muted { color: var(--muted); }
-.info { grid-column: 2 / 4; font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 6px; }
-.tag { background: var(--tag-bg); border-radius: 4px; padding: 0 5px; color: var(--fg); }
+/* The sounds: the table scrolls sideways in its own box, never the page. */
+.tablewrap { overflow-x: auto; margin: 8px 0 12px; border: 1px solid var(--line); border-radius: 6px; }
+table.sounds { margin: 0; min-width: 1100px; }
+table.sounds th, table.sounds td { vertical-align: top; font-size: 13.5px; padding: 6px 8px; }
+table.sounds thead th { background: var(--head-bg); white-space: nowrap; font-weight: 600; padding: 0; }
+table.sounds thead th.static { padding: 6px 8px; }
+th button.sort {
+  border: 0; border-radius: 0; background: none; width: 100%; text-align: inherit; font-weight: 600;
+  padding: 6px 8px; min-height: 34px; font-size: 13.5px;
+}
+th button.sort::after { content: "\2195"; color: var(--muted); margin-left: 4px; font-weight: normal; }
+th[aria-sort=ascending] button.sort::after { content: "\25B2"; color: var(--accent); }
+th[aria-sort=descending] button.sort::after { content: "\25BC"; color: var(--accent); }
+th.n button.sort { text-align: right; }
+tr.row:focus { outline: 2px solid var(--focus); outline-offset: -2px; }
+tr.row.playing { background: var(--row-hi); }
+td.btns { white-space: nowrap; }
+td.btns button + button { margin-left: 4px; }
+td.id { font-weight: 600; white-space: nowrap; }
+td.name { min-width: 14em; max-width: 28em; overflow-wrap: anywhere; }
+td.name .unnamed { color: var(--muted); font-style: italic; }
+td.name .edited {
+  font-size: 11.5px; color: var(--edit); background: var(--edit-bg); border-radius: 4px;
+  padding: 0 4px; margin-left: 4px; white-space: nowrap;
+}
+td.name button.edit { min-height: 26px; padding: 0 6px; margin-left: 4px; color: var(--muted); }
+td.name input { width: 100%; min-width: 12em; min-height: 30px; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td .muted, td .sub { color: var(--muted); }
+td .sub { font-size: 12px; }
+td.loop { white-space: nowrap; font-variant-numeric: tabular-nums; }
+td.tags { min-width: 8em; }
+.tag { display: inline-block; background: var(--tag-bg); border-radius: 4px; padding: 0 5px; margin: 1px 2px 1px 0; color: var(--fg); font-size: 12.5px; }
 .tag.warn { background: var(--warn-bg); color: var(--warn); }
 .player {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; background: var(--card);
@@ -90,15 +109,13 @@ button.link { border: 0; background: none; color: var(--accent); padding: 0; min
 audio { flex: 1 1 auto; min-width: 0; width: 100%; height: 40px; }
 table { border-collapse: collapse; width: 100%; margin: 12px 0; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 14px; }
-td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 a { color: var(--accent); }
 .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 600px) {
-  li.row { grid-template-columns: 1fr auto; }
-  .btns { grid-row: auto; grid-column: 1 / 3; order: 3; }
-  .info { grid-column: 1 / 3; }
   #now { display: none; }
   #shown { margin-left: 0; }
+  .wrap { padding: 0 12px; }
 }
 </style>
 </head>
@@ -114,19 +131,22 @@ a { color: var(--accent); }
       <option value="callout">Voice</option>
       <option value="sfx">Sound effects</option>
     </select>
-    <select id="sort" aria-label="Sort">
-      <option value="id">Sort by id</option>
-      <option value="duration">Longest first</option>
-      <option value="lufs">Loudest first</option>
-      <option value="name">By name</option>
-    </select>
     <label class="chk"><input type="checkbox" id="loops"> Loops only</label>
     <label class="chk"><input type="checkbox" id="sound" checked> With sound</label>
     <input type="text" id="cmp" placeholder="Compare with folder: ../taf_l5-edit/ or C:\packs\taf_l5-edit" aria-label="Compare with folder (A/B)" title="A/B test: another folder holding files of the same names (a copy of this one with some sounds swapped); each row gets an A/B button, b flips" spellcheck="false" autocomplete="off">
     <span id="shown" aria-live="polite"></span>
   </div>
 </div>
-<main class="wrap"><ul id="list" aria-label="Sounds"></ul><div id="index"></div></main>
+<main class="wrap">
+  <div class="tablewrap" id="tw" hidden>
+    <table class="sounds" id="table">
+      <caption class="sr">Sounds; click a column title to sort</caption>
+      <thead><tr id="cols"></tr></thead>
+      <tbody id="list"></tbody>
+    </table>
+  </div>
+  <div id="index"></div>
+</main>
 <div class="player" id="player" hidden>
   <div class="wrap"><span id="side" hidden>A</span><span id="now">Nothing playing</span><audio id="audio" controls preload="none"></audio></div>
 </div>
@@ -151,6 +171,12 @@ a { color: var(--accent); }
   }
   function db(v) { return typeof v === "number" ? (v > 0 ? "+" : "") + v.toFixed(2) + " dB" : "?"; }
   function href(p) { return p.split("/").map(encodeURIComponent).join("/"); }
+  // Browser storage, when there is any (a private window or a locked-down browser may have
+  // none, or throw): the page works without it, only nothing is remembered.
+  function load(key) { try { return localStorage.getItem(key) || ""; } catch (e) { return ""; } }
+  function save(key, v) {
+    try { if (v) localStorage.setItem(key, v); else localStorage.removeItem(key); } catch (e) { /* no storage */ }
+  }
 
   if (data.roms) { return batchIndex(); }
 
@@ -173,15 +199,31 @@ a { color: var(--accent); }
   if (typeof v.offset_db === "number") vol.push("factory offset " + db(v.offset_db));
   if (vol.length) head.appendChild(el("p", "meta", vol.join("; ")));
   if (data.levels_note) head.appendChild(el("p", "meta", data.levels_note));
-  head.appendChild(el("p", "meta", "Space or Enter plays the selected sound, arrows move, / searches, b flips A/B (with a folder to compare). rom2altsound " + data.version));
+  head.appendChild(el("p", "meta", "Click a column title to sort (again to reverse). Space or Enter plays the selected sound, arrows move, / searches, F2 or ✎ renames, b flips A/B (with a folder to compare). rom2altsound " + data.version));
+
+  // Names typed on this page, by sound id ("" = no name), kept in the browser for this ROM;
+  // "Export names" writes them to a names.csv for `rom2altsound names`.
+  var NAMES = "rom2altsound.names." + (data.rom || ""), edits = {};
+  try { edits = JSON.parse(load(NAMES) || "{}") || {}; } catch (e) { edits = {}; }
+  if (typeof edits !== "object" || Array.isArray(edits)) edits = {};
+  function saveEdits() { save(NAMES, Object.keys(edits).length ? JSON.stringify(edits) : ""); }
+  function nameOf(s) { return Object.prototype.hasOwnProperty.call(edits, s.id) ? edits[s.id] : (s.name || ""); }
+  function edited(s) { return Object.prototype.hasOwnProperty.call(edits, s.id); }
+  function cleanName(n) { return String(n).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim(); }
 
   var sounds = data.sounds || [];
   sounds.forEach(function (s, i) {
     s.i = i;
     s.typ = typeOf(s);
-    s.hay = [s.id, s.name, s.typ, s.board, s.twin_of ? "twin " + s.twin_of : "",
-      s.loop ? "loop " + s.loop.method : ""].concat(s.flags || []).join(" ").toLowerCase();
+    // An edit that says what the pack says is no edit (names applied with `rom2altsound names`).
+    if (edited(s) && edits[s.id] === (s.name || "")) delete edits[s.id];
+    hay(s);
   });
+  saveEdits();
+  function hay(s) {
+    s.hay = [s.id, nameOf(s), edited(s) ? "edited" : "", s.typ, s.board, s.twin_of ? "twin " + s.twin_of : "",
+      s.loop ? "loop " + s.loop.method : ""].concat(s.flags || []).join(" ").toLowerCase();
+  }
   function typeOf(s) {
     if (s.pack && s.pack.type) return s.pack.type;
     var n = (s.name || "").replace(/^\s+/, ""), l = n.toLowerCase();
@@ -190,13 +232,80 @@ a { color: var(--accent); }
     return "sfx";
   }
   var multiBoard = data.boards && data.boards.length > 1;
+  function isWarn(f) { return /^(clipped|not clean|ignores|loop unresolved|cut)/.test(f); }
 
+  // The columns: what a click on the title sorts by (null: no value, always last) and which
+  // way first (-1: the largest first).
+  var COLS = [
+    { title: "Play", cls: "static" },
+    { key: "id", title: "ID", dir: 1, val: function (s) { return s.i; } },
+    { key: "name", title: "Name", dir: 1, text: true, val: function (s) { return nameOf(s) || null; } },
+    { key: "type", title: "Type", dir: 1, text: true, val: function (s) { return s.typ; } },
+    { key: "duration", title: "Duration", n: true, dir: -1, val: function (s) { return s.duration; } },
+    { key: "lufs", title: "LUFS", n: true, dir: -1, val: function (s) { return s.lufs; } },
+    { key: "tp", title: "True peak", n: true, dir: -1, val: function (s) { return s.true_peak; } },
+    { key: "loop", title: "Loop", dir: -1, val: function (s) { return s.loop ? s.loop.period_secs : null; } },
+    { key: "pack", title: "Pack", dir: 1, val: function (s) { return s.pack && typeof s.pack.channel === "number" ? s.pack.channel : null; } },
+    { key: "flags", title: "Flags", dir: -1, val: function (s) {
+      var n = (s.flags || []).length + (s.twin_of ? 0.5 : 0);
+      return n || null;
+    } }
+  ];
+  var byKey = {};
+  COLS.forEach(function (col) { if (col.key) byKey[col.key] = col; });
+  var SORT = "rom2altsound.sort." + (data.rom || ""), sort = { key: "id", dir: 1 };
+  try {
+    var st = JSON.parse(load(SORT) || "null");
+    if (st && byKey[st.key] && (st.dir === 1 || st.dir === -1)) sort = st;
+  } catch (e) { /* the default order */ }
+
+  var heads = {};
+  COLS.forEach(function (col) {
+    var th = el("th", (col.n ? "n " : "") + (col.cls || ""));
+    th.scope = "col";
+    if (col.key) {
+      var b = el("button", "sort", col.title);
+      b.type = "button";
+      b.title = "Sort by " + col.title.toLowerCase() + " (click again to reverse)";
+      b.addEventListener("click", function () {
+        sort = sort.key === col.key ? { key: col.key, dir: -sort.dir } : { key: col.key, dir: col.dir };
+        save(SORT, JSON.stringify(sort));
+        apply();
+      });
+      th.appendChild(b);
+      heads[col.key] = th;
+    } else {
+      th.textContent = col.title;
+    }
+    $("cols").appendChild(th);
+  });
+  function showSort() {
+    Object.keys(heads).forEach(function (k) {
+      if (k === sort.key) heads[k].setAttribute("aria-sort", sort.dir > 0 ? "ascending" : "descending");
+      else heads[k].removeAttribute("aria-sort");
+    });
+  }
+  function compare(a, b) {
+    var col = byKey[sort.key], x = col.val(a), y = col.val(b);
+    var nx = x === null || x === undefined || (typeof x === "number" && isNaN(x));
+    var ny = y === null || y === undefined || (typeof y === "number" && isNaN(y));
+    if (nx || ny) return nx && ny ? a.i - b.i : nx ? 1 : -1;
+    var d = col.text ? String(x).localeCompare(String(y), undefined, { sensitivity: "base", numeric: true }) : x - y;
+    return d * sort.dir || a.i - b.i;
+  }
+
+  function td(cls, text) { return el("td", cls, text); }
+  function tag(parent, text, warn) {
+    var t = el("span", "tag" + (warn ? " warn" : ""), text);
+    parent.appendChild(t);
+    return t;
+  }
   function row(s) {
-    var li = el("li", "row");
-    li.tabIndex = -1;
-    li.dataset.i = s.i;
-    li.id = "s-" + s.i;
-    var btns = el("div", "btns");
+    var tr = el("tr", "row");
+    tr.tabIndex = -1;
+    tr.dataset.i = s.i;
+    tr.id = "s-" + s.i;
+    var btns = td("btns");
     s.files.forEach(function (f, k) {
       var b = el("button", null, "▶ " + f.label);
       b.type = "button";
@@ -219,90 +328,144 @@ a { color: var(--accent); }
       ab.addEventListener("click", function () { abClick(s); });
       btns.appendChild(ab);
       s.ab = ab;
+    } else {
+      btns.appendChild(el("span", "muted", "no file"));
     }
-    li.appendChild(btns);
-    var t = el("div", "title");
-    t.appendChild(el("span", "id mono", s.id));
-    if (s.name) t.appendChild(el("span", null, s.name));
-    else t.appendChild(el("span", "unnamed", "no name"));
-    li.appendChild(t);
-    var n = el("div", "nums");
-    n.appendChild(document.createTextNode(secs(s.duration)));
-    if (typeof s.lufs === "number") {
-      n.appendChild(el("br"));
-      n.appendChild(el("span", null, s.lufs.toFixed(1) + " LUFS"));
-    }
-    if (typeof s.true_peak === "number") {
-      n.appendChild(el("br"));
-      var tp = el("span", "muted", "TP " + s.true_peak.toFixed(1) + " dBTP");
-      if (typeof s.peak === "number") tp.title = "peak " + s.peak.toFixed(2) + " dBFS";
-      n.appendChild(tp);
-    }
-    li.appendChild(n);
-    var info = el("div", "info");
-    function tag(text, warn) { info.appendChild(el("span", "tag" + (warn ? " warn" : ""), text)); }
-    tag(s.typ === "callout" ? "voice" : s.typ);
-    if (multiBoard && s.board) tag(s.board);
-    var p = s.pack;
-    if (p) {
-      if (p.channel === 0) tag("ch 0 (music)");
-      else if (typeof p.channel === "number" && p.channel > 0) tag("ch " + p.channel);
-      if (typeof p.duck === "number" && p.duck < 100) tag("duck " + p.duck);
-      if (p.stop) tag("stop");
-      if (p.calls && p.calls.length) tag("call" + (p.calls.length > 1 ? "s " : " ") + p.calls.join(" "));
-      if (p.kind) {
-        tag(String(p.kind).replace(/[_-]/g, " "));
-        info.lastChild.title = p.reason || "";
-      }
-    }
-    if (typeof s.dcs_channel === "number") tag("DCS ch " + s.dcs_channel);
-    if (s.chip) tag("chip " + s.chip);
+    tr.appendChild(btns);
+    tr.appendChild(td("id mono", s.id));
+    s.nameCell = td("name");
+    s.nameCell.addEventListener("dblclick", function (e) {
+      if (e.target.tagName !== "INPUT") editName(s);
+    });
+    tr.appendChild(s.nameCell);
+    renderName(s);
+
+    var ty = td("tags");
+    tag(ty, s.typ === "callout" ? "voice" : s.typ);
+    if (multiBoard && s.board) tag(ty, s.board);
+    tr.appendChild(ty);
+    tr.appendChild(td("n", secs(s.duration)));
+    tr.appendChild(td("n", num(s.lufs, 1)));
+    var tp = td("n", num(s.true_peak, 1));
+    if (typeof s.peak === "number") tp.title = "peak " + s.peak.toFixed(2) + " dBFS";
+    tr.appendChild(tp);
+
+    var lc = td("loop");
     if (s.loop) {
-      var l = "loop " + secs(s.loop.period_secs);
-      if (s.loop.intro_secs >= 0.05) l += " from " + secs(s.loop.intro_secs);
-      if (s.loop.method) l += " (" + s.loop.method + ")";
-      tag(l);
+      lc.appendChild(document.createTextNode(secs(s.loop.period_secs)));
+      if (s.loop.intro_secs >= 0.05) lc.appendChild(el("span", "muted", " from " + secs(s.loop.intro_secs)));
+      if (s.loop.method) lc.appendChild(el("div", "sub", s.loop.method));
+      if (typeof s.loop.confidence === "number") lc.title = "confidence " + s.loop.confidence;
     }
+    tr.appendChild(lc);
+
+    var pc = td("tags"), p = s.pack;
+    if (p) {
+      if (p.channel === 0) tag(pc, "ch 0 (music)");
+      else if (typeof p.channel === "number" && p.channel > 0) tag(pc, "ch " + p.channel);
+      if (typeof p.duck === "number" && p.duck < 100) tag(pc, "duck " + p.duck);
+      if (p.stop) tag(pc, "stop");
+      if (p.calls && p.calls.length) tag(pc, "call" + (p.calls.length > 1 ? "s " : " ") + p.calls.join(" "));
+      if (p.kind) tag(pc, String(p.kind).replace(/[_-]/g, " ")).title = p.reason || "";
+    }
+    if (typeof s.dcs_channel === "number") tag(pc, "DCS ch " + s.dcs_channel);
+    if (s.chip) tag(pc, "chip " + s.chip);
+    tr.appendChild(pc);
+
+    var fc = td("tags");
     (s.flags || []).forEach(function (f) {
-      tag(f, /^(clipped|not clean|ignores|loop unresolved|cut)/.test(f));
-      if (f === "loop unresolved" && s.loop_unresolved) info.lastChild.title = s.loop_unresolved;
+      var t = tag(fc, f, isWarn(f));
+      if (f === "loop unresolved" && s.loop_unresolved) t.title = s.loop_unresolved;
     });
     if (s.twin_of) {
       var tw = el("span", "tag", "twin of ");
       var a = el("button", "link mono", s.twin_of);
       a.type = "button";
       a.tabIndex = -1;
+      a.setAttribute("aria-label", "go to " + s.twin_of);
       a.addEventListener("click", function () { goTo(s.twin_of); });
       tw.appendChild(a);
-      info.appendChild(tw);
+      fc.appendChild(tw);
     }
-    li.appendChild(info);
-    s.info = info;
-    return li;
+    tr.appendChild(fc);
+    s.info = fc;
+    return tr;
+  }
+
+  // The name cell: the name (or "no name"), a mark when it is a name typed here, and the
+  // rename button.
+  function renderName(s) {
+    var cell = s.nameCell, n = nameOf(s), on = rows && rows[s.i] && rows[s.i].tabIndex === 0;
+    while (cell.firstChild) cell.removeChild(cell.firstChild);
+    cell.appendChild(n ? el("span", "nm", n) : el("span", "unnamed", "no name"));
+    if (edited(s)) {
+      var m = el("span", "edited", "edited");
+      m.title = "Your name, kept in this browser (Export names saves it); the pack says: " + (s.name || "no name");
+      cell.appendChild(m);
+    } else if (s.dat_name !== undefined && s.dat_name !== null && s.dat_name !== s.name) {
+      cell.title = "sounds.dat: " + (s.dat_name || "no name");
+    }
+    var b = el("button", "edit", "✎");
+    b.type = "button";
+    b.tabIndex = on ? 0 : -1;
+    b.title = "Rename (F2)";
+    b.setAttribute("aria-label", "Rename " + s.id);
+    b.addEventListener("click", function () { editName(s); });
+    cell.appendChild(b);
+  }
+  function editName(s) {
+    if (s.editing) return;
+    s.editing = true;
+    var cell = s.nameCell, inp = el("input");
+    inp.type = "text";
+    inp.value = nameOf(s);
+    inp.spellcheck = false;
+    inp.setAttribute("aria-label", "Name of " + s.id + " (Enter keeps, Escape cancels, empty: no name)");
+    while (cell.firstChild) cell.removeChild(cell.firstChild);
+    cell.appendChild(inp);
+    inp.focus();
+    inp.select();
+    var done = false;
+    function finish(keep) {
+      if (done) return;
+      done = true;
+      s.editing = false;
+      if (keep) setName(s, inp.value);
+      renderName(s);
+      apply();
+      setCurrent(rows[s.i], true);
+    }
+    // The row's keys (arrows, Space) do not apply while typing.
+    inp.addEventListener("keydown", function (e) {
+      e.stopPropagation();
+      if (e.key === "Enter") { e.preventDefault(); finish(true); }
+      else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    });
+    inp.addEventListener("blur", function () { finish(true); });
+  }
+  function setName(s, n) {
+    n = cleanName(n);
+    if (n === (s.name || "")) delete edits[s.id];
+    else edits[s.id] = n;
+    saveEdits();
+    hay(s);
+    showEdits();
   }
 
   // Rows are built once; filters only show or hide them.
-  var list = $("list"), rows = sounds.map(row);
+  var rows = null;
+  var list = $("list");
+  rows = sounds.map(row);
   rows.forEach(function (r) { list.appendChild(r); });
   $("bar").hidden = false;
+  $("tw").hidden = false;
   $("player").hidden = false;
 
   var visible = [];
   function apply() {
     var q = $("q").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
     var typ = $("type").value, loops = $("loops").checked, snd = $("sound").checked;
-    var order = sounds.slice();
-    var key = $("sort").value;
-    var byId = function (a, b) { return a.i - b.i; };
-    var desc = function (f) {
-      return function (a, b) {
-        var x = typeof a[f] === "number" ? a[f] : -Infinity, y = typeof b[f] === "number" ? b[f] : -Infinity;
-        return y - x || byId(a, b);
-      };
-    };
-    order.sort(key === "duration" ? desc("duration") : key === "lufs" ? desc("lufs")
-      : key === "name" ? function (a, b) { return (a.name || "￿").localeCompare(b.name || "￿") || byId(a, b); }
-      : byId);
+    var order = sounds.slice().sort(compare);
     visible = [];
     order.forEach(function (s) {
       var ok = (!typ || s.typ === typ) && (!loops || s.loop) && (!snd || s.files.length > 0) &&
@@ -312,14 +475,15 @@ a { color: var(--accent); }
       list.appendChild(r);
       if (ok) visible.push(r);
     });
+    showSort();
     $("shown").textContent = visible.length + " of " + sounds.length + " shown";
-    var cur = list.querySelector("li.row[tabindex='0']");
+    var cur = list.querySelector("tr.row[tabindex='0']");
     if (!cur || cur.hidden) setCurrent(visible[0], false);
     var none = $("index");
     none.className = visible.length ? "" : "empty";
     none.textContent = visible.length ? "" : "No sound matches.";
   }
-  ["q", "type", "sort", "loops", "sound"].forEach(function (id) {
+  ["q", "type", "loops", "sound"].forEach(function (id) {
     $(id).addEventListener(id === "q" ? "input" : "change", apply);
   });
 
@@ -333,29 +497,37 @@ a { color: var(--accent); }
     if (r && focus) { r.focus(); }
   }
   list.addEventListener("focusin", function (e) {
-    var r = e.target.closest("li.row");
+    var r = e.target.closest("tr.row");
     if (r && r.tabIndex !== 0) setCurrent(r, false);
   });
   list.addEventListener("keydown", function (e) {
-    var r = e.target.closest("li.row");
+    var r = e.target.closest("tr.row");
     if (!r) return;
     var at = visible.indexOf(r), to = -1;
     if (e.key === "ArrowDown") to = at + 1;
     else if (e.key === "ArrowUp") to = at - 1;
     else if (e.key === "Home") to = 0;
     else if (e.key === "End") to = visible.length - 1;
-    else if ((e.key === " " || e.key === "Enter") && e.target === r) {
+    else if (e.key === "F2") {
+      e.preventDefault();
+      editName(sounds[+r.dataset.i]);
+      return;
+    } else if ((e.key === " " || e.key === "Enter") && e.target === r) {
       e.preventDefault();
       var s = sounds[+r.dataset.i];
       if (s.files.length) play(s, 0);
       return;
     } else return;
     e.preventDefault();
-    if (to >= 0 && to < visible.length) setCurrent(visible[to], true);
+    if (to >= 0 && to < visible.length) {
+      setCurrent(visible[to], true);
+      visible[to].scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
   });
+  function typing() { return /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName); }
   document.addEventListener("keydown", function (e) {
     var q = $("q");
-    if (e.key === "/" && document.activeElement !== q && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) {
+    if (e.key === "/" && document.activeElement !== q && !typing()) {
       e.preventDefault();
       q.focus();
     } else if (e.key === "Escape" && document.activeElement === q) {
@@ -363,11 +535,10 @@ a { color: var(--accent); }
     } else if (e.key === "ArrowDown" && document.activeElement === q && visible.length) {
       e.preventDefault();
       setCurrent(visible[0], true);
-    } else if ((e.key === "b" || e.key === "B") && cmp && !e.ctrlKey && !e.metaKey && !e.altKey &&
-        !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) {
+    } else if ((e.key === "b" || e.key === "B") && cmp && !e.ctrlKey && !e.metaKey && !e.altKey && !typing()) {
       e.preventDefault();
       if (playing) { flip(); return; }
-      var r = list.querySelector("li.row[tabindex='0']");
+      var r = list.querySelector("tr.row[tabindex='0']");
       if (r && sounds[+r.dataset.i].files.length) abClick(sounds[+r.dataset.i]);
     }
   });
@@ -379,6 +550,165 @@ a { color: var(--accent); }
     if (r.hidden) { $("q").value = ""; $("type").value = ""; $("loops").checked = false; $("sound").checked = false; apply(); }
     setCurrent(r, true);
     r.scrollIntoView({ block: "center" });
+  }
+
+  // Names: export to a names.csv, import one back, forget the edits.
+  var tools = el("div", "tools");
+  tools.appendChild(el("span", "lbl", "Names:"));
+  function tool(text, title, fn) {
+    var b = el("button", null, text);
+    b.type = "button";
+    b.title = title;
+    b.addEventListener("click", fn);
+    tools.appendChild(b);
+    return b;
+  }
+  tool("Export names", "Save names.csv: every sound's name, yours included, for rom2altsound names <folder> names.csv", exportNames);
+  var file = el("input");
+  file.type = "file";
+  file.accept = ".csv,text/csv";
+  file.hidden = true;
+  file.setAttribute("aria-label", "names.csv to import");
+  tools.appendChild(file);
+  tool("Import names", "Load a names.csv (from Export names) into this page", function () { file.click(); });
+  var clear = tool("Clear my edits", "Forget the names typed on this page (the pack's names come back)", clearEdits);
+  var status = el("span", null, "");
+  status.id = "names-status";
+  status.setAttribute("aria-live", "polite");
+  tools.appendChild(status);
+  head.appendChild(tools);
+  function showEdits(msg) {
+    var n = Object.keys(edits).length;
+    clear.disabled = !n;
+    status.textContent = (msg ? msg + " " : "") + (n ? n + " name" + (n > 1 ? "s" : "") + " edited here." : "");
+  }
+
+  function csvField(v) {
+    v = String(v);
+    return /[",\r\n]|^\s|\s$/.test(v) ? "\"" + v.replace(/"/g, "\"\"") + "\"" : v;
+  }
+  // 0x392 -> 0x0392, like altsound.csv; other ids as they are.
+  function normId(id) {
+    id = String(id).trim();
+    var m = /^0x([0-9a-f]{1,8})$/i.exec(id);
+    if (!m) return id;
+    var h = parseInt(m[1], 16).toString(16).toUpperCase();
+    while (h.length < 4) h = "0" + h;
+    return "0x" + h;
+  }
+  function exportNames() {
+    var out = ["# rom2altsound names", "# rom: " + (data.rom || "")];
+    if (data.sound_rom_id) out.push("# sound_rom_id: " + data.sound_rom_id);
+    out.push("# rom2altsound: " + data.version, "ID,NAME");
+    var n = 0;
+    sounds.forEach(function (s) {
+      var name = nameOf(s);
+      // A name cleared here is written empty, so that it clears the pack's too.
+      if (name || edited(s)) { out.push(csvField(normId(s.id)) + "," + csvField(name)); n++; }
+    });
+    var url = URL.createObjectURL(new Blob([out.join("\r\n") + "\r\n"], { type: "text/csv" }));
+    var a = el("a");
+    a.href = url;
+    a.download = "names.csv";
+    a.hidden = true;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1000);
+    showEdits("names.csv: " + n + " name" + (n === 1 ? "" : "s") + ".");
+  }
+
+  // RFC 4180 records; a record that starts with # is a comment up to the end of its line.
+  function parseCsv(text) {
+    var recs = [], i = 0, L = text.length;
+    text = text.replace(/^\uFEFF/, "");
+    L = text.length;
+    while (i < L) {
+      if (text.charAt(i) === "#") {
+        var e = text.indexOf("\n", i);
+        if (e < 0) e = L;
+        recs.push({ comment: text.slice(i, e).replace(/\r$/, "") });
+        i = e + 1;
+        continue;
+      }
+      var rec = [], f = "", q = false;
+      for (;;) {
+        if (i >= L) { if (q) throw new Error("a quoted field is not closed"); rec.push(f); break; }
+        var ch = text.charAt(i++);
+        if (q) {
+          if (ch === "\"") { if (text.charAt(i) === "\"") { f += "\""; i++; } else q = false; }
+          else f += ch;
+        } else if (ch === "\"" && f === "") q = true;
+        else if (ch === ",") { rec.push(f); f = ""; }
+        else if (ch === "\r" && text.charAt(i) === "\n") { /* the \n ends it */ }
+        else if (ch === "\n") { rec.push(f); break; }
+        else f += ch;
+      }
+      recs.push({ fields: rec });
+    }
+    return recs;
+  }
+  function importNames(text) {
+    var recs = parseCsv(text), meta = {}, cols = null, got = [];
+    recs.forEach(function (r) {
+      if (r.comment !== undefined) {
+        var m = /^#\s*([a-z_ ]+?)\s*:\s*(.*)$/i.exec(r.comment);
+        if (m) meta[m[1].toLowerCase()] = m[2].trim();
+        return;
+      }
+      var f = r.fields;
+      if (f.every(function (x) { return !x.trim(); })) return;
+      if (!cols) {
+        var up = f.map(function (x) { return x.trim().toUpperCase(); });
+        if (up.indexOf("ID") < 0 || up.indexOf("NAME") < 0) throw new Error("no ID,NAME header");
+        cols = { id: up.indexOf("ID"), name: up.indexOf("NAME") };
+        return;
+      }
+      got.push({ id: normId(f[cols.id] || ""), name: cleanName(f[cols.name] || "") });
+    });
+    if (!cols) throw new Error("no ID,NAME header");
+    var theirs = (meta.sound_rom_id || "").toLowerCase(), ours = (data.sound_rom_id || "").toLowerCase();
+    if (theirs && ours && theirs !== ours &&
+        !confirm("This names.csv is for another sound ROM (" + (meta.rom || "?") + ", " + theirs +
+          "), not " + data.rom + "'s (" + ours + "). Names belong to a sound ROM. Import anyway?")) {
+      return "Not imported.";
+    }
+    var byId = {}, unknown = [], n = 0;
+    sounds.forEach(function (s) { byId[normId(s.id)] = s; });
+    got.forEach(function (g) {
+      var s = byId[g.id];
+      if (!s) { unknown.push(g.id); return; }
+      if (g.name === (s.name || "")) delete edits[s.id];
+      else edits[s.id] = g.name;
+      n++;
+    });
+    saveEdits();
+    sounds.forEach(function (s) { hay(s); renderName(s); });
+    apply();
+    return "Imported " + n + " name" + (n === 1 ? "" : "s") +
+      (unknown.length ? " (" + unknown.length + " id" + (unknown.length > 1 ? "s" : "") + " not in this pack: " +
+        unknown.slice(0, 8).join(" ") + (unknown.length > 8 ? " ..." : "") + ")" : "") + ".";
+  }
+  file.addEventListener("change", function () {
+    var f = file.files && file.files[0];
+    if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function () {
+      var msg;
+      try { msg = importNames(String(rd.result)); } catch (e) { msg = f.name + ": " + e.message + "."; }
+      file.value = "";
+      showEdits(msg);
+    };
+    rd.onerror = function () { file.value = ""; showEdits(f.name + ": cannot read it."); };
+    rd.readAsText(f);
+  });
+  function clearEdits() {
+    var n = Object.keys(edits).length;
+    if (!n || !confirm("Forget the " + n + " name" + (n > 1 ? "s" : "") + " typed on this page? Export them first to keep them.")) return;
+    edits = {};
+    saveEdits();
+    sounds.forEach(function (s) { hay(s); renderName(s); });
+    apply();
+    showEdits("Edits cleared.");
   }
 
   // One shared player. A loop body plays looped; the button of what plays pauses it.
@@ -399,8 +729,8 @@ a { color: var(--accent); }
   }
   function nowLabel() {
     if (!playing) return;
-    var s = playing.s, f = s.files[playing.k], b = side === "B";
-    $("now").textContent = s.id + (s.name ? " " + s.name : "") + " (" + f.label + (audio.loop ? ", looped" : "") +
+    var s = playing.s, f = s.files[playing.k], b = side === "B", n = nameOf(s);
+    $("now").textContent = s.id + (n ? " " + n : "") + " (" + f.label + (audio.loop ? ", looped" : "") +
       (b ? ", from " + cmp : "") + ")";
     $("now").title = (b ? cmp : "") + f.path;
   }
@@ -416,10 +746,6 @@ a { color: var(--accent); }
   // A/B: the same file names in another folder (goodtwist's idea: copy the pack folder,
   // swap sounds in the copy, compare). Plain <audio> src switching, no fetch (file://).
   var KEY = "rom2altsound.compare." + (data.rom || ""), cmp = "", side = "A", missingB = {};
-  function stored() { try { return localStorage.getItem(KEY) || ""; } catch (e) { return ""; } }
-  function store(v) {
-    try { if (v) localStorage.setItem(KEY, v); else localStorage.removeItem(KEY); } catch (e) { /* no storage */ }
-  }
   // The compare folder may be relative to this page (../copy/) or absolute: a Windows drive
   // path (C:/...), a UNC share (//server/share/...) or a Unix path (/...), which need a
   // file: URL (an encoded "C:" would read as a relative name).
@@ -435,7 +761,7 @@ a { color: var(--accent); }
     if (v && v.charAt(v.length - 1) !== "/") v += "/";
     if (v !== cmp) missingB = {};
     cmp = v;
-    if (keep) store(cmp);
+    if (keep) save(KEY, cmp);
     sounds.forEach(function (s) { if (s.ab) s.ab.hidden = !cmp; });
     if (!cmp && side === "B") flip(true);
     showSide();
@@ -480,17 +806,14 @@ a { color: var(--accent); }
     var s = playing.s, f = s.files[playing.k];
     if (!missingB[f.path]) {
       missingB[f.path] = true;
-      if (s.info && !s.missTag) {
-        s.missTag = el("span", "tag warn", "missing in B");
-        s.info.appendChild(s.missTag);
-      }
+      if (s.info && !s.missTag) s.missTag = tag(s.info, "missing in B", true);
       if (s.missTag) s.missTag.title = Object.keys(missingB).filter(function (p) {
         return s.files.some(function (g) { return g.path === p; });
       }).map(function (p) { return cmp + p; }).join(" ");
     }
     showSide();
   });
-  $("cmp").value = stored();
+  $("cmp").value = load(KEY);
   $("cmp").addEventListener("change", function () { setCompare($("cmp").value, true); });
   $("cmp").addEventListener("keydown", function (e) {
     if (e.key === "Enter") { e.preventDefault(); setCompare($("cmp").value, true); }
@@ -500,6 +823,7 @@ a { color: var(--accent); }
   audio.addEventListener("pause", function () { mark(true); });
   audio.addEventListener("ended", function () { mark(true); });
 
+  showEdits();
   apply();
 
   // The batch's root page: one line per ROM folder.

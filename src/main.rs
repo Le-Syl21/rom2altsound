@@ -12,6 +12,7 @@ mod ffi;
 mod listen;
 mod looping;
 mod loudness;
+mod names;
 mod romcheck;
 mod sam;
 mod sampack;
@@ -61,6 +62,8 @@ Examples:
                                         three ROMs, 2 at a time, packs in ~/packs/<rom>/
   rom2altsound roms ~/vpinball/roms     check a ROM folder: what each zip holds, bad dumps,
                                         misnamed zips (rom2altsound roms --help)
+  rom2altsound names afm_113b names.csv put the names typed on the listening page (its
+                                        \"Export names\") in the pack (rom2altsound names --help)
 
 Each ROM folder holds the WAV files, altsound.csv, g-sound.csv, altsound.ini,
 manifest.json, cold-boot.json and factory-nvram/.
@@ -209,6 +212,16 @@ struct Cli {
     /// for several ROMs, the one linking their pages at the output root)
     #[arg(long)]
     no_html: bool,
+    /// Sound names to apply to the pack, from a names.csv (the listening page's "Export
+    /// names"): they replace sounds.dat's names for the ids the file lists, in altsound.csv,
+    /// manifest.json and the page (one ROM only). A file made for another sound ROM is
+    /// refused (see --force-names)
+    #[arg(long, value_name = "NAMES.CSV", conflicts_with = "cold_boot_only")]
+    names: Option<PathBuf>,
+    /// Apply --names even when the file was made for another sound ROM (its sound ROM id
+    /// differs from the pack's)
+    #[arg(long, requires = "names")]
+    force_names: bool,
     /// Commands that play the same audio (twins, listed as `twin_of` in manifest.json) share
     /// the first one's file in the CSVs, and the twins' own WAV files are not kept. Off by
     /// default: every command keeps its own file (on DCS, twins are the same sound on two
@@ -354,6 +367,7 @@ fn main() {
         Some("seq-scan") => return seqloop::scan_cli(std::env::args().skip(2).collect()),
         Some("seq-audio") => return seqloop::audio_cli(std::env::args().skip(2).collect()),
         Some("page") => return listen::page_cli(std::env::args().skip(2).collect()),
+        Some("names") => std::process::exit(names::cli(std::env::args().skip(2).collect())),
         Some("roms") => std::process::exit(romcheck::cli(std::env::args().skip(2).collect())),
         Some("__driver-boards") => {
             return drivers::print_boards(std::env::args().skip(2).collect());
@@ -376,9 +390,46 @@ fn main() {
             roms: cli.roms.clone().unwrap_or_else(|| PathBuf::from(".")),
             out: cli.out.clone().unwrap_or_else(|| PathBuf::from(rom)),
         };
+        // The sound ROM id goes in the manifest (a names file says which one it is for); a
+        // names file for another sound ROM is refused before the extraction, not after.
+        let sound_rom_id = names::sound_rom_id_of(&job.rom);
+        let names_file = match &cli.names {
+            Some(p) => match names::load(p).and_then(|n| {
+                let m = serde_json::json!({ "rom": job.rom, "sound_rom_id": sound_rom_id });
+                names::check_rom(&n, &m, cli.force_names, "--force-names").map(|w| (n, w))
+            }) {
+                Ok((n, warnings)) => {
+                    for w in warnings {
+                        eprintln!("warning: {w}");
+                    }
+                    Some((p, n))
+                }
+                Err(e) => {
+                    eprintln!("error: --names: {e}");
+                    std::process::exit(1);
+                }
+            },
+            None => None,
+        };
         if let Err(e) = run(&cli, &job) {
             eprintln!("error: {e}");
             std::process::exit(1);
+        }
+        if !cli.cold_boot_only {
+            let named =
+                names::stamp_sound_rom_id(&job.out, sound_rom_id.as_deref()).and_then(|()| {
+                    match &names_file {
+                        Some((p, n)) => {
+                            names::apply_dir(&job.out, n, p, cli.force_names, "--force-names")
+                                .map(|(r, _)| println!("  {}", names::summary(&r)))
+                        }
+                        None => Ok(()),
+                    }
+                });
+            if let Err(e) = named {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
         }
         if !cli.no_html && !cli.cold_boot_only {
             match listen::write_page(&job.out) {
@@ -1136,6 +1187,29 @@ mod tests {
         );
         assert!(
             Cli::try_parse_from(["rom2altsound", "x", "--volume", "reference", "--no-factory"])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn names_options() {
+        let c = Cli::try_parse_from(["rom2altsound", "afm_113b", "--names", "n.csv"]).unwrap();
+        assert_eq!(c.names.as_deref(), Some(Path::new("n.csv")));
+        assert!(!c.force_names);
+        assert!(
+            Cli::try_parse_from([
+                "rom2altsound",
+                "afm_113b",
+                "--names",
+                "n.csv",
+                "--force-names"
+            ])
+            .unwrap()
+            .force_names
+        );
+        assert!(Cli::try_parse_from(["rom2altsound", "afm_113b", "--force-names"]).is_err());
+        assert!(
+            Cli::try_parse_from(["rom2altsound", "x", "--names", "n.csv", "--cold-boot-only"])
                 .is_err()
         );
     }

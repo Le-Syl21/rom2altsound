@@ -135,7 +135,8 @@ are in a C shim.
 11. AltSound pack (unless `--no-altsound`, see below): loop points, twins, `altsound.csv`,
    `g-sound.csv`, `altsound.ini`, from the recordings.
 12. Factory mode: the files written again at the factory volume (see Factory mode, step 5).
-13. Listening page (unless `--no-html`, see below): `<out>/index.html`.
+13. `sound_rom_id` into `manifest.json`, then `--names` (see "Sound names" below).
+14. Listening page (unless `--no-html`, see below): `<out>/index.html`.
 
 ### AltSound pack
 
@@ -208,7 +209,7 @@ JSON strings, where it reads back the same), so no sound name can close the elem
 CSS and JS are inline and nothing is loaded from elsewhere: it works offline, with the
 system's fonts, in light and dark.
 
-Per sound: `id`, `name`, `board`, `duration`, `lufs`, `true_peak` and `peak`, `ended_by`,
+Per sound: `id`, `name` (and `dat_name`, sounds.dat's, when names were applied), `board`, `duration`, `lufs`, `true_peak` and `peak`, `ended_by`,
 `loop` (`method`, `period_secs`, `intro_secs`, `confidence`), `loop_unresolved`, `pack`
 (`channel`, `type` = `gsound_type`, `duck`, `stop`, `kind` = `file_kind`, `reason`, and on Stern SAM the game's `calls`), the DCS
 channel, the chips pass's `chip`, `twin_of`, `flags` (`clipped (n)`, `blip`, `silent`, `not
@@ -217,13 +218,42 @@ recording, the loop body, the extended file and the file the pack plays (a merge
 original), each only when it is on disk when the page is written, as a path relative to the
 page, with `pack: true` on the one the pack plays (its button is outlined). The header shows the volume the files are at (`volume_init`: in factory mode "factory 55AA6798 (from reference 55AAEF10, -22.44 dB)"), the other volume (reference or factory) and `factory_offset_db`.
 
+The sounds are a `<table>`, one row per sound: play buttons, ID, Name, Type, Duration,
+LUFS, True peak, Loop (period, "from" the intro when it is 50 ms or more, the method),
+Pack (channel, DUCK, STOP, calls, file kind, DCS channel, chip) and Flags (with the twin
+link). The table is in a box that scrolls sideways (`overflow-x: auto`, at least 1100 px
+wide), so on a phone the page itself never does. Each column title but Play is a
+`<button>` in its `<th>`: a click sorts by that column, a second click reverses, and the
+sorted `<th>` has `aria-sort`. Each column has a first direction (ID, Name, Type, Pack:
+ascending; Duration, LUFS, True peak, Loop, Flags: the largest first), a sound with no
+value (no loop, no LUFS, no name) is always last, ties keep the id order, and names sort
+with `localeCompare` (case-insensitive, numbers as numbers). The sort is kept in
+`localStorage` under `rom2altsound.sort.<rom>`.
+
 One shared `<audio>` element plays them; the `loop` button plays the body looped (the
 browser loops the whole file, as libaltsound does). Rows are built once, and the search
-(every word must be in the id, name, type, board, loop method or flags), the type filter
-(`pack.type`, or the name's prefix as in the pack when there is no pack), "loops only",
-"with sound" (rows with a file, on by default) and the sorting only hide and reorder
-them. Keyboard: one row is in the tab order at a time; Up/Down/Home/End move, Space or
-Enter plays the row's first file (again: pause), `/` goes to the search.
+(every word must be in the id, name, type, board, loop method or flags; "edited" finds the
+names typed on the page), the type filter (`pack.type`, or the name's prefix as in the pack
+when there is no pack), "loops only", "with sound" (rows with a file, on by default) and
+the sorting only hide and reorder them. Keyboard: one row is in the tab order at a time
+(its buttons with it); Up/Down/Home/End move, Space or Enter plays the row's first file
+(again: pause), F2 renames, `/` goes to the search.
+
+**Names typed on the page.** The Name cell has a ✎ button (also F2 on the row, or a
+double-click): the name becomes a text field; Enter or leaving the field keeps it, Escape
+cancels, and the field's keys do not reach the row (arrows, Space). A name is cleaned as
+`manifest.json` keeps them (control characters to spaces, spaces collapsed, trimmed);
+empty means no name. Edits are kept in `localStorage` under `rom2altsound.names.<rom>`,
+one JSON object `{id: name}` (`""`: the name cleared); an edit equal to the pack's name is
+dropped, so after `rom2altsound names` the marks go. An edited name shows "edited" (its
+tooltip gives the pack's name) and is what the search, the sort and the player show.
+**Export names** writes `names.csv` with a Blob and `<a download>` (which works from
+`file://`): the header comment lines, then `ID,NAME` for every sound with a name, edited or
+not, and an empty NAME for a pack name cleared on the page. **Import names** reads one with
+a file input and `FileReader` (no fetch); a file whose `sound_rom_id` differs from the
+page's asks before importing; ids not in the pack are counted and named in the status
+line. **Clear my edits** asks, then forgets them. Without storage, edits and sorting work
+until the page is closed.
 
 **A/B** (goodtwist's idea: copy the folder, swap sounds in the copy, compare): the "Compare
 with folder" box takes a path relative to the page (`../taf_l5-edit/`, a trailing `/` is
@@ -242,6 +272,14 @@ same as for the rest of the page): switching both ways while playing and paused,
 position kept, the error mark, `b` ignored with Ctrl or in the search box, the stored
 folder restored, and storage that throws.
 
+The table and the names were tested the same way, in Boa with a stub DOM, on the pages of
+afm_113b (589 sounds) and swep1_130 (690, no names): sorting both ways with the empty
+values last and `aria-sort` moved, the sort kept across a reload, renaming with the button
+and F2 (arrows staying in the field, Escape, an empty name), search and sort on the
+edited name, the edit kept across a reload, the exported CSV (quoting, the cleared name),
+importing it back with an unknown id, a file for another sound ROM declined, a file
+without header, the twin jump, Space playing, and storage that throws.
+
 A batch (several ROMs) also writes `<out>/index.html`, a table of every folder under
 `--out` (default `.`) that has a page of ours and a `manifest.json`, when there are at least
 two; an `index.html` at that root that is not ours (no `<meta name="generator"
@@ -250,6 +288,45 @@ content="rom2altsound">`) is left alone.
 `rom2altsound page <folder>...` writes the page again in existing ROM folders, from their
 `manifest.json` (a pack made before the page existed, or after editing the manifest), then
 the index of their parent folder.
+
+### Sound names
+
+`manifest.json` carries the ROM's `sound_rom_id`, the key `rom2altsound roms` groups games
+by (the SHA-1 of its sound ROMs' sorted SHA-1s, one per line; see "ROM verification"),
+taken from the PinMAME table built in after the extraction (Stern SAM has none: its sound
+data is in the main image). For a pack made before, `rom2altsound page` and
+`rom2altsound names` look it up by the manifest's `rom`. The page exports it in the names
+file, because names belong to a sound ROM: all the revisions of a game that share their
+sound ROMs take the same names.
+
+`names.csv` (`src/names.rs`): comment lines starting with `#`, of which `# rom:`,
+`# sound_rom_id:` and `# rom2altsound:` are read, a header with `ID` and `NAME` (in any
+order, other columns ignored), then RFC 4180 rows (quoted fields may hold commas, `""` and
+line breaks; a BOM is skipped). Ids are compared as numbers (`0x2`, `0x0002` and `0X0002`
+are one id, written `0x0002` as in `altsound.csv`).
+
+`rom2altsound names <folder> <names.csv>` and `--names` at extraction apply it:
+
+- a file whose `sound_rom_id` differs from the pack's is refused before anything is
+  written (at extraction, before the boot), unless `--force` (`--force-names`); with one
+  of the two ids missing, a different `# rom:` is only a warning;
+- an id given twice with two different names is refused; twice with the same name, and
+  ids not in the pack, are reported (the latter left out, as for a pack made with
+  `--only`);
+- `manifest.json`: the sound's `name` becomes the new one (cleaned as on the page), the
+  previous one is kept once as `sounds_dat_name`, and a `names` record says where the
+  names came from (`from`, `rom`, `sound_rom_id`, `rows`, `matched`, `unknown`);
+- `altsound.csv`: only the NAME column of the listed ids changes, through the same
+  `csv_name` as the extraction (no comma, quote or control character; empty becomes
+  `sound <id>`); the columns are found by the header, every row must have as many fields,
+  and the line endings are kept. `g-sound.csv` has no names. The WAV files keep their
+  id-based names, and the channels, DUCK, STOP and types stay as extracted (they come from
+  sounds.dat's names and the board, not from these labels);
+- the page is written again (`--no-html`: not).
+
+`--names` takes one ROM (the extraction refuses it with several). `rom2altsound names
+<folder>` alone prints the pack's names as a `names.csv` (what the page exports without
+edits).
 
 ### Twins
 
@@ -1284,8 +1361,10 @@ channels), and `twin` (`residual_db`,
 `rows`, `loops_with_smpl`, `intro_loops_extended`, `intro_loop_secs`, `twins`,
 `merged_twins`, `files_referenced`, `dcs`: `voice_channel`, row counts, `duck_values`,
 `callout_profiles`, `sfx_profiles`, `limits`; `twin_test`).
+With names applied (see "Sound names"): `sounds_dat_name` on a renamed sound, and `names`
+at the top level.
 
-At the top level: `mode` (`factory` or `normal`), `factory` (vpm, saved nvram path and size,
+At the top level: `sound_rom_id` (see "Sound names"), `mode` (`factory` or `normal`), `factory` (vpm, saved nvram path and size,
 cold boot report), the boards, `boot` (length, what ended it, every byte per board as
 `seconds:byte`), `factory_volume` (factory mode) or `game_volume` (the last command per board
 and kind: master, DCS channel, Data East music), `volume_init` (what the files were recorded

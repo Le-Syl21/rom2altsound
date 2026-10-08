@@ -22,7 +22,15 @@ const TITLE_SLOT: &str = "<!--TITLE-->";
 pub fn write_page(out_dir: &Path) -> Result<PathBuf, String> {
     let mpath = out_dir.join("manifest.json");
     let text = std::fs::read_to_string(&mpath).map_err(|e| format!("{}: {e}", mpath.display()))?;
-    let m: Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", mpath.display()))?;
+    let mut m: Value =
+        serde_json::from_str(&text).map_err(|e| format!("{}: {e}", mpath.display()))?;
+    if m["sound_rom_id"].is_null()
+        && let Some(id) = m["rom"].as_str().and_then(crate::names::sound_rom_id_of)
+    {
+        // A pack from before the manifest carried it: from PinMAME's table, for the names
+        // the page exports.
+        m["sound_rom_id"] = json!(id);
+    }
     let data = page_data(&m, |f| out_dir.join(f).is_file());
     let rom = m["rom"].as_str().unwrap_or("rom");
     let path = out_dir.join(PAGE);
@@ -131,6 +139,7 @@ fn page_data(m: &Value, exists: impl Fn(&str) -> bool) -> Value {
         "version": env!("CARGO_PKG_VERSION"),
         "rom": m["rom"],
         "parent": m["parent"],
+        "sound_rom_id": m["sound_rom_id"],
         "boards": m["boards"],
         "mode": m["mode"],
         "volume": volume_line(m),
@@ -267,6 +276,7 @@ fn sound(s: &Value, rate: f64, exists: &impl Fn(&str) -> bool) -> Value {
     json!({
         "id": s["id"],
         "name": s["name"],
+        "dat_name": s["sounds_dat_name"],
         "board": s["board"],
         "duration": s["duration"],
         "lufs": s["lufs"],
@@ -291,6 +301,7 @@ mod tests {
     fn manifest() -> Value {
         json!({
             "rom": "test_l1",
+            "sound_rom_id": "0123abcd",
             "boards": ["DCS"],
             "sample_rate": 44100,
             "reference_volume": "55AAEF10",
@@ -299,6 +310,7 @@ mod tests {
             "sounds": [
                 {
                     "id": "0x0001", "name": "Music: </script><script>alert(1)</script> <!--",
+                    "sounds_dat_name": "Music: Theme",
                     "file": "0x0001-test_l1.wav", "duration": 4.6, "lufs": -24.2,
                     "true_peak_dbtp": -10.0, "peak_dbfs": -10.0, "ended_by": "loop",
                     "clipped_samples": 3, "blip": false,
@@ -337,6 +349,9 @@ mod tests {
         assert_eq!(back["sounds"][0]["flags"][0], "clipped (3)");
         assert_eq!(back["sounds"][1]["flags"][0], "silent");
         assert_eq!(back["volume"]["factory"], "55AA6798");
+        assert_eq!(back["sound_rom_id"], "0123abcd");
+        assert_eq!(back["sounds"][0]["dat_name"], "Music: Theme");
+        assert!(back["sounds"][1]["dat_name"].is_null());
         // Well formed enough: one of each, slots filled, every script closed.
         assert!(html.starts_with("<!doctype html>"));
         assert!(html.contains("<title>test_l1: sounds</title>"));
@@ -356,6 +371,13 @@ mod tests {
         assert!(!html.contains("fetch(") && !html.contains("XMLHttpRequest"));
         // A/B: the compare folder field; every storage access guarded.
         assert!(html.contains(r#"id="cmp""#));
+        // The table: sortable headers, names kept per ROM, exported as names.csv.
+        assert!(html.contains(r#"<tbody id="list">"#) && html.contains("aria-sort"));
+        assert!(
+            html.contains("\"rom2altsound.names.\"") && html.contains("\"rom2altsound.sort.\"")
+        );
+        assert!(html.contains(r#"a.download = "names.csv""#));
+        assert!(!html.contains(r#"id="sort""#), "the sort select is gone");
         assert!(
             html.lines()
                 .filter(|l| l.contains("localStorage."))

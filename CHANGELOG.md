@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Listening page: a table, and names you can type.** The sounds are now a table (play
+  buttons, ID, Name, Type, Duration, LUFS, True peak, Loop, Pack, Flags): click a column
+  title to sort by it, again to reverse (`aria-sort`; the page remembers the sort); the
+  sort menu is gone. The table scrolls sideways in its own box on a phone. A sound's name
+  can be typed in place (✎, F2 or a double-click; Enter keeps, Escape cancels, empty is no
+  name): kept by the browser for this ROM, marked "edited", searchable and sortable.
+  **Export names** saves a `names.csv` (rom, sound ROM id, version, then `ID,NAME`),
+  **Import names** loads one back, **Clear my edits** forgets them.
+- **`rom2altsound names <folder> <names.csv>`** puts those names in a pack: the NAME
+  column of altsound.csv (cleaned like every name), the names in manifest.json (the
+  previous one kept as `sounds_dat_name`) and index.html; the files and the channels,
+  DUCK and STOP do not change. Ids not in the pack are reported, an id given twice with
+  two names is refused, and so is a file made for another sound ROM (`--force`). Also at
+  extraction: `--names <names.csv>` (one ROM; `--force-names`), checked before the boot.
+  `rom2altsound names <folder>` alone prints the pack's names as a names.csv.
+- `manifest.json` carries the ROM's `sound_rom_id` (as `rom2altsound roms` computes it).
+
 - **Pinball 2000 (Revenge From Mars, Star Wars Episode I: `SNDBRD_DCSP2K`, 52 PinMAME
   sets).** The game is a PC that writes 16-bit words to its DCS2 board without going
   through PinMAME's sound command path, so the boot logged nothing and the tool's 8-bit

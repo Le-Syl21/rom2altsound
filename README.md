@@ -120,14 +120,36 @@ afm_113b/
 
 Every gain is 100: the files already carry the ROM's own levels.
 
-**`index.html` lists every sound with a play button**: open it straight from the folder
-(double-click, no server, no internet needed). For each sound: its command, its name, its
-length, its loudness and peak, its loop (and a button for the loop alone), its channel,
-DUCK and STOP when known, its twin and what is unusual about it (clipped, blip...). A search
-box, filters (music, voices, effects, loops only) and sorting (by id, length, loudness)
-help find one; Space or Enter plays the selected sound and the arrow keys move. With
-several ROMs, an `index.html` in the output folder links each ROM's page. `--no-html`
-skips them.
+**`index.html` lists every sound in a table, with play buttons**: open it straight from
+the folder (double-click, no server, no internet needed). One row per sound: its command,
+its name, its type, its length, its loudness and true peak, its loop (period, intro, how
+it was found; and a button for the loop alone), its channel, DUCK and STOP when known, its
+twin and what is unusual about it (clipped, blip...). Click a column title to sort by it
+(again to reverse; the page remembers it); a search box and filters (music, voices,
+effects, loops only) help find one; Space or Enter plays the selected sound and the arrow
+keys move. On a phone the table scrolls sideways. With several ROMs, an `index.html` in
+the output folder links each ROM's page. `--no-html` skips them.
+
+**Naming sounds**: many sounds have no name (sounds.dat does not list them, or there is no
+sounds.dat section, as on Pinball 2000). Click ✎ (or press F2) on a row, type a name,
+Enter keeps it, Escape cancels, an empty name means no name. Your names are marked
+"edited", can be searched and sorted, and are kept by the browser for this ROM. **Export
+names** saves them, with the pack's other names, to a `names.csv`; **Import names** loads
+one back (someone else's, for example); **Clear my edits** forgets yours. Then put the
+names in the pack:
+
+```
+rom2altsound names afm_113b names.csv      # altsound.csv, manifest.json and index.html
+rom2altsound afm_113b --names names.csv    # or when the pack is (re)built
+```
+
+Only the NAME column changes: the WAV files keep their id-based names, and the channels,
+DUCK and STOP stay as extracted. Ids not in the pack are reported and left out. Names
+belong to a sound ROM, not to a game version: the file carries the sound ROM id (see
+`rom2altsound roms`), every revision of a game that shares its sound ROMs takes the same
+file, and a file made for other sound ROMs is refused (`--force`, or `--force-names` on
+an extraction, applies it anyway). `rom2altsound names afm_113b` alone prints the pack's
+names as a `names.csv`.
 
 **A/B test** (goodtwist's idea): copy the folder (`taf_l5` to `taf_l5-edit`), replace
 sounds in the copy, then type `../taf_l5-edit/` in the page's "Compare with folder" box
@@ -625,14 +647,39 @@ afm_113b/
 
 Tous les gains sont à 100 : les fichiers ont déjà les niveaux de la ROM.
 
-**`index.html` liste chaque son avec un bouton de lecture** : il s'ouvre directement depuis
-le dossier (double-clic, sans serveur ni internet). Pour chaque son : sa commande, son nom,
-sa durée, son niveau et sa crête, sa boucle (et un bouton pour la boucle seule), sa voie,
-son DUCK et son STOP quand on les connaît, son jumeau et ce qu'il a de particulier (saturé,
-blip...). Une recherche, des filtres (musique, voix, effets, boucles seules) et un tri (par
-numéro, durée, niveau) aident à en trouver un ; Espace ou Entrée joue le son choisi et les
-flèches passent d'un son à l'autre. Avec plusieurs ROM, un `index.html` dans le dossier de
-sortie mène à la page de chacune. `--no-html` ne les écrit pas.
+**`index.html` liste chaque son dans un tableau, avec des boutons de lecture** : il s'ouvre
+directement depuis le dossier (double-clic, sans serveur ni internet). Une ligne par son :
+sa commande, son nom, son type, sa durée, son niveau et sa crête vraie, sa boucle (période,
+introduction, comment elle a été trouvée ; et un bouton pour la boucle seule), sa voie, son
+DUCK et son STOP quand on les connaît, son jumeau et ce qu'il a de particulier (saturé,
+blip...). Un clic sur le titre d'une colonne trie par elle (un second clic inverse ; la
+page s'en souvient) ; une recherche et des filtres (musique, voix, effets, boucles seules)
+aident à en trouver un ; Espace ou Entrée joue le son choisi et les flèches passent d'un
+son à l'autre. Sur un téléphone, le tableau défile de côté. Avec plusieurs ROM, un
+`index.html` dans le dossier de sortie mène à la page de chacune. `--no-html` ne les écrit
+pas.
+
+**Nommer les sons** : beaucoup de sons n'ont pas de nom (sounds.dat ne les liste pas, ou
+n'a pas de section pour le jeu, comme sur Pinball 2000). Cliquez sur ✎ (ou touche F2) sur
+une ligne, tapez un nom : Entrée le garde, Échap annule, un nom vide veut dire sans nom.
+Vos noms sont marqués « edited », se cherchent et se trient, et le navigateur les garde
+pour cette ROM. **Export names** les enregistre, avec les autres noms du pack, dans un
+`names.csv` ; **Import names** en recharge un (celui de quelqu'un d'autre, par exemple) ;
+**Clear my edits** oublie les vôtres. Puis mettez les noms dans le pack :
+
+```
+rom2altsound names afm_113b names.csv      # altsound.csv, manifest.json et index.html
+rom2altsound afm_113b --names names.csv    # ou à la (re)construction du pack
+```
+
+Seule la colonne NAME change : les fichiers WAV gardent leurs noms (faits du numéro), et
+les voies, DUCK et STOP restent ceux de l'extraction. Les numéros absents du pack sont
+signalés et laissés de côté. Les noms vont avec une ROM son, pas avec une version du jeu :
+le fichier porte l'identifiant de ROM son (voir `rom2altsound roms`), toutes les versions
+d'un jeu qui partagent leurs ROM son prennent le même fichier, et un fichier fait pour
+d'autres ROM son est refusé (`--force`, ou `--force-names` à l'extraction, l'applique
+quand même). `rom2altsound names afm_113b` seul affiche les noms du pack au format
+`names.csv`.
 
 **Écoute A/B** (l'idée de goodtwist) : copiez le dossier (`taf_l5` en `taf_l5-edit`),
 remplacez des sons dans la copie, puis tapez `../taf_l5-edit/` dans la case « Compare with

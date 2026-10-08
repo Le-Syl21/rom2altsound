@@ -108,6 +108,10 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
             .as_ref()
             .map(|v| v.to_string_lossy().into_owned()),
     );
+    opt(
+        "--names",
+        cli.names.as_ref().map(|v| v.to_string_lossy().into_owned()),
+    );
     opt("--stop", cli.stop.clone());
     opt("--solo", cli.solo.clone());
     opt(
@@ -135,6 +139,7 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
         ("--no-refresh", cli.no_refresh),
         ("--no-chip-check", cli.no_chip_check),
         ("--bsmt-hle", cli.bsmt_hle),
+        ("--force-names", cli.force_names),
     ] {
         if on {
             a.push(flag.into());
@@ -184,6 +189,11 @@ struct Running {
 
 /// Extracts every ROM of the command line; returns the process exit code.
 pub fn run(cli: &Cli) -> i32 {
+    if cli.names.is_some() && cli.rom_args.len() > 1 {
+        // Names belong to one sound ROM.
+        eprintln!("error: --names goes with one ROM (each sound ROM has its own names)");
+        return 2;
+    }
     let root = cli.out.clone().unwrap_or_else(|| PathBuf::from("."));
     let mut outcomes = Vec::new();
     let mut queue = Vec::new();
