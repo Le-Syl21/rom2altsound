@@ -29,9 +29,13 @@
   Twilight Zone sets share one): the key of a future pack catalog. See
   [how it works](docs/how-it-works.md#rom-verification).
 - **[docs/board-support.md](docs/board-support.md)**: every sound board family of PinMAME
-  with its number of games, and a quick survey (first 40 commands, 5 s each) of the 53
-  families we have a ROM for: 31 give sounds, 9 partial or doubtful, 13 none (each with
-  what the game sends, where known). Bally -32 (Lost World) and -61B (Fathom) now verified.
+  with its number of games, and a quick survey (first 40 commands, 5 s each) on the full
+  VPinMAME set, one ROM per family: of the 85 families tried, 40 give
+  sounds (pre-WPC95 DCS and the separate System 11C board among them), 23 partial or
+  doubtful (Whitestar's AT91 board: the sounds come out but the board is not silenced
+  between commands), 22 none (each with what the game sends, where known), and the
+  cheapest fixes by sets gained; only Pinball 2000 is not in the set. Bally -32 (Lost
+  World) and -61B (Fathom) now verified.
 
 ## 0.2.2 (2026-10-08)
 

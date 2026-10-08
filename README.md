@@ -193,7 +193,7 @@ What rom2altsound gets out of each sound board family:
 | Bally -32 / -50 (1978-1980) ¹² | ✅ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
 Every sound board family of PinMAME, with its number of games and a quick survey of
-those we have a ROM for (17 more families give sounds): [board
+one ROM per family of the full VPinMAME set (23 more families give sounds): [board
 support](docs/board-support.md).
 
 ✅ verified, ⚠️ partial, ❌ not available, ❔ untested. "Factory volume": every file at the
@@ -207,7 +207,8 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
 
 1. Read in the ROM's own sound programs and measured (`--check-ducking`) on Attack from Mars;
    sounds, loops and volume also on Cirqus Voltaire, Medieval Madness and Red & Ted's
-   Road Show.
+   Road Show. The pre-WPC95 DCS games (1993-1995) are verified for sounds only, in the quick
+   survey of [board support](docs/board-support.md): Indiana Jones, Theatre of Magic.
    AltSound keeps the music and one voice channel exclusive; see Limits.
 2. Verified on Twilight Zone (302 of its 307 commands, named from sounds.dat) and on
    The Addams Family (taf_l5, no sounds.dat section: the raw sweep, second bank `7A xx`
@@ -678,7 +679,7 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 | Bally -32 / -50 (1978-1980) ¹² | ✅ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
 Toutes les familles de cartes son de PinMAME, avec leur nombre de jeux et un survol rapide
-de celles dont nous avons une ROM (17 autres familles donnent des sons) :
+d'une ROM par famille du jeu complet de ROM VPinMAME (23 autres familles donnent des sons) :
 [cartes prises en charge](docs/board-support.md) (en anglais).
 
 ✅ vérifié, ⚠️ partiel, ❌ non disponible, ❔ non testé. « Volume d'usine » : tous les fichiers
@@ -693,8 +694,10 @@ reste joué en parallèle.
 
 1. Lus dans les programmes sonores de la ROM et mesurés (`--check-ducking`) sur Attack from
    Mars ; sons, boucles et volume aussi sur Cirqus Voltaire, Medieval Madness et
-   Red & Ted's Road Show. AltSound ne garde exclusives que la musique et une voie de voix ; voir
-   Limites.
+   Red & Ted's Road Show. Les jeux DCS d'avant la WPC95 (1993-1995) ne sont vérifiés que pour
+   les sons, dans le survol des [cartes prises en charge](docs/board-support.md) : Indiana
+   Jones, Theatre of Magic. AltSound ne garde exclusives que la musique et une voie de voix ;
+   voir Limites.
 2. Vérifié sur Twilight Zone (302 de ses 307 commandes, nommées d'après sounds.dat) et sur
    The Addams Family (taf_l5, sans section sounds.dat : le balayage brut, deuxième banque
    `7A xx` comprise, a écrit 268 sons, dont 15 de ses 33 musiques avec une boucle exacte ;
