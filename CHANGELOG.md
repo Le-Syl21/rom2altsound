@@ -2,20 +2,25 @@
 
 ## Unreleased
 
-- **WPCS and System 11: no sound starts on the previous one's DC level any more.** Their
-  sound programs leave the DAC on the last value a sound wrote, which PinMAME mixes as a
-  DC level (the real boards' outputs are AC-coupled): every file of The Addams Family
-  started on one (up to 14216 LSB), and so did 187 of Whirlwind's 189 (up to 10251), a
-  click in AltSound, and `A1` clipped on it. Before each command the DAC is now parked at
-  code 0, its power-on level in PinMAME: 0 files of taf_l5, tz_94h or whirl_l3 start
-  more than 256 LSB away from 0, and clipping no longer depends on the order of the sweep.
-- **WPCS reference volume lowered to level 7, `79 07 F8`** (was 22, `79 16 E9`, in 0.2.1).
-  Even with the DAC parked, five effects of The Addams Family (`C6`, `C7`, `CD`, `D3`,
-  `D4`) clip on their own at the game's own level 12 and above (`C7`: 4857 samples at
-  20, 3492 at 18, 63 at 12), and `CD` still at 8 (2 samples); at 7 no file of taf_l5 or
-  tz_94h clips. A slight loss of resolution is better than clipping. The files are now 2.0 dB
-  below the game's factory volume (factory offset +2.0 dB, was -1.7). `--wpcs-volume 16`
-  gives the old level back.
+- **WPCS and System 11: the DAC is AC-coupled, as on the real boards.** PinMAME maps
+  their 8-bit DAC unsigned (code 0 = output 0) while the sound programs play around its
+  middle code and leave it on the last value a sound wrote: a DC level in the mix that the
+  real boards' AC-coupled outputs never passed on. Every file of The Addams Family started
+  on one (up to 14216 LSB), and so did 187 of Whirlwind's 189 (up to 10251), a click in
+  AltSound; and under a playing effect that DC (about 8750 LSB at level 20) ate the
+  headroom, so `C7` clipped 4857 samples at level 20. Once booted, the DAC now goes through
+  the 10 Hz DC correction PinMAME already has (`DAC_DC_offset_correction_data_16_w`, same
+  scale, set from our shim; PinMAME is not changed), which replaces the parking at code 0
+  of the previous commit: 0 files of taf_l5, tz_94h or whirl_l3 start more than 256 LSB
+  away from 0 (50, 55 and 157 at most), and `C7` clips 2 samples at level 20.
+- **WPCS reference volume: level 12, `79 0C F3`, the game's own factory volume** (was 22,
+  `79 16 E9`, in 0.2.1), so the factory offset is 0 dB. With the DAC AC-coupled no WPCS
+  source clips on its own, even at level 31 (taf_l5's peaks: DAC 19308, YM2151 10196,
+  HC55536 speech 26530 LSB), but their sum in PinMAME's mixer still clips on five effects
+  of The Addams Family that play speech, FM and DAC together (`C6`, `C7`, `CD`, `D3`,
+  `D4`: 945 samples in all at 31, 43 at 20, 2 at 13), tz_94h at none. Level 12 is the
+  loudest at which no file of either ROM clips in full sweeps. `--wpcs-volume 16` gives
+  the level of 0.2.1 back.
 - **Raw sweeps say what each range gave** (issue #1, suggested by dekay): when a game has
   no sounds.dat section, one line per board and range before the run (what will be tried)
   and in the final summary (what came out of it), e.g.

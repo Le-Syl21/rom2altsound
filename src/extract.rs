@@ -107,12 +107,14 @@ const QUIET_AFTER_RESET_SECS: f64 = 4.0;
 /// taf_l5's board for ever, its program playing the master volume's level byte 0C as music
 /// (see `board_sends`).
 const MAX_STOP_FAILURES: u32 = 3;
-/// Board families whose DACs (PinMAME's unsigned 8-bit DACs) are parked at code 0 before
-/// each command (`park_dac`). Their programs leave the DAC on the last value a sound wrote:
-/// a DC level in the mix, which the real boards' AC-coupled outputs never passed on. WPCS
-/// (taf_l5): up to 14216 LSB, every file started on it and `A1` clipped on it. System 11
-/// (whirl_l3): up to 10251 LSB, 187 of 189 files started more than 256 LSB away from 0.
-fn parks_dac(family: &str) -> bool {
+/// Board families whose 8-bit DACs are AC-coupled once booted (shim.c `shim_dac_ac_couple`),
+/// as the real boards' outputs are. PinMAME maps these DACs unsigned (code 0 = output 0)
+/// while their programs play around the middle code and leave the DAC on the last value a
+/// sound wrote: a DC level in the mix that never reached the real speaker. Without it, WPCS
+/// (taf_l5) files started up to 14216 LSB away from 0 and its loudest effects clipped on
+/// their own DC (`C7`: 4857 samples at level 20), and 187 of whirl_l3's 189 files started
+/// more than 256 LSB away from 0 (up to 10251).
+fn ac_couples_dac(family: &str) -> bool {
     family == "WPCS" || family.starts_with("WMSS11")
 }
 /// Stop commands for families that have no section in sounds.dat, measured on whirl_l3
@@ -1155,8 +1157,6 @@ pub struct Extractor {
     duck_sound: Option<(Vec<f64>, f64)>,
     /// Reset the boards before the next command (the start of the ducking check).
     reset_before_pass: bool,
-    /// The DAC was parked at code 0 for the next command (`parks_dac`).
-    dac_parked: bool,
     /// The loudness of each written file, by result index.
     loud: Vec<Option<FileLoudness>>,
     /// Where the sound CPUs' state is read (not on DCS).
@@ -1237,7 +1237,6 @@ impl Extractor {
             duck_music: None,
             duck_sound: None,
             reset_before_pass: false,
-            dac_parked: false,
             loud: Vec::new(),
             probe: None,
             mixer: Vec::new(),
@@ -1822,28 +1821,7 @@ impl Extractor {
                 return;
             }
         }
-        if !self.dac_parked && self.park_dac() {
-            let mut q = self.quiet(false);
-            (q.then_volume, q.then_pre) = (false, false);
-            self.phase = Phase::Quiet(q);
-            return;
-        }
         self.next_command();
-    }
-
-    /// Boards whose 8-bit DAC holds the last value a sound wrote (`parks_dac`):
-    /// sets it back to code 0, its power-on level in PinMAME, before the next command, so
-    /// that no sound starts on the DC level the one before left. The sound programs never
-    /// read their DAC back. Returns true when it moved the output (then the caller waits
-    /// for quiet again, so the step is not in the recording).
-    fn park_dac(&mut self) -> bool {
-        self.dac_parked = true;
-        if !self.families.iter().any(|f| parks_dac(f))
-            || self.idle.iter().all(|&dc| dc.abs() <= 2 * SILENCE as i32)
-        {
-            return false;
-        }
-        unsafe { ffi::shim_dac_park() > 0 }
     }
 
     /// Sends the stop command and waits for silence.
@@ -2149,6 +2127,7 @@ impl Extractor {
                 ));
             }
         }
+        let mut ac_coupled = false;
         for b in self.board_list() {
             if self.families[b as usize] == "BY56" {
                 let hooked = unsafe { ffi::shim_nibble_hook(b) } != 0;
@@ -2160,6 +2139,12 @@ impl Extractor {
                 eprintln!("  board {b} (BY56): commands sent as two nibbles, low then high");
             }
             let family = &self.families[b as usize];
+            if ac_couples_dac(family) && !ac_coupled {
+                // One call switches every DAC of the machine.
+                ac_coupled = true;
+                let n = unsafe { ffi::shim_dac_ac_couple() };
+                eprintln!("  board {b} ({family}): {n} DAC(s) AC-coupled (10 Hz high-pass)");
+            }
             if DC_BLOCKED.contains(&family.as_str()) {
                 eprintln!(
                     "  board {b} ({family}): files written DC-blocked (its DAC holds DC levels)"
@@ -3167,7 +3152,6 @@ impl Extractor {
             return;
         };
         self.stop_failures = 0;
-        self.dac_parked = false;
         let what = match (self.pass, &cmd.alt) {
             (Pass::Retry, _) => format!("{} (retry)", cmd.id),
             (Pass::VolumeCheck, Some(a)) => {

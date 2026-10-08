@@ -334,17 +334,25 @@ int shim_data_burst(int board, const unsigned char *bytes, int n) {
 }
 
 // ---------------------------------------------------------------------------------------
-// Parks the machine's 8-bit DACs (dac.c, unsigned `DAC_data_w`) at code 0, their power-on
-// level in PinMAME (`DAC_sh_start` sets every output to 0), where they add no DC to the
-// mix. The boards' programs leave a DAC on the last value a sound wrote and never read it
-// back. Returns how many DACs were parked. DAC_sh_start numbers the DACs of the machine's
-// last DAC entry only (`n_chips = intf->num`), hence the last entry's count.
-int shim_dac_park(void) {
+// AC-couples the machine's 8-bit DACs (dac.c), as the real boards' outputs are. PinMAME
+// maps these DACs unsigned (`DAC_data_w`: code 0 = output 0, code FF = +32767), while the
+// sound programs play around the middle code and leave the DAC on the last value a sound
+// wrote: up to +16384 of DC in the 16-bit mix, which never reached the real speaker and
+// clipped the loud sounds (taf_l5 `C7`) in emulation. dac.c already has the fix, opt-in per
+// channel: a 10 Hz one-pole high-pass (`DAC_DC_offset_correction_data_16_w`, used by the
+// Gottlieb, Taito and Mr. Game drivers) on the raw level that `DAC_data_w` stores, which is
+// the same `data * 0x101 / 2`. One write through it switches the channel over for good
+// (until the machine stops): the board's own `DAC_data_w` writes then go through the
+// filter, with the same scale, and the volume stages after the DAC are untouched. The
+// channel is set to 0 (its power-on level) so that the switch makes no step of its own.
+// Returns how many DACs were switched. DAC_sh_start numbers the DACs of the machine's last
+// DAC entry only (`n_chips = intf->num`), hence the last entry's count.
+int shim_dac_ac_couple(void) {
   int ii, n = 0;
   for (ii = 0; ii < MAX_SOUND; ii++)
     if (Machine->drv->sound[ii].sound_type == SOUND_DAC)
       n = ((const struct DACinterface *)Machine->drv->sound[ii].sound_interface)->num;
   for (ii = 0; ii < n; ii++)
-    DAC_data_w(ii, 0);
+    DAC_DC_offset_correction_data_16_w(ii, 0);
   return n;
 }

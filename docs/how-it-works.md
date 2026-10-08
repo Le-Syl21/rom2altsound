@@ -415,7 +415,7 @@ apart from isolated clicks. Measured with full sweeps (written files with raw sa
 | family | volume | clipped files at that volume | one step louder |
 |---|---|---|---|
 | DCS | `55 AA EF 10` (level 29/31, `--dcs-volume`) | afm_113b `0186` (1 sample), cv_20h `03DE` (2 samples, a 77 ms click that ignores the master volume) | `FF`: afm 5 files (`0186` 68 samples), cv_20h 18 (its loop `0016` 575), mm_109c 24 (`01AB` 99), rs_l6 5 (`0240` 33) |
-| WPCS | `79 07 F8` (level 7, `--wpcs-volume`; the volume runs from `00`, silent, to `1F`, and the board ignores `20` and above; the DAC is parked at code 0 before each sound) | tz_94h: none (307 commands). taf_l5: none (472 commands) | `08`: taf_l5 `CD` (2 samples); at `0C`, the game's own volume, 5 effects (`C7` 63, `C6` 21, `D3` 19, `CD` 17, `D4` 10); at `14` (the reference until then) `C7` 4698, `D3` 1213, `D4` 420, `CD` 148, `C6` 80 |
+| WPCS | `79 0C F3` (level 12, the game's own, `--wpcs-volume`; the volume runs from `00`, silent, to `1F`, and the board ignores `20` and above; the DAC is AC-coupled) | tz_94h: none (307 commands). taf_l5: none (472 commands) | `0D`: taf_l5 `C6` and `CD` (1 sample each); at `14` 5 effects (`D3` 20, `CD` 10, `C6` 8, `D4` 3, `C7` 2); at `1F` `C7` 430, `D3` 341, `CD` 93, `C6` 50, `D4` 31 |
 | Whitestar | `FE 11 FD` (level 30/31, `--whitestar-volume`) | xfiles `1F` (56 samples, a 50 ms click that ignores the master volume) | `FE 10 FD`: apollo13 `5C` 172 samples, `68` 13 (xfiles: only `1F`) |
 | System 11, Cheap Squeak / Turbo Cheap Squeak, Data East, Bally -32/-50 and Sounds Plus -51/-56 | no software volume stage: always full scale, which is the reference (`reference_volume: "full_scale (no volume stage)"`); on Data East the music level is set to its loudest, `20` | | |
 | Bally Squawk & Talk -61 | volume lines PinMAME does not emulate: always full scale (`reference_volume: "full_scale (volume lines not emulated in PinMAME)"`) | eballdlx: 5 speech files, 2 or 3 samples each, in PinMAME's own mix | |
@@ -457,25 +457,41 @@ Two causes. First, the board's program leaves its DAC (an AD7524, 8 bits, `DAC_0
 on the last value a sound wrote, and PinMAME maps the DAC unsigned (code 0 = output 0,
 `UnsignedVolTable`): the held value is a DC level in the mix, on which the next sound
 starts. At `14` all 268 taf_l5 files started more than 256 LSB away from 0 (up to 14216
-LSB), and `A1` clipped 56 samples on it (`82`, `8D` and `A1` do not clip alone). The real
-board's output is AC-coupled, so the held level never reached the speaker. So before each
-sound the tool parks the DAC at code 0, its power-on level in PinMAME (`shim_dac_park`,
-when the idle level is off 0, then the usual wait for quiet so that the step is not
-recorded); the program never reads its DAC back. Then 0 of 268 taf_l5 files and 0 of 302
-tz_94h files start more than 256 LSB away from 0 (62 and 21 LSB at most), and the
-clipping no longer depends on the order of the sweep. Second, five taf_l5 effects (`C6`,
-`C7`, `CD`, `D3`, `D4`) clip on their own: they play on the DAC around its mid code, whose
-DC level (8750 LSB at `14`) adds to the voice and the music. Clipped samples, DAC parked,
-per level: `14` `C7` 4857 / `D3` 1227 / `D4` 414 / `CD` 89 / `C6` 79; `13` 3695 / 738 /
-275 / 65 / 54; `12` 3492 / 807 / 313 / 57 / 116; `11` 2259 / 440 / 166 / 45 / 42; `10`
-1258 / 237 / 112 / 41 / 38; `0E` 411 / 85 / 39 / 24 / 39; `0C` (the game's own level) 63 /
-19 / 10 / 17 / 21; `0A` `C6` 5, `CD` 4, `D4` 4; `08` `CD` 2; `07` none. The reference is
-`79 07 F8` (level 7), the loudest level at which no file of either ROM clips: full sweeps
-at `07` clip no file of taf_l5 (472 commands) or tz_94h (307), loudest true peaks -1.6 and
--4.0 dBTP. It is 2.0 dB below the game's factory volume (`79 0C F3`, level 12) and 3.5 dB
-below `14`, a loss of resolution that is better than clipping. The factory offset is
-therefore positive, +2.0 dB (tz_94h and taf_l5 5 files each, spread 0.04 dB; it was -1.5
-dB at `14`).
+LSB), and `A1` clipped 56 samples on it (`82`, `8D` and `A1` do not clip alone). Second,
+the sounds play on the DAC around its mid code, whose DC level (8750 LSB at `14`) adds to
+the voice and the music: five taf_l5 effects (`C6`, `C7`, `CD`, `D3`, `D4`) clipped on
+it on their own (at `14`, with the DAC parked at code 0 between sounds: `C7` 4857, `D3`
+1227, `D4` 414, `CD` 89, `C6` 79 samples; still `CD` 2 at `08`). The real board's output
+is AC-coupled, so none of that DC ever reached the speaker.
+
+So once the game has booted, the tool AC-couples the DAC (`shim_dac_ac_couple`): dac.c
+already has a one-pole 10 Hz high-pass, opt-in per channel, used by the Gottlieb, Taito
+and Mr. Game drivers (`DAC_DC_offset_correction_data_16_w`). Its input is the raw level
+`data * 0x101 / 2`, exactly what `DAC_data_w` stores, so one write through it at 0 (the
+DAC's power-on level) switches the channel for good and the board's own `DAC_data_w`
+writes then go through the filter, at the same scale; the volume stage (`wpcs_volume_w`,
+`mixer_set_volume` on every channel) and the mixing levels (DAC 70 %, HC55536 100 %,
+YM2151 16 %) apply as before. PinMAME is not changed. 10 Hz costs -0.46 dB at 30 Hz
+(PinMAME's figure). Then 0 of 268 taf_l5 files and 0 of 302 tz_94h files start more than
+256 LSB away from 0 (50 and 55 LSB at most), whatever the order of the sweep.
+
+What still clips is the sum of the sources in PinMAME's mixer (float, clipped to 16 bits
+once at the end). Played alone with the other channels muted (`--solo`, taf_l5 effects and
+`82`, `8D`, `A1`, tz_94h `A3`, `A4`, `A5` and four musics), no source clips even at `1F`:
+peaks DAC 19308 (`C6`), YM2151 10196 (`C7`), HC55536 26530 LSB (the speech, the same in
+every one of these effects); at `14`, 18515, 9644 and 23446. Mixed, the five effects play
+speech, FM and DAC together and clip on the sum (`C7` at `1F`: clipped from 0.07 to 1.21
+s, while its speech and FM play; its DAC part lasts 0.28 s). Clipped samples, DAC
+AC-coupled, `C6` / `C7` / `CD` / `D3` / `D4` (`--only`, 10 s per sound): `1F` 50 / 430 /
+93 / 341 / 31; `1C` 59 / 173 / 57 / 224 / 17; `19` 23 / 51 / 33 / 108 / 9; `16` 14 / 4 /
+13 / 42 / 1; `14` (full sweep) 8 / 2 / 10 / 20 / 3; `13` 5 / 1 / 0 / 9 / 0; `12` 7 / 0 /
+4 / 15 / 2; `11` 2 / 0 / 0 / 7 / 0; `10` 3 / 0 / 0 / 3 / 0; `0F` `D3` 1; `0E` `C6` 1,
+`CD` 1; `0D` none, but 1 sample of `C6` and of `CD` in a full sweep (the speech is not
+sample-exact from one run to the next); `0C` none. tz_94h clips at no level, `1F`
+included (its loudest, the boom `A3`, peaks at 26508). The reference is `79 0C F3` (level
+12), the game's own factory volume and the loudest level at which no file of either ROM
+clips in full sweeps (taf_l5 472 commands, tz_94h 307; loudest true peaks -0.3 and -2.0
+dBTP): the factory offset is 0 dB.
 
 **WPCS command pacing** (taf_l5): the game writes the bytes of a multi-byte command (`79 vv
 ~vv`, `7A xx`) to the board back to back, within the same frame. The Addams Family's sound
@@ -504,7 +520,7 @@ on the warm boot they send `55 AA 67 98` after 6-12 s.
 |---|---|---|---|
 | DCS (WPC) | `55 AA vv ~vv`, level = (vv - 7) / 8, 8..31 (`67` = 12) | none | `00 00` |
 | DCS channel mix | `55 AB..B0 vv ~vv` (rs_l6 fades `55 AB` FF to 07 and back to FF at boot) | none | |
-| WPCS | `79 vv ~vv`, `vv` 00..1F (20 and above ignored): the game's is read (tz_94h `79 0C F3`), the reference `79 07 F8` is sent once; the DAC is parked at code 0 before each command | none | `00` |
+| WPCS | `79 vv ~vv`, `vv` 00..1F (20 and above ignored): the game's is read (tz_94h `79 0C F3`), the reference `79 0C F3` is sent once; the DAC is AC-coupled once booted | none | `00` |
 | Whitestar BSMT (Sega/Stern) | `FE xx FD`, level = 2F - xx, 0..31 | the master volume (ours with the factory settings, else the game's `FE xx FD`, which it re-sends every 0.5 s) | `00` |
 | Data East BSMT | none (hardware pot in the power box) | the music volume `20`..`2F` (the loudest, `20`, with the reference volume), then the stop `00` | `00` |
 | System 11 (WMSS11, 11C, 11J) | none (no volume stage) | none | `00` / `20` (11C) |
@@ -850,15 +866,15 @@ last value a sound wrote (whirl_l3 idled at +2056, and +6264 or +10248 after som
 Each frame whose span stays within the dither updates the per-channel idle level. All
 decisions use emulated time.
 
-On those boards the DACs are parked at code 0 before each command (`shim_dac_park`: every
-DAC of the machine's `DAC_data_w`, PinMAME's unsigned 8-bit DAC, where code 0 is output 0
-and the level the DAC powers up at), then the tool waits for quiet once more, so that no
-sound starts on the level the one before left (the real boards' outputs are AC-coupled:
-that level never reached the speaker). Measured on whirl_l3 (`--max-secs 10`): 187 of its
-189 files started more than 256 LSB away from 0 (up to 10251 LSB), none do now (158 LSB
-at most); the same 189 files and 219 blips, all files -17.71 then -17.70 LUFS. On taf_l5
-(WPCS) see Reference volume. The Data East games have no DAC (gnr_300 and trek_201 files
-start within 8 LSB of 0 without it).
+On those boards the DACs are AC-coupled once the game has booted (`shim_dac_ac_couple`:
+every DAC of the machine goes through dac.c's 10 Hz DC correction, see Reference volume),
+so that no sound starts on the level the one before left (the real boards' outputs are
+AC-coupled: that level never reached the speaker), and the idle level settles back to 0
+within about 60 ms. Measured on whirl_l3 (`--max-secs 10`): 187 of its 189 files started
+more than 256 LSB away from 0 (up to 10251 LSB), none do now (157 LSB at most), with the
+same 189 files and 219 blips and no clipped file. On taf_l5 (WPCS) see Reference volume.
+The Data East games have no DAC (gnr_300 and trek_201 files start within 8 LSB of 0
+without it).
 
 ### Trimming
 
@@ -1262,11 +1278,12 @@ Two rounds before:
   The clipping is at the output only (levels follow the volume step for step), so a lower
   `--dcs-volume` gives the same sound without distortion. Clipped files are counted in the
   summary and flagged per file in the manifest.
-- **WAVs keep the emulated DC** of a DAC within a sound (a sound that ends on a DAC value
-  ends on that level: 61 of taf_l5's files, 53 of whirl_l3's) unless `--dc-block` is given;
-  the sounds no longer start on the previous sound's level (the DAC is parked at code 0
-  before each command, see Silence). Real machines AC-couple their output; PinMAME does
-  not model that. The levels in the manifest are always DC-blocked.
+- **WAVs keep the emulated DC** of a DAC that PinMAME mixes unsigned, unless `--dc-block`
+  is given, except on WPCS and System 11, whose DACs are AC-coupled once booted (see
+  Silence: their files no longer start or sit on a held level), and on Squawk & Talk,
+  whose files are always DC-blocked. Real machines AC-couple their output; PinMAME models
+  that only on the DACs whose drivers opt in. The levels in the manifest are always
+  DC-blocked.
 - **WPCS (DOUBLECMD) boards**: `sndbrd_manCmd` only acts on byte pairs and `wpcs_manCmd_w`
   writes both bytes to the board, so padding a one-byte command would also send `00` ("Reset
   Sound System"). One-byte commands (all of sounds.dat's WPCS entries, and the stop `00`)

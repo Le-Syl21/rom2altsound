@@ -100,7 +100,7 @@ struct Cli {
     /// PinMAME directory (no nvram) so that the game runs its factory reset and writes its
     /// nvram, then warm from that nvram; the volume the game sets (its factory volume) is
     /// noted and every sound is recorded at the reference volume (the loudest master volume
-    /// that does not clip: DCS 55 AA EF 10, Whitestar FE 11 FD, WPCS 79 07 F8). The dB offset to the
+    /// that does not clip: DCS 55 AA EF 10, Whitestar FE 11 FD, WPCS 79 0C F3). The dB offset to the
     /// factory volume goes in the manifest
     #[arg(long)]
     no_factory: bool,
@@ -121,7 +121,7 @@ struct Cli {
     #[arg(long, conflicts_with_all = ["factory_volume", "no_factory", "no_volume_init", "cold_boot_only"], value_parser = parse_whitestar)]
     whitestar_volume: Option<u8>,
     /// The WPCS reference volume byte, sent as `79 vv ~vv` (00 = silent, 1F = the loudest;
-    /// the board ignores 20 and above) [default: 07]
+    /// the board ignores 20 and above) [default: 0C]
     #[arg(long, conflicts_with_all = ["factory_volume", "no_factory", "no_volume_init", "cold_boot_only"], value_parser = parse_hex_byte)]
     wpcs_volume: Option<u8>,
     /// Minimum emulated boot time before halting the game CPUs; the boot then lasts until
@@ -575,13 +575,12 @@ const DCS_REFERENCE: u8 = 0xEF;
 /// Whitestar `FE 11 FD` (level 30/31): at `FE 10 FD`, apollo13 `5C` clipped 172 samples and
 /// `68` 13; at `FE 11`, nothing but xfiles' click `1F`, which ignores the master volume.
 const WHITESTAR_REFERENCE: u8 = 0x11;
-/// WPCS `79 vv ~vv` (`vv` 00..1F; the board ignores 20 and above): `79 07 F8`. With the
-/// DAC parked between sounds (extract.rs `park_dac`), five taf_l5 effects still clip on
-/// their own at the game's factory 0C and above (C7: 4857 samples at 14, 3492 at 12, 63 at
-/// 0C), on the DC level of their own DAC waveform, which PinMAME mixes unsigned, and CD
-/// still at 08 (2 samples); 07 is the loudest level at which no file of taf_l5 or tz_94h
-/// clips.
-const WPCS_REFERENCE: u8 = 0x07;
+/// WPCS `79 vv ~vv` (`vv` 00..1F; the board ignores 20 and above): `79 0C F3`, the game's
+/// own factory level. With the DAC AC-coupled (shim.c `shim_dac_ac_couple`), no source
+/// clips on its own even at 1F, but their sum does on five taf_l5 effects that play speech,
+/// FM and DAC together (C6, C7, CD, D3, D4: 945 samples in all at 1F, 43 at 14, 2 at 0D);
+/// 0C is the loudest level at which no file of taf_l5 or tz_94h clips.
+const WPCS_REFERENCE: u8 = 0x0C;
 
 /// The first half of `--factory`: wipe this ROM's nvram and cfg from the private vpm, boot
 /// it cold in a child process (libpinmame runs one machine per process) until the game has
