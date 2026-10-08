@@ -1278,6 +1278,17 @@ the sound board's) is one file. The machine driver is expanded (`expand_machine_
 which only fills a structure) for the CPUs and sound chips. The data is the emulator's own:
 a PinMAME update changes it with no code to touch.
 
+**System sets.** PinMAME flags with `NOT_A_DRIVER` the sets that are no game but hold the
+ROMs a hardware generation's games share, as MAME's BIOS sets do: `gts1`, `gts1s`, `gts80`,
+`gts80s`, `gts80a`, `gts80as` (Gottlieb System 1 and 80's CPU board ROMs), `allied`,
+`gp_110`, `recel`, `pinheck` (10 sets). A game is a clone of its system set (`spidermn` of
+`gts80s`, itself of `gts80`), its ROM table lists the shared ROMs too, and the ROM loader
+looks for each file in the game's zip, then its parent's, then up the chain to the system
+sets' zips (`common.c`, `open_rom_file`). The table keeps these sets, flagged `system`, and
+gives every set the system sets of its chain (`systems`, nearest first); a game's parent is
+never a system set (the shim, like PinMAME's own front-ends, stops the parent at the first
+`NOT_A_DRIVER`).
+
 **Sound ROMs.** A ROM is a sound ROM when its region is marked sound-only
 (`ROMREGION_SOUNDONLY`, what `SOUNDREGION` declares: PinMAME does not load it with sound
 off), is a `REGION_SOUNDn`, or is the program region (`REGION_CPUn`) of a CPU flagged
@@ -1288,13 +1299,24 @@ lists them (no decompression); names play no part in the identification. A set i
 candidate when one of its files is there. For each candidate, each file with a known dump
 is: good (CRC and size match; one under another name is reported as such), wrong (a
 member has its name but another CRC: a bad dump), or missing (optional files do not
-count). The sets reported are the complete ones, without those whose files are all part
-of another complete set's; when none is complete, the closest one (most files found, then
+count). A file PinMAME knows no dump of (`NO_DUMP`: the Stern SAM colour mods such as
+`acd_168hc`, `mtl_170hc`) is taken by its name alone, as the loader does (a missing one, or
+another length, is only a warning there), and reported as not verifiable. The sets reported
+are the complete ones, without those whose files are all part of another complete set's,
+and without the system sets when a game is complete (the shared ROMs are part of the
+game's). A zip named after a complete system set, or where only system sets are complete,
+is a support zip (`SUPPORT`, as bsmt2000.zip): the games that have no ROM of their own
+beyond it (Allied's, Game Plan's Model 110 games) are listed under it. When none is
+complete, the closest one (most files found, then
 fewest wrong or missing; ties are listed). Members no reported set uses are extras: the
 ROM of another set, a duplicate, a known non-ROM (`.vpx`, `.txt`, a nested `.zip`...), or
 unknown (no PinMAME ROM has its CRC). Then, per unit: misnamed (no reported set has the
 zip's name), merged (several sets; their folders inside the zip when not the root), and
-split (a clone zip whose missing files are all in its parent's zip, in the same folder).
+split (a clone zip whose missing files are all in its parent's zip, in the same folder). The
+missing files of a set are looked up, as the loader does, in the zips of its parent and then
+of its system sets, in the same folder: a game whose only missing files are in its system
+set's zip is complete (`OK`, the zip named in the issues), one that needs its parent's is
+split.
 `--deep` decompresses the matched files, which checks their stored CRC, and compares their
 SHA-1 with PinMAME's.
 
@@ -1309,7 +1331,7 @@ CPU families choose the board in their machine init from the generation instead 
 System 3 to 11, Data East alphanumeric, Whitestar, Pinball 2000); the shim names a
 driver's machine init by comparing its address with the init of a machine driver of each
 of these families, and `Board::sound_boards` applies that family's `switch`. The whole
-table (2961 sets) takes a few seconds.
+table (2971 sets, 10 of them system sets) takes a few seconds.
 
 ### Sound ROM id
 
@@ -1332,11 +1354,13 @@ the report's `sound_groups` lists those of the zips checked.
 ### Output
 
 One line per unit (`OK`, `MISNAMED`, `BAD DUMP`, `INCOMPLETE`, `SPLIT`, `NOT PINMAME`,
-`SUPPORT` for bsmt2000.zip), its sets with description, maker and year, the wrong and
+`SUPPORT` for bsmt2000.zip and the system sets' zips), its sets with description, maker and year, the wrong and
 missing files, one `sound:` line per sound ROM id (board, PinMAME's board interface name,
 the first 12 digits of the id, how many other PinMAME sets share it) and the issues; then
 a summary and the verified sound ROMs by board. `--json` writes it all (`units[]` with
-`sets[]`, each set's `wrong`, `missing`, `renamed`, `folders`, `split_with` and `sound`:
+`sets[]`, each set's `wrong`, `missing`, `renamed`, `no_dump`, `folders`, `split_with` (the
+other zips it loads from), `system`, `system_users` (how many sets load from a system set),
+`systems` and `sound`:
 `board`, `board_values`, `interfaces`, `generation`, `core_init`, `sound_rom_id`,
 `sound_roms`, `sound_roms_good`, `shared_with`; `extras[]`; `issues[]`), `--dump-table`
 every PinMAME set with its ROMs, board and id.

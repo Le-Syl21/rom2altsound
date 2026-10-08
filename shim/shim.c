@@ -373,13 +373,26 @@ int shim_driver_count(void) {
 }
 
 // Text fields of driver i: 0 name, 1 parent's name ("" when none), 2 description, 3 year,
-// 4 manufacturer, 5 source file. NULL when out of range.
+// 4 manufacturer, 5 source file, 6 the NOT_A_DRIVER sets up its clone_of chain, nearest
+// first, separated by spaces (the shared "system" ROM sets, like gts80s: PinMAME's ROM
+// loader also looks for the game's files in their zips). NULL when out of range.
 const char *shim_driver_text(int i, int field) {
-  const struct GameDriver *d;
+  static char chain[512];
+  const struct GameDriver *d, *p;
   if (i < 0 || i >= shim_driver_count())
     return NULL;
   d = drivers[i];
   switch (field) {
+  case 6:
+    chain[0] = 0;
+    for (p = d->clone_of; p; p = p->clone_of)
+      if ((p->flags & NOT_A_DRIVER) && p->name && *p->name
+          && strlen(chain) + strlen(p->name) + 2 < sizeof chain) {
+        if (chain[0])
+          strcat(chain, " ");
+        strcat(chain, p->name);
+      }
+    return chain;
   case 0: return d->name;
   case 1: return (d->clone_of && !(d->clone_of->flags & NOT_A_DRIVER)) ? d->clone_of->name : "";
   case 2: return d->description;

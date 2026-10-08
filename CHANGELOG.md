@@ -14,7 +14,15 @@
   split clones that need their parent's zip; `--deep` also checks every file's SHA-1.
   Text and `--json` output; `--fix-names <dir>` writes correctly named standalone zips (or
   links) elsewhere, never touching the originals; `--dump-table` writes PinMAME's whole
-  table (2961 sets).
+  table (2971 sets).
+- `rom2altsound roms`: the shared **system ROM sets** PinMAME flags `NOT_A_DRIVER` (Gottlieb
+  `gts1`, `gts1s`, `gts80`, `gts80s`, `gts80a`, `gts80as`, `allied`, `gp_110`, `recel`,
+  `pinheck`: the CPU board ROMs a generation's games load from them, like MAME's BIOS sets)
+  are reported as `SUPPORT`, no longer as incomplete or misnamed games; a game whose only
+  missing files are in its system set's zip, in the same folder, is complete. Files
+  PinMAME knows no dump of (`NO_DUMP`: the 26 Stern SAM colour mods, `acd_168hc`...) are
+  matched by name, as the loader does, instead of `NOT PINMAME`. On the full VPinMAME set
+  (2804 zips): 2796 OK, 8 support, nothing else.
 - **Sound board family and sound ROM id per game**: the board PinMAME's machine init
   starts (`SNDBRD_*`, both boards on System 11), and the SHA-1 of the sorted SHA-1s of
   the game's sound ROMs, the same for every revision that kept its sound ROMs (all 24

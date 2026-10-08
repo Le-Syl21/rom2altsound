@@ -98,14 +98,27 @@ impl Member {
 pub struct Index<'a> {
     pub drivers: &'a [Driver],
     by_hash: HashMap<(u32, u64), Vec<usize>>,
+    /// ROMs PinMAME knows no dump of (`NO_DUMP`: Stern SAM's colour mods, acd_168hc...),
+    /// by lowercase name: the loader takes any file of that name (another length is only a
+    /// warning).
+    by_no_dump: HashMap<String, Vec<usize>>,
     by_name: HashMap<&'a str, usize>,
     by_sound_id: HashMap<String, Vec<usize>>,
     boards: HashMap<String, Board>,
+    /// For each system set, how many sets load from it.
+    system_users: HashMap<String, usize>,
 }
 
 impl<'a> Index<'a> {
     pub fn new(drivers: &'a [Driver], boards: HashMap<String, Board>) -> Self {
+        let mut system_users: HashMap<String, usize> = HashMap::new();
+        for d in drivers {
+            for s in &d.systems {
+                *system_users.entry(s.clone()).or_default() += 1;
+            }
+        }
         let mut by_hash: HashMap<(u32, u64), Vec<usize>> = HashMap::new();
+        let mut by_no_dump: HashMap<String, Vec<usize>> = HashMap::new();
         let mut by_sound_id: HashMap<String, Vec<usize>> = HashMap::new();
         for (d, drv) in drivers.iter().enumerate() {
             for (_, r) in drv.required() {
@@ -114,7 +127,13 @@ impl<'a> Index<'a> {
                     v.push(d);
                 }
             }
-            if let Some(id) = drv.sound_rom_id() {
+            for r in drv.roms.iter().filter(|r| r.no_dump && !r.optional) {
+                let v = by_no_dump.entry(r.name.to_ascii_lowercase()).or_default();
+                if v.last() != Some(&d) {
+                    v.push(d);
+                }
+            }
+            if let Some(id) = drv.sound_rom_id().filter(|_| !drv.system) {
                 by_sound_id.entry(id).or_default().push(d);
             }
         }
@@ -126,9 +145,11 @@ impl<'a> Index<'a> {
         Self {
             drivers,
             by_hash,
+            by_no_dump,
             by_name,
             by_sound_id,
             boards,
+            system_users,
         }
     }
 
@@ -246,8 +267,22 @@ pub struct SetMatch {
     pub renamed: Vec<Renamed>,
     /// The folders inside the unit its files come from ("" is the root).
     pub folders: Vec<String>,
+    /// Its files PinMAME knows no dump of, found by name and size: not verifiable.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub no_dump: Vec<String>,
+    /// The other zips of the same folder the set's missing files are in: its parent's
+    /// (a split set) and the system sets' it loads from (see `systems`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub split_with: Vec<String>,
+    /// A shared system ROM set (gts80s, allied...), not a game.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub system: bool,
+    /// For a system set: how many PinMAME sets load from it.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub split_with: Option<String>,
+    pub system_users: Option<usize>,
+    /// The system sets PinMAME also looks the set's files up in, nearest first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub systems: Vec<String>,
     pub sound: Sound,
     /// For each required ROM (table order): the member holding it.
     #[serde(skip)]
@@ -377,6 +412,24 @@ fn compare(d: &Driver, members: &[Member]) -> SetMatch {
             files.push((ri, None));
         }
     }
+    // Files with no known dump: taken by name, as PinMAME's loader does (a missing one, or
+    // another length, is only a warning there).
+    let mut no_dump = Vec::new();
+    for (ri, r) in d.roms.iter().enumerate().filter(|(_, r)| r.no_dump) {
+        if let Some(i) =
+            (0..members.len()).find(|&i| members[i].base().eq_ignore_ascii_case(&r.name))
+        {
+            no_dump.push(if members[i].size == r.size {
+                r.name.clone()
+            } else {
+                format!(
+                    "{} ({} bytes, PinMAME's table says {})",
+                    r.name, members[i].size, r.size
+                )
+            });
+            files.push((ri, Some(i)));
+        }
+    }
     let status = if missing.iter().any(|m| !m.optional) {
         SetStatus::Incomplete
     } else if !wrong.is_empty() {
@@ -403,7 +456,11 @@ fn compare(d: &Driver, members: &[Member]) -> SetMatch {
         missing,
         renamed,
         folders,
-        split_with: None,
+        no_dump,
+        split_with: Vec::new(),
+        system: d.system,
+        system_users: None,
+        systems: d.systems.clone(),
         sound: Sound {
             board: BoardInfo::default(),
             sound_rom_id: None,
@@ -499,16 +556,44 @@ pub fn identify(
         .flatten()
         .copied()
         .collect();
+    candidates.extend(
+        members
+            .iter()
+            .filter_map(|m| ix.by_no_dump.get(&m.base().to_ascii_lowercase()))
+            .flatten()
+            .copied(),
+    );
     candidates.sort_unstable();
     candidates.dedup();
     let compared: Vec<SetMatch> = candidates
         .iter()
         .map(|&d| compare(&ix.drivers[d], members))
         .collect();
-    let complete: Vec<&SetMatch> = compared
+    let complete_systems: Vec<&SetMatch> = compared
         .iter()
-        .filter(|s| s.status == SetStatus::Good)
+        .filter(|s| s.status == SetStatus::Good && s.system)
         .collect();
+    let mut complete: Vec<&SetMatch> = compared
+        .iter()
+        .filter(|s| s.status == SetStatus::Good && !s.system)
+        .collect();
+    // A system set's zip (gts80s.zip): the shared ROMs of a generation, not a game. It is
+    // one when named after a complete system set, or when no game is complete in it. Games
+    // whose files are all in it (Allied's, which have no ROM of their own) are noted.
+    let support_named: Vec<&SetMatch> = complete_systems
+        .iter()
+        .copied()
+        .filter(|s| s.set.eq_ignore_ascii_case(stem))
+        .collect();
+    let mut support_games: Vec<String> = Vec::new();
+    if !support_named.is_empty() || (complete.is_empty() && !complete_systems.is_empty()) {
+        support_games = complete.iter().map(|s| s.set.clone()).collect();
+        complete = if support_named.is_empty() {
+            complete_systems
+        } else {
+            support_named
+        };
+    }
     let mut chosen: Vec<SetMatch> = if !complete.is_empty() {
         // Leave out a set whose files are all part of another complete set's (a set with
         // fewer files that the zip holds as a side effect).
@@ -553,6 +638,9 @@ pub fn identify(
     chosen.sort_by_key(|s| (s.parent.is_some(), s.set.clone()));
     for s in &mut chosen {
         s.fill_sound(ix, members);
+        if s.system {
+            s.system_users = Some(ix.system_users.get(&s.set).copied().unwrap_or(0));
+        }
     }
 
     // Extras: members no chosen set uses.
@@ -598,6 +686,14 @@ pub fn identify(
     }
     unit.sets = chosen;
     unit.classify();
+    if unit.status == "support" && !support_games.is_empty() {
+        support_games.sort();
+        unit.issues.push(format!(
+            "also every file of {} game(s) with no ROM of their own: {}",
+            support_games.len(),
+            support_games.join(", ")
+        ));
+    }
     unit
 }
 
@@ -617,6 +713,32 @@ impl Unit {
             } else {
                 self.status = "not-pinmame";
                 self.issues = vec!["no file of any PinMAME set".into()];
+            }
+            return;
+        }
+        if self
+            .sets
+            .iter()
+            .all(|s| s.system && s.status == SetStatus::Good)
+        {
+            self.status = "support";
+            let s = &self.sets[0];
+            self.issues = vec![format!(
+                "system ROMs, not a game: {} ({} {}), loaded by {} PinMAME set(s)",
+                s.description,
+                s.manufacturer,
+                s.year,
+                s.system_users.unwrap_or(0)
+            )];
+            if !self
+                .sets
+                .iter()
+                .any(|s| s.set.eq_ignore_ascii_case(&self.stem))
+            {
+                self.issues.push(format!(
+                    "misnamed: named {}, holds {}",
+                    self.stem, self.sets[0].set
+                ));
             }
             return;
         }
@@ -657,6 +779,12 @@ impl Unit {
             ));
         }
         for s in &self.sets {
+            if !s.no_dump.is_empty() {
+                issues.push(format!(
+                    "not verifiable: PinMAME knows no dump of {} (NO_DUMP), taken by name",
+                    s.no_dump.join(", ")
+                ));
+            }
             if s.folders.iter().any(|f| !f.is_empty()) {
                 issues.push(format!(
                     "subfolder: {} is in {}/",
@@ -881,48 +1009,70 @@ fn collect_units(paths: &[PathBuf]) -> (Vec<(PathBuf, bool)>, Vec<String>) {
     (units, ignored)
 }
 
-/// Clones zips that only hold their own files: complete with their parent's zip, found
-/// among the units of the same folder.
+/// Sets that only hold their own files, complete with the zips PinMAME's ROM loader also
+/// opens, found among the units of the same folder: their parent's (a split clone) and
+/// their system sets' (gts80s.zip: the ROMs a generation's games share).
 fn find_split_sets(units: &mut [Unit]) {
     for u in 0..units.len() {
         if units[u].sets.len() != 1 || units[u].sets[0].status != SetStatus::Incomplete {
             continue;
         }
         let s = &units[u].sets[0];
-        let Some(parent) = s.parent.clone() else {
-            continue;
-        };
-        if !s.wrong.is_empty() {
+        if !s.wrong.is_empty() || (s.parent.is_none() && s.systems.is_empty()) {
             continue;
         }
+        let chain: Vec<String> = s.parent.iter().chain(&s.systems).cloned().collect();
         let dir = Path::new(&units[u].path).parent().map(Path::to_path_buf);
-        let need: Vec<(u32, u64)> = s
+        let mut need: Vec<(u32, u64)> = s
             .missing
             .iter()
             .filter(|m| !m.optional)
             .filter_map(|m| u32::from_str_radix(&m.crc, 16).ok().map(|c| (c, m.size)))
             .collect();
-        let found = (0..units.len()).find(|&v| {
-            v != u
-                && Path::new(&units[v].path).parent().map(Path::to_path_buf) == dir
-                && (units[v].stem.eq_ignore_ascii_case(&parent)
-                    || units[v].sets.iter().any(|s| s.set == parent))
-                && need
-                    .iter()
-                    .all(|h| units[v].members.iter().any(|m| (m.crc, m.size) == *h))
-        });
-        if let Some(v) = found {
-            let with = units[v].path.clone();
-            let s = &mut units[u].sets[0];
-            s.status = SetStatus::Split;
-            s.split_with = Some(with.clone());
-            // Every missing file is in the parent's zip, with the right CRC.
-            s.sound.sound_roms_good = s.sound.sound_rom_id.is_some();
-            let set = s.set.clone();
-            units[u].classify();
-            units[u]
-                .issues
-                .push(format!("split set: {set} needs its parent's zip {with}"));
+        // Like the loader: each name of the chain in turn, the files still missing.
+        let mut with: Vec<(usize, bool)> = Vec::new();
+        for (k, name) in chain.iter().enumerate() {
+            if need.is_empty() {
+                break;
+            }
+            let Some(v) = (0..units.len()).find(|&v| {
+                v != u
+                    && Path::new(&units[v].path).parent().map(Path::to_path_buf) == dir
+                    && (units[v].stem.eq_ignore_ascii_case(name)
+                        || units[v].sets.iter().any(|s| s.set == *name))
+            }) else {
+                continue;
+            };
+            let before = need.len();
+            need.retain(|h| !units[v].members.iter().any(|m| (m.crc, m.size) == *h));
+            if need.len() < before {
+                with.push((v, k == 0 && s.parent.is_some()));
+            }
+        }
+        if !need.is_empty() || with.is_empty() {
+            continue;
+        }
+        let paths: Vec<String> = with.iter().map(|&(v, _)| units[v].path.clone()).collect();
+        let split = with.iter().any(|&(_, parent)| parent);
+        let s = &mut units[u].sets[0];
+        // A clone needs its parent's zip: split. A game whose only missing files are its
+        // system set's is complete as PinMAME loads it.
+        s.status = if split {
+            SetStatus::Split
+        } else {
+            SetStatus::Good
+        };
+        s.split_with = paths.clone();
+        // Every missing file is in those zips, with the right CRC.
+        s.sound.sound_roms_good = s.sound.sound_rom_id.is_some();
+        let set = s.set.clone();
+        units[u].classify();
+        for (&(_, parent), p) in with.iter().zip(&paths) {
+            units[u].issues.push(if parent {
+                format!("split set: {set} needs its parent's zip {p}")
+            } else {
+                format!("system ROMs: {set} loads its shared ROMs from {p}")
+            });
         }
     }
 }
@@ -953,6 +1103,7 @@ fn fix_names(ix: &Index, units: &[Unit], out: &Path) -> Vec<String> {
             let as_is = u.kind == "zip"
                 && u.sets.len() == 1
                 && s.status == SetStatus::Good
+                && s.split_with.is_empty()
                 && s.renamed.is_empty()
                 && u.extras.is_empty()
                 && s.folders.iter().all(|f| f.is_empty());
@@ -1000,10 +1151,10 @@ fn write_set(
 ) -> Result<usize, String> {
     let parent_members: Vec<&Member> = s
         .split_with
-        .as_ref()
-        .and_then(|p| units.iter().find(|v| v.path == *p))
-        .map(|v| v.members.iter().collect())
-        .unwrap_or_default();
+        .iter()
+        .filter_map(|p| units.iter().find(|v| v.path == *p))
+        .flat_map(|v| v.members.iter())
+        .collect();
     let _ = ix;
     let mut w = zipread::Writer::default();
     let mut n = 0;
@@ -1031,6 +1182,25 @@ fn write_set(
             }
             return Err(format!("{} not found", r.name));
         };
+        match &m.origin {
+            Some(Origin::Zip(p, e)) if matches!(e.method, 0 | 8) => {
+                let raw = zipread::read_raw(p, e)?;
+                w.add_raw(&r.name, e.method, e.crc32, e.size, &raw);
+            }
+            _ => w.add(&r.name, &member_bytes(m)?),
+        }
+        n += 1;
+    }
+    // The files with no known dump, found by name.
+    for (ri, m) in &s.files {
+        let (true, Some(m)) = (d.roms[*ri].no_dump, m) else {
+            continue;
+        };
+        let r = &d.roms[*ri];
+        if !names.insert(r.name.to_ascii_lowercase()) {
+            continue;
+        }
+        let m = &u.members[*m];
         match &m.origin {
             Some(Origin::Zip(p, e)) if matches!(e.method, 0 | 8) => {
                 let raw = zipread::read_raw(p, e)?;
@@ -1129,7 +1299,7 @@ fn print_unit(u: &Unit, quiet: bool) {
     let mut seen: Vec<Option<&str>> = Vec::new();
     for s in &u.sets {
         let id = s.sound.sound_rom_id.as_deref();
-        if seen.contains(&id) || (s.sound.board.board.is_none() && id.is_none()) {
+        if s.system || seen.contains(&id) || (s.sound.board.board.is_none() && id.is_none()) {
             continue;
         }
         seen.push(id);
@@ -1295,6 +1465,9 @@ pub fn cli(args: Vec<String>) -> i32 {
             let (Some(id), true) = (&s.sound.sound_rom_id, s.sound.sound_roms_good) else {
                 continue;
             };
+            if s.system {
+                continue;
+            }
             let g = groups.entry(id.clone()).or_insert_with(|| SoundGroup {
                 sound_rom_id: id.clone(),
                 board: s.sound.board.board.clone(),
@@ -1326,10 +1499,12 @@ pub fn cli(args: Vec<String>) -> i32 {
         println!();
         let zips = units.iter().filter(|u| u.kind == "zip").count();
         println!(
-            "{} unit(s) ({zips} zip(s), {} folder(s)), PinMAME has {} sets: {}",
+            "{} unit(s) ({zips} zip(s), {} folder(s)), PinMAME has {} sets ({} of them \
+             system ROM sets): {}",
             units.len(),
             units.len() - zips,
             table.len(),
+            table.iter().filter(|d| d.system).count(),
             summary
                 .iter()
                 .map(|(k, v)| format!("{v} {k}"))
@@ -1338,7 +1513,11 @@ pub fn cli(args: Vec<String>) -> i32 {
         );
         let mut fam: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for u in &units {
-            for s in u.sets.iter().filter(|s| s.sound.sound_roms_good) {
+            for s in u
+                .sets
+                .iter()
+                .filter(|s| s.sound.sound_roms_good && !s.system)
+            {
                 fam.entry(
                     s.sound
                         .board
@@ -1409,6 +1588,8 @@ mod tests {
             roms,
             cpus: vec![],
             sound_chips: vec![],
+            system: false,
+            systems: vec![],
         }
     }
 
@@ -1588,6 +1769,122 @@ mod tests {
         let again = check(&ix, &out.join("tg_l2.zip"));
         assert_eq!(again.status, "ok");
 
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A system ROM set (System 80's `gts80s`, `NOT_A_DRIVER` in PinMAME) and two games
+    /// that load its two CPU board ROMs from it, one of them with no ROM of its own.
+    fn system_table() -> Vec<Driver> {
+        let bios = || {
+            vec![
+                rom("u2_80.bin", b"system u2", "cpu1", false),
+                rom("u3_80.bin", b"system u3", "cpu1", false),
+            ]
+        };
+        let mut sys = driver("gts80s", None, bios());
+        sys.system = true;
+        let mut game = bios();
+        game.push(rom("653-1.cpu", b"game cpu", "cpu1", false));
+        game.push(rom("653.snd", b"game sound", "sound1", true));
+        let mut game = driver("spidermn", None, game);
+        game.systems = vec!["gts80s".into()];
+        let mut bare = driver("bare", None, bios());
+        bare.systems = vec!["gts80s".into()];
+        vec![sys, game, bare]
+    }
+
+    #[test]
+    fn system_rom_sets_are_support() {
+        let dir =
+            std::env::temp_dir().join(format!("rom2altsound-romcheck-sys-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let t = system_table();
+        let ix = Index::new(&t, HashMap::new());
+        let bios: [(&str, &[u8]); 2] = [("u2_80.bin", b"system u2"), ("u3_80.bin", b"system u3")];
+
+        // The system zip: SUPPORT, not a misnamed or merged game.
+        let sys = zip(&dir, "gts80s.zip", &bios);
+        let u = check(&ix, &sys);
+        assert_eq!(u.status, "support", "{:?}", u.issues);
+        assert_eq!(u.sets.len(), 1);
+        assert_eq!(u.sets[0].set, "gts80s");
+        assert_eq!(u.sets[0].system_users, Some(2));
+        assert!(u.issues.iter().all(|i| !i.starts_with("misnamed")));
+        assert!(
+            u.issues.iter().any(|i| i.contains("bare")),
+            "{:?}",
+            u.issues
+        );
+
+        // A game zip with the system ROMs in it: the game, the system set left out.
+        let mut files = bios.to_vec();
+        files.push(("653-1.cpu", b"game cpu"));
+        files.push(("653.snd", b"game sound"));
+        let p = zip(&dir, "spidermn.zip", &files);
+        let u = check(&ix, &p);
+        assert_eq!(u.status, "ok", "{:?}", u.issues);
+        let names: Vec<&str> = u.sets.iter().map(|s| s.set.as_str()).collect();
+        assert_eq!(names, ["spidermn"]);
+
+        // A game zip without them: complete with the system zip of the same folder.
+        let only = dir.join("only");
+        std::fs::create_dir_all(&only).unwrap();
+        zip(&only, "gts80s.zip", &bios);
+        zip(
+            &only,
+            "spidermn.zip",
+            &[("653-1.cpu", b"game cpu"), ("653.snd", b"game sound")],
+        );
+        let mut units: Vec<Unit> = ["gts80s.zip", "spidermn.zip"]
+            .iter()
+            .map(|n| check(&ix, &only.join(n)))
+            .collect();
+        assert_eq!(units[1].status, "incomplete");
+        find_split_sets(&mut units);
+        assert_eq!(units[0].status, "support");
+        assert_eq!(units[1].status, "ok", "{:?}", units[1].issues);
+        assert_eq!(units[1].sets[0].status, SetStatus::Good);
+        assert!(units[1].sets[0].sound.sound_roms_good);
+        // --fix-names: the system zip as is, the game standalone (system ROMs included).
+        let out = dir.join("fixed");
+        let log = fix_names(&ix, &units, &out);
+        assert_eq!(log.len(), 2, "{log:?}");
+        assert_eq!(check(&ix, &out.join("spidermn.zip")).status, "ok");
+        assert_eq!(check(&ix, &out.join("gts80s.zip")).status, "support");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn no_dump_sets_by_name() {
+        let dir = std::env::temp_dir().join(format!(
+            "rom2altsound-romcheck-nodump-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        // A Stern SAM colour mod: PinMAME declares its one file NO_DUMP.
+        let mut r = rom("acd_168hc.bin", b"any colour mod", "cpu1", false);
+        r.crc = None;
+        r.sha1 = None;
+        r.no_dump = true;
+        let t = vec![driver("acd_168hc", None, vec![r])];
+        let ix = Index::new(&t, HashMap::new());
+        let p = zip(
+            &dir,
+            "acd_168hc.zip",
+            &[("acd_168hc.bin", b"another dump..")],
+        );
+        let u = check(&ix, &p);
+        assert_eq!(u.status, "ok", "{:?}", u.issues);
+        assert_eq!(u.sets[0].no_dump, ["acd_168hc.bin"]);
+        assert!(u.extras.is_empty());
+        // Another length: still that file (PinMAME only warns), noted.
+        let p = zip(&dir, "acd_168hc.zip", &[("ACD_168HC.BIN", b"short")]);
+        let u = check(&ix, &p);
+        assert_eq!(u.status, "ok", "{:?}", u.issues);
+        assert!(u.sets[0].no_dump[0].contains("5 bytes"));
+        let p = zip(&dir, "other.zip", &[("other.bin", b"short")]);
+        assert_eq!(check(&ix, &p).status, "not-pinmame");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

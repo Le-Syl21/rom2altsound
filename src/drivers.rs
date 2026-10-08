@@ -54,6 +54,15 @@ pub struct Driver {
     pub roms: Vec<RomFile>,
     pub cpus: Vec<String>,
     pub sound_chips: Vec<String>,
+    /// A shared "system" ROM set, not a game: a set PinMAME flags `NOT_A_DRIVER` that holds
+    /// the ROMs several games of a hardware generation load from it (gts80s: System 80's
+    /// CPU board ROMs, allied, gp_110...), like MAME's BIOS sets.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub system: bool,
+    /// The system sets this one loads from (its `NOT_A_DRIVER` ancestors, nearest first):
+    /// PinMAME's ROM loader looks for the set's files in their zips too.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub systems: Vec<String>,
 }
 
 impl Driver {
@@ -225,10 +234,9 @@ pub fn load() -> Vec<Driver> {
     let mut out = Vec::with_capacity(n.max(0) as usize);
     for i in 0..n {
         let flags = unsafe { ffi::shim_driver_flags(i) };
-        // NOT_A_DRIVER: the root and the "containers", which are no game.
-        if flags & 0x4000 != 0 {
-            continue;
-        }
+        // NOT_A_DRIVER: the root (no name, no ROM) and the "containers", which are no game
+        // but hold the ROMs their games share (kept, as system sets).
+        let system = flags & 0x4000 != 0;
         let mut audio_mask: c_uint = 0;
         unsafe { ffi::shim_driver_machine(i, &mut audio_mask) };
         let cpus = (0..8)
@@ -278,6 +286,9 @@ pub fn load() -> Vec<Driver> {
                 bad_dump: r.bad_dump != 0,
             });
         }
+        if system && (roms.is_empty() || text(i, 0).is_empty()) {
+            continue;
+        }
         let parent = text(i, 1);
         // "/home/.../src/wpc/wpcgames.c" -> "wpc/wpcgames.c"
         let source = text(i, 5).replace('\\', "/");
@@ -295,6 +306,8 @@ pub fn load() -> Vec<Driver> {
             roms,
             cpus,
             sound_chips,
+            system,
+            systems: text(i, 6).split_whitespace().map(Into::into).collect(),
         });
     }
     out
