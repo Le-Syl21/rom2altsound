@@ -24,12 +24,13 @@ ducking and the full sweep are only verified for the families of the README's ta
   silence (something keeps playing between commands) or are all the same;
 - ❌ no sound from any of the 40 commands (or only identical clicks);
 - — nothing to drive (no sound board in PinMAME's driver);
-- ❔ not tried: no ROM of the family in the full set.
+- ❔ not tried: no ROM of the family in the full set (none left).
 
 PinMAME 3.7 (the submodule) knows 2971 sets, 10 of them shared system ROM sets (`gts80s`,
 `allied`...: no game, see [how it works](how-it-works.md#rom-verification)). Of the other
-2961, 1888 (377 of 797 games) are in a ✅ family, 443 in a ⚠️ one, 315 in a ❌ one, 52 in
-an untried one (Pinball 2000), 263 have no sound board. "Sets" counts every set (clones
+2961, 1940 (379 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
+sets built outside the full set, see its row), 443 in a ⚠️ one, 315 in a ❌ one, 263 have
+no sound board. "Sets" counts every set (clones
 and revisions included), "games" the sets without a parent, "sound ROM ids" the distinct
 sound ROM sets (see [how it works](how-it-works.md#sound-rom-id)): a revision that kept its
 sound ROMs shares its id, so one pack serves all of them. "Sets in the full set": the sets
@@ -46,6 +47,7 @@ are the system zips; 2796 of the 2961 sets are there).
 | GTS80B | GTS80B | 148 | 32 | 31 | 1985-2021 | Gottlieb, Flipprojets | 142 | badgirls | ✅ | 28 of 40 (raven: 37 of 40) |
 | S11XS+S11CS | WMSS11+WMSS11C | 109 | 22 | 27 | 1985-2026 | Williams, Bally | 95 | bk2k_l4 | ✅ | 40 of 40 (36 files, 4 blips; both boards swept); whirl_l3 40 of 40 earlier |
 | DCS95 | DCS | 82 | 16 | 30 | 1995-2019 | Bally, Williams | 82 | mm_10 | ✅ | 39 of 40; the full pipeline (loops, factory volume, ducking) is verified on afm_113b, see the README |
+| DCSP2K | DCS | 52 | 2 | 6 | 1999-2025 | Midway, Midway / mypinballs | 0 | swep1_130, rfm_120 | ✅ | Pinball 2000. Not in the full VPinMAME set (its swep1/rfm zips hold only update files): tried on complete sets that `rom2altsound roms --fix-names` builds from the version zips and MAME's rfmpb/swe1pb zips. Full runs: swep1_130 683 of its 690 catalog tracks (26 loops, 24 exact from the track programs), rfm_120 1538 of 1557 (34 loops, all exact), none clipped, all from silence. The game's 16-bit DCS2 protocol, read in its code (see how it works); no ducking/stop/channel analysis; the packs do not play in VPinball (no sound command reaches AltSound) |
 | GTS3 | GTS80B | 51 | 23 | 23 | 1989-2023 | Gottlieb, Gottlieb / Vifico | 47 | cueball | ✅ | 40 of 40 (Gottlieb System 3, GTS80B board code) |
 | S11CS | WMSS11C | 50 | 10 | 15 | 1988-2026 | Bally, Williams | 47 | diner_l4 | ✅ | first run of the separate board alone: 30 of 40, all from silence (the same board as the second one of whirl_l3) |
 | BY51 | BY51 | 41 | 14 | 14 | 1979-2019 | Bally / Oliver, Bally | 40 | spaceinv | ✅ | 32 of 32 |
@@ -126,7 +128,6 @@ are the system zips; 2796 of the 2961 sets are there).
 | S3WCS | WMSS67 | 1 | 1 | 1 | 1978-1978 | Williams | 1 | wldcp_l1 | ❌ | first run (the full set's zip is complete): 0 of 40; boot FF FF 7F, as phnix_l1 |
 | NONE (other) | - | 257 | 172 | 17 | 1974-2025 | Bally, LTD | 218 | - | — | no sound board in PinMAME's sound board interface (sndbrd.c): sound on the CPU board, chimes, or a sound CPU the driver runs by itself (LTD, Bally -17, Recel, Sleic, Juegos Populares...); rom2altsound has nothing to send commands to |
 | ZAC1311 | - | 6 | 3 | 0 | 1978-1978 | Zaccaria | 6 | futurwld | — | no sound board interface: PinMAME has no manual command handler for it, nothing to drive |
-| DCSP2K | DCS | 52 | 2 | 6 | 1999-2025 | Midway, Midway / mypinballs | 0 | - | ❔ | Pinball 2000 (swep1_*, rfm_*): not in the full VPinMAME set at hand (no swep1/rfm zip), and our rfm_260 is a split mod without its parent's sound ROMs |
 
 ## Notes
 
@@ -144,8 +145,11 @@ are the system zips; 2796 of the 2961 sets are there).
 - **A ⚠️ doubtful family** plays something under every command. The usual cause is a
   board with no known stop command: the tool resets the sound CPU between commands, and
   a board whose program starts a background tone at reset is never silent.
-- **Not tried**: only Pinball 2000 (DCSP2K), whose swep1_* and rfm_* sets are not in the
-  full set at hand.
+- **Pinball 2000** (DCSP2K) is the only family whose sets are not complete in the full
+  set at hand: its swep1_*/rfm_* zips hold only a version's update files, the shared sound
+  and Prism ROMs being in MAME's base zips (`rfmpb.zip`, `swe1pb.zip`), which
+  `rom2altsound roms --fix-names` merges in (see
+  [how it works](how-it-works.md#rom-verification)). It was run in full, not surveyed.
 
 ## Cheapest fixes
 

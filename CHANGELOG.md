@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **Pinball 2000 (Revenge From Mars, Star Wars Episode I: `SNDBRD_DCSP2K`, 52 PinMAME
+  sets).** The game is a PC that writes 16-bit words to its DCS2 board without going
+  through PinMAME's sound command path, so the boot logged nothing and the tool's 8-bit
+  commands did not reach the board. The board's DSP latches are now hooked (shim, PinMAME
+  unchanged): the game's words are logged at boot, and the tool sends the game's own
+  protocol, read in its code: a request is the track, `FF7F` (volume, pan in the middle),
+  `8000` (board channel 0); the master volume `55AA vv~vv` (level 12, `609F`, is the
+  factory volume of both games); the stop `55AE 3F00`; after a board reset, the game's
+  boot block upload and `ACE1`, which opens the DCS2 protocol. The track catalog is the
+  WPC DCS one, in the board's 16-bit words (at $10000 of the sound flash): the sweep plays
+  its populated tracks (swep1_130: 690, rfm_120: 1557) and the loops come from the track
+  programs. rfm_120's warm boot never sets its board up (XINA 1.12): the tool does it.
+  Full runs (factory volume level 12, `55AA 609F`, recorded at the new reference level 20,
+  `55AA A05F`, and scaled -10.6 dB): swep1_130 683 sounds from its 690 tracks, 26 loops (24
+  exact from the track programs, 2 from the audio); rfm_120 1538 from 1557, 34 loops, all
+  exact; no file clipped, loudest true peak -16.4 dBTP on both. No sounds.dat section: the
+  files are named by track number, and the pack has the default DUCK/STOP/CHANNEL (a
+  program's channels are relative to the one the game picks). The packs do not play in
+  VPinball yet: the game's requests do not reach AltSound. `--dcs-volume` also sets the
+  Pinball 2000 volume (default `A0`, also with `--no-factory`, where FF would clip).
+- `rom2altsound roms`: a set whose missing files are all in other zips of the same folder
+  is reported `completable`, and `--fix-names` writes it whole: a Pinball 2000 version zip
+  (its four update files) with MAME's `rfmpb.zip` / `swe1pb.zip` (the shared sound and
+  Prism ROMs, under other names) gives a complete set.
 - Listening page: the A/B "Compare with folder" box takes an absolute path too
   (`C:\packs\taf_l5-edit`, `/home/…/taf_l5-edit`, a `\\server\share` path), not only one
   relative to the page; 0.2.2 turned a drive path into a broken link (reported by goodtwist).

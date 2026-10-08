@@ -75,7 +75,9 @@ are in a C shim.
 2. In the first callback `throttle` is set to 0. Measured speed: x21 to x55 real time
    (whirl_l3 x21-24, afm_113b x36-54), against x1.0 with `--throttled`.
 3. Boot: every byte the game CPU sends to a sound board is logged with its emulated time
-   (`cb_OnSoundCommand`). The boot lasts at least `--boot-secs` (15 s), then until 3 s pass
+   (`cb_OnSoundCommand`; on Pinball 2000, whose PC writes 16-bit words to the board
+   without that callback, every word the board's DSP takes, as its two bytes: see Pinball
+   2000 below). The boot lasts at least `--boot-secs` (15 s), then until 3 s pass
    without a byte that is new (a (previous byte, byte) pair not sent before: afm_113b polls
    the silent track `03 D3` three times a second forever, whirl_l3 repeats `1F`), and on DCS
    until the game's master volume was seen; at most `--boot-max-secs` (60 s). The manifest
@@ -617,6 +619,7 @@ on the warm boot they send `55 AA 67 98` after 6-12 s.
 |---|---|---|---|
 | DCS (WPC) | `55 AA vv ~vv`, level = (vv - 7) / 8, 8..31 (`67` = 12) | none | `00 00` |
 | DCS channel mix | `55 AB..B0 vv ~vv` (rs_l6 fades `55 AB` FF to 07 and back to FF at boot) | none | |
+| Pinball 2000 DCS2 (`DCSP2K`, 16-bit words) | `55AA vv~vv`, level = vv / 8, 0..31 (`60` = 12, `FF` = 31); `55AB mm vv` (channel volumes) and `55AC mm pp` (pans) replayed as the game sent them | none | `55AE 3F00` |
 | WPCS | `79 vv ~vv`, `vv` 00..1F (20 and above ignored): the game's is read (tz_94h `79 0C F3`) and sent again once (`--volume reference`: the reference, also `79 0C F3`); the DAC is AC-coupled once booted | none | `00` |
 | Whitestar BSMT (Sega/Stern) | `FE xx FD`, level = 2F - xx, 0..31 | the master volume (with the factory settings the game's factory `FE xx FD`, or the reference with `--volume reference`; else the game's, which it re-sends every 0.5 s) | `00` |
 | Data East BSMT | none (hardware pot in the power box) | the music volume `20`..`2F` (the game's last one at boot, else the board's default `20`; the loudest, `20`, with `--volume reference`), then the stop `00` | `00` |
@@ -636,6 +639,52 @@ bytes every command of rs_l6 was lost, 4 frames (PinMAME's commander) is within 
 1 frame is closer to the game, which sends both bytes within a millisecond. Independently of
 the pacing, about one command in 200 plays nothing on its first try and normally later; see
 Limits. The sweep without a sounds.dat section plays the ROM's catalog (below).
+
+**Pinball 2000** (swep1_130, rfm_120; PinMAME's `SNDBRD_DCSP2K`, the same `DCS` board
+interface with 16-bit words, reported as `DCSP2K`). The game is a PC (src/p2k) that writes
+the board's 16-bit host port directly (p2k.c `p2k_dcs_write`), never through
+`sndbrd_data_w`, so libpinmame's sound command callback never sees a word, and
+`sndbrd_manCmd` truncates to 8 bits. The board's DSP, though, is a PinMAME CPU whose data
+map holds the host latches: the shim puts hooks in front of its handlers (as for Stern
+SAM's DAC), and logs every word the DSP acknowledges (data `0400`) and every reply it writes
+(`0401`), with the emulated time; the tool sends words with `dcs_p2k_data_w`, as the PC
+does, and takes the board's replies in the halted PC's place (the DSP waits for that before
+it goes on). The words go through the byte machinery as two bytes each, high byte first, so
+`55AA 609F` is the DCS volume `55 AA 60 9F`. What the game sends was read in its own code
+(`game.rom`, a flat x86 image loaded at `0x100000`, with `symbols.rom`) and in the boot logs:
+
+- **its boot** (swep1_130, cold and warm; rfm_120's cold boot ends the same): `000E` (a boot block upload: the flash's own
+  boot page, last word first, three words per program word), `003A`, `001B` (the ROM
+  checksums, 3.5 s), `00AA` (2.3 s), `000E` again (the board answers `EE07`, then `000A`),
+  then `ACE1` twice, which the board answers `0100 000C`: the DCS2 protocol is open. Then
+  `55AA 609F` (master volume level 12), `55AB 3FFF` (the six channels' volumes, FF),
+  `55AC 3F7F` (their pans, the middle), and the requests `03E7` and `03E8` (two tracks
+  that only write to the host, opcode `04`). Nothing more in 200 s of attract mode. rfm_120
+  (XINA 1.12) sends requests in the middle of its first boot block, which the board then
+  receives for real, and on its warm boot it never opens the protocol (its boot stops at
+  `000E 8180 001B`, 3.7 s in): the tool then resets the board and sets it up itself
+  (`boot.p2k` in `manifest.json` says which).
+- **a request** (`DCSRequest`): the track number, then `vol_pan` = `FF pp` (the volume is
+  always FF, `pp` the pan, `7F` the middle), then `trk_pri` = `8000 | trk << 7`, the board
+  channel ("track", 0..7) the host plays it on. The tool sends every track on channel 0
+  (the game's boot tracks use 4 and 5; the channel does not change the sound: two tracks
+  played on channels 0 and 4 gave the same length and level).
+- **the volumes** (`DCSSetVolume`, `DCSSetTrackVolume`, `DCSSetTrackPan`): `55AA vv~vv`
+  with `vv` = level * 8 (FF for 31); `55AB mm vv`, `mm` the mask of the channels (`3F` = all
+  six); `55AC mm pp`. Each level is about 1.3 dB (12 to 20 and 12 to 4: 10.6 dB; 12 to 31:
+  26.2 dB). FF clips most sounds in emulation: the reference volume is `A0`, level 20
+  (both games' loudest sound peaks there at -5.8 dBFS).
+- **the stop** (`DCSQuietAllTracks`): `55AE 3F00`; one channel: `55AE`, then its bit in
+  the high byte.
+
+The sound flash, U109 and U110 hold the DCS track catalog and the track programs of the
+WPC boards in 16-bit words (`dcsrom::p2k_image`, see Commands): DCS2 adds opcodes `13 ll`
+and `14 ll nnnn` (a level and a fade of the program's own channel, which the host chooses),
+followed but not modelled. The programs' loops are found as on DCS (`dcs-catalog`); the
+ducking, stop and channel analysis of the pack is not done (a program's channels are
+relative to the one the host picks): the pack has the defaults. After a board reset the
+DSP is back in its loader: the tool sends the game's boot block upload, then `ACE1` twice,
+then the volumes (`p2k_reboot`).
 
 **Whitestar** (apollo13, xfiles): `FE xx` sets the master volume and **must** be completed
 by `FD`, which the game always sends right after: without it the board waits for it and
@@ -946,6 +995,14 @@ with what came out of it, as in
   track number. afm_113b: 1130 tracks, 589 populated besides `0000`; its section lists 575
   of them and misses 14, among them `0013`, a 120 s loop at -47.6 LUFS (the 13 others play
   nothing).
+- Pinball 2000: the same catalog, in the board's 16-bit words read as two bytes each, high
+  byte first (`dcsrom::p2k_image`; PinMAME's region holds the 1 MiB sound flash at 0, U109
+  at $400000 and U110 at $800000, little-endian words), at $10000 of that image: the flash's
+  own entry ($100 * 4 KiB, chip 0, checksum 0), then U109's and U110's with their chip
+  selects `04` and `08` and their checksums, the track index pointer at +$40, the count at
+  +$46. ROM pointers are plain 24-bit offsets into the image. swep1_130: 2301 tracks
+  (`0000`..`08FC`), 690 populated besides `0000`; rfm_120: 2940, 1557. No sounds.dat
+  section: the catalog is the command list.
 - Whitestar / Data East (BSMT): bytes 01..FB. `00` is the stop; `FC`..`FF` start two-byte
   commands (`FE xx FD` is the volume). Probed: `FF xx` plays the same sound as `xx` (apollo13,
   xfiles), and `FC xx` starts a loop for every `xx` on apollo13, gnr_300 and xfiles alike, so
@@ -1316,7 +1373,17 @@ split (a clone zip whose missing files are all in its parent's zip, in the same 
 missing files of a set are looked up, as the loader does, in the zips of its parent and then
 of its system sets, in the same folder: a game whose only missing files are in its system
 set's zip is complete (`OK`, the zip named in the issues), one that needs its parent's is
-split.
+split. When some are in none of those, the other zips of the folder are searched by content:
+a set whose missing files are all there is reported `completable` (`complete_with` in the
+JSON), and `--fix-names` writes it whole, its files under their PinMAME names. This is how
+Pinball 2000 versions are completed from MAME's base zips: a version zip (`rfm_120.zip`,
+`swep1_130.zip`) holds only its four update files, and PinMAME looks for the shared sound
+and Prism ROMs in its parent's zip (`rfm_160.zip`, `swep1_150.zip`), while MAME's
+`rfmpb.zip` / `swe1pb.zip` hold them under other names (`28f800.bin` for
+`rfm_28f800.rom`, `rfm_u109.rom` for `rfm_u109.bin`), with MAME's BIOS (`awdbios.bin`,
+`cga.chr`, no PinMAME ROM). `rom2altsound roms rfm_120.zip rfmpb.zip --fix-names fixed`
+writes a complete `fixed/rfm_120.zip` (15 files; the SHA-1s checked with `--deep`), and
+`rfm_010`, `rfm_080` and `swep1_040` (no file of their own) from the base zips alone.
 `--deep` decompresses the matched files, which checks their stored CRC, and compares their
 SHA-1 with PinMAME's.
 
@@ -1392,9 +1459,22 @@ the same shifted by `factory_offset_db`.
 | gnr_300 | BSMT (Data East) | `20` music 15/15 | none (offset 0) | 0 | 251 / 161 / 161 / 0 / 40 | 90 (0) | - | -16.5 | -14.3 | -17.4 | 2.1 dBTP | same | 12 (`67`: 4966) | 117.0 s |
 | btmn_106 | BSMT (Data East) | none | none (offset 0) | 0 | 251 / 157 / 141 / 16 / 34 | 94 (0) | - | -17.2 | -16.9 | -19.6 | 0.9 dBTP | same | 3 (`7A`: 384) | 102.0 s |
 | whirl_l3 | WMSS11 + WMSS11C | none | none (offset 0) | 0 | 510 / 408 / 189 / 219 / 22 | 102 (0) | - | -20.4 | -16.0 | -17.8 | -2.3 dBTP | same | - | 229.6 s (not re-run) |
+| swep1_130 | DCSP2K | `55AA609F` 12/31 | `55AAA05F` | -10.56 dB (0.00) | 690 / 683 / 683 / 0 / 26 | 7 (0) | - | -22.6 | -21.2 | -21.4 | -5.8 dBTP | -33.2 / -31.7 / -31.9 / -16.4 | - | 1638 s |
+| rfm_120 | DCSP2K | `55AA609F` 12/31 (none at the warm boot: `P2K_FACTORY_DEFAULT`, the cold boot's level) | `55AAA05F` | -10.57 dB (0.00) | 1557 / 1538 / 1538 / 0 / 34 | 19 (0) | - | -19.8 | -18.9 | -19.3 | -5.8 dBTP | -30.4 / -29.5 / -29.9 / -16.4 | - | 2842 s |
+
+The two Pinball 2000 rows were measured later, with the Pinball 2000 support, in the
+default factory mode (`rom2altsound swep1_130 rfm_120 --jobs 2`; x2.9 and x3.0 real
+time): every loop exact (swep1_130: 24 from the track programs and 2 from the audio, of the
+29 tracks whose program loops, 2 of the others playing nothing and one ending silent;
+rfm_120: 34 of 35, all from the programs), all files from silence, no reset but rfm_120's set-up after its warm boot (`boot.p2k`). The
+master volume check replayed swep1_130's 11 loudest files 8 levels down: -10.6 LU each,
+the volume scales everything (about 1.32 dB per level there; levels 12 to 31: +26.2 dB).
+rfm_120 has 631 twins (the same sound on several tracks). The silent tracks: swep1_130
+`000E`, `0028`..`002A`, `03E3`, and `03E7`/`03E8`, which only write to the host.
 
 Cold boots: WPC DCS 60 s (max, the game sends nothing) and 12334-byte nvram; System 11 15 s,
-2094 bytes; Data East and Whitestar 15 s, 8238 bytes. Warm boots: 15 s (rs_l6 37.9 s, its
+2094 bytes; Data East and Whitestar 15 s, 8238 bytes; Pinball 2000 15 s, 196946 bytes
+(rfm_120's warm boot 60 s, max: it never sets its board up). Warm boots: 15 s (rs_l6 37.9 s, its
 `55 AB` fade). No board reset and no unclean start in any run.
 
 What changed with the reference volume (against the previous table, recorded at the

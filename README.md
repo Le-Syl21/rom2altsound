@@ -181,6 +181,7 @@ What rom2altsound gets out of each sound board family:
 | family | sounds | exact loops | factory volume | ducking (DUCK) | stops (STOP) | channels (CHANNEL / TYPE) |
 |---|---|---|---|---|---|---|
 | Williams/Bally WPC DCS (1993-1999) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ¹ |
+| Midway Pinball 2000, DCS2 (1999) ¹⁶ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ✅ ⁸ | ✅ ¹¹ | ✅ ¹¹ | ✅ ¹¹ |
 | Williams System 11 | ✅ | ⚠️ ⁵ | ✅ ⁴ | ✅ ¹¹ | ✅ ¹¹ | ✅ ¹¹ |
 | Data East (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
@@ -302,6 +303,19 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
 15. No sound processor: one tone per command, `00`..`1F` swept, `0F` as the stop. Verified
     on Lost World (quick survey, see [board support](docs/board-support.md)): 15 tones from
     its 32 commands.
+16. Revenge From Mars and Star Wars Episode I. Verified on Star Wars Episode I 1.30 (683
+    sounds from the 690 tracks of its sound ROMs' catalog, 26 loops, 24 of them exact from
+    the track programs, none clipped) and Revenge From Mars 1.20 (1538 sounds from 1557 tracks, 34 loops, all exact, none clipped). The game
+    is a PC that talks to its sound board in 16-bit words: rom2altsound sends the game's
+    own requests, volume and stop, read in its code, and sets the board up itself when
+    the game's boot does not (Revenge From Mars 1.20). Factory volume: level 12 (`55AA
+    609F`), recorded at level 20 and scaled by the measured -10.6 dB. No sounds.dat
+    section: the files are named by track number. The ducking, stops and channels are
+    not read: the game picks a sound's board channel itself. **The pack does not play in
+    VPinball today**: the game's requests do not go through PinMAME's sound command path,
+    so AltSound receives none. A version's zip holds only its update files:
+    `rom2altsound roms --fix-names` builds a complete set with MAME's `rfmpb.zip` /
+    `swe1pb.zip` (see [ROM verification](docs/how-it-works.md#rom-verification)).
 
 ### Volume
 
@@ -314,6 +328,7 @@ board family, whatever the table:
 | family | factory volume (examples) | files |
 |---|---|---|
 | DCS | `55 AA 67 98`, level 12/31 (Attack from Mars, and the board's own default when a game sends none) | about 22 dB below the old reference: Attack from Mars peaks at about -26 dBFS |
+| Pinball 2000 | `55AA 609F`, level 12/31 (Star Wars Episode I, Revenge From Mars) | recorded at level 20, scaled -10.6 dB: Star Wars Episode I peaks at -16.4 dBFS |
 | WPCS | `79 0C F3`, level 12/31 (Twilight Zone, The Addams Family) | unchanged: it was already the reference |
 | Whitestar | `FE 2C FD`, level 3/31 (Apollo 13, Monopoly) | 25 to 33 dB below the old reference (Monopoly -24.6 dB, Apollo 13 -32.6 dB) |
 | Stern SAM | DAC attenuation `E8` (AC/DC), played by PinMAME at 81 % | 1.8 dB below full scale (see [Stern SAM](#stern-sam)) |
@@ -345,7 +360,9 @@ nothing is lowered to hide it.
 
 `--volume reference` writes the files at the **reference volume** instead, as 0.2.1 did:
 per board family, the loudest master volume at which no file clips in emulation (DCS
-`55 AA EF 10`, WPCS `79 0C F3`, Whitestar `FE 11 FD`, SAM at full scale). `--dcs-volume`,
+`55 AA EF 10`, Pinball 2000 `55AA A05F`, level 20, with some margin: Star Wars Episode
+I's loudest sound peaks at -5.8 dBFS there, WPCS `79 0C F3`, Whitestar `FE 11 FD`, SAM at
+full scale). `--dcs-volume`,
 `--wpcs-volume` and `--whitestar-volume` set those bytes (and imply `--volume
 reference`).
 
@@ -459,6 +476,9 @@ program, with the file's CRC) or `hle`. `--bsmt-hle` forces the older one.
 - **Early Bally** packs (Sounds Plus, Squawk & Talk, -32/-50) do not play in VPinball as
   they are: PinMAME hands AltSound the solenoid and sound lines' raw writes, not the
   game's commands (see note 12 under [Supported boards](#supported-boards)).
+- **Pinball 2000** packs do not play in VPinball yet: the game's sound requests do not go
+  through PinMAME's sound command path (see note 16 under
+  [Supported boards](#supported-boards)).
 - **Stern SAM** packs do not play in VPinball yet (see [Stern SAM](#stern-sam)). Only
   AC/DC LE 1.68 was checked: other SAM games may differ (a ROM in which no sample
   directory is found stops with an error).
@@ -667,6 +687,7 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 | famille | sons | boucles exactes | volume d'usine | ducking (DUCK) | arrêts (STOP) | voies (CHANNEL / TYPE) |
 |---|---|---|---|---|---|---|
 | Williams/Bally WPC DCS (1993-1999) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ¹ |
+| Midway Pinball 2000, DCS2 (1999) ¹⁶ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | Williams WPCS (1991-1993) | ✅ ² | ⚠️ ⁵ | ✅ ⁸ | ✅ ¹¹ | ✅ ¹¹ | ✅ ¹¹ |
 | Williams System 11 | ✅ | ⚠️ ⁵ | ✅ ⁴ | ✅ ¹¹ | ✅ ¹¹ | ✅ ¹¹ |
 | Data East (BSMT) ⁹ | ✅ | ⚠️ ³ | ✅ ⁴ ⁶ | ❌ | ❌ | ❌ |
@@ -801,6 +822,21 @@ reste joué en parallèle.
 15. Pas de processeur son : une tonalité par commande, `00`..`1F` balayées, `0F` comme
     arrêt. Vérifié sur Lost World (survol rapide, voir
     [cartes prises en charge](docs/board-support.md)) : 15 tonalités pour ses 32 commandes.
+16. Revenge From Mars et Star Wars Episode I. Vérifié sur Star Wars Episode I 1.30 (683
+    sons pour les 690 pistes du catalogue de ses ROM son, 26 boucles, dont 24 exactes
+    d'après les programmes des pistes, aucun écrêté) et Revenge From Mars 1.20
+    (1538 sons pour 1557 pistes, 34 boucles, toutes exactes, aucun écrêté). Le jeu est un PC qui parle à sa carte son en mots de 16 bits :
+    rom2altsound envoie les requêtes, le volume et l'arrêt du jeu lui-même, lus dans son
+    code, et prépare la carte lui-même quand le démarrage du jeu ne le fait pas (Revenge
+    From Mars 1.20). Volume d'usine : niveau 12 (`55AA 609F`), enregistré au niveau 20 puis
+    ramené par l'écart mesuré de -10,6 dB. Pas de section sounds.dat : les fichiers sont
+    nommés par numéro de piste. Le ducking, les arrêts et les voies ne sont pas lus : c'est
+    le jeu qui choisit la voie de la carte d'un son. **Le pack ne se joue pas dans
+    VPinball aujourd'hui** : les requêtes du jeu ne passent pas par le chemin des
+    commandes son de PinMAME, AltSound n'en reçoit aucune. Le zip d'une version ne
+    contient que ses fichiers de mise à jour : `rom2altsound roms --fix-names` construit un
+    jeu complet avec le `rfmpb.zip` / `swe1pb.zip` de MAME (voir
+    [vérification des ROM](docs/how-it-works.md#rom-verification), en anglais).
 
 ### Volume
 
@@ -813,6 +849,7 @@ joue en sortie d'usine, pour toutes les familles de cartes, quelle que soit la t
 | famille | volume d'usine (exemples) | fichiers |
 |---|---|---|
 | DCS | `55 AA 67 98`, niveau 12/31 (Attack from Mars, et le réglage par défaut de la carte quand un jeu n'en envoie pas) | environ 22 dB sous l'ancienne référence : Attack from Mars culmine vers -26 dBFS |
+| Pinball 2000 | `55AA 609F`, niveau 12/31 (Star Wars Episode I, Revenge From Mars) | enregistrés au niveau 20, ramenés de -10,6 dB : Star Wars Episode I culmine à -16,4 dBFS |
 | WPCS | `79 0C F3`, niveau 12/31 (Twilight Zone, The Addams Family) | inchangés : c'était déjà la référence |
 | Whitestar | `FE 2C FD`, niveau 3/31 (Apollo 13, Monopoly) | 25 à 33 dB sous l'ancienne référence (Monopoly -24,6 dB, Apollo 13 -32,6 dB) |
 | Stern SAM | atténuation du convertisseur `E8` (AC/DC), jouée par PinMAME à 81 % | 1,8 dB sous la pleine échelle (voir [Stern SAM](#stern-sam-1)) |
@@ -846,8 +883,9 @@ pour le cacher.
 
 `--volume reference` écrit plutôt les fichiers au **volume de référence**, comme la 0.2.1 : pour
 chaque famille, le volume général le plus fort auquel aucun fichier ne sature dans
-l'émulation (DCS `55 AA EF 10`, WPCS `79 0C F3`, Whitestar `FE 11 FD`, SAM à pleine
-échelle). `--dcs-volume`, `--wpcs-volume` et `--whitestar-volume` règlent ces octets (et
+l'émulation (DCS `55 AA EF 10`, Pinball 2000 `55AA A05F`, niveau 20, avec de la marge :
+le son le plus fort de Star Wars Episode I y culmine à -5,8 dBFS, WPCS `79 0C F3`,
+Whitestar `FE 11 FD`, SAM à pleine échelle). `--dcs-volume`, `--wpcs-volume` et `--whitestar-volume` règlent ces octets (et
 impliquent `--volume reference`).
 
 ### Stern SAM
@@ -969,6 +1007,9 @@ programme de la puce, avec le CRC du fichier) ou `hle`. `--bsmt-hle` impose l'an
 - Les packs des **premières Bally** (Sounds Plus, Squawk & Talk, -32/-50) ne se jouent
   pas tels quels dans VPinball : PinMAME transmet à AltSound les écritures brutes des
   lignes bobines et son, pas les commandes du jeu (voir la note 12 de
+  [Cartes son prises en charge](#cartes-son-prises-en-charge)).
+- Les packs **Pinball 2000** ne se jouent pas encore dans VPinball : les requêtes son du
+  jeu ne passent pas par le chemin des commandes son de PinMAME (voir la note 16 sous
   [Cartes son prises en charge](#cartes-son-prises-en-charge)).
 - Les packs **Stern SAM** ne se jouent pas encore dans VPinball (voir
   [Stern SAM](#stern-sam-1)). Seul AC/DC LE 1.68 a été vérifié : les autres jeux SAM
