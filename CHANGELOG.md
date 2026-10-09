@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Zaccaria Sounds & Speech boards** (ZAC1370, ZAC13136, ZAC11178, ZAC11178_13181,
+  ZAC13181x3: 108 sets, 0 sounds before): bit 7 of the byte is the board's strobe, so
+  each command now goes out framed as the games send it (low bits, then with bit 7, then
+  without: `7E FE 7E`), the sweep is `FE` down to `80` (commands 01..7F, which the board
+  reads inverted), and `FF` (command 00) is the stop. Survey runs: socrking 25 of 40,
+  tmachzac 35, clown 40, spooky 38, strsphnx 21, all from silence.
 - **Sound ROM catalog site** (https://le-syl21.github.io/rom2altsound/, English and French):
   every sound ROM id of the PinMAME built in (673) and every set without one (Stern SAM,
   games with no sound ROM), 1473 entries for 2961 sets: the sets sharing it and whether

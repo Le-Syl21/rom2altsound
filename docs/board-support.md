@@ -52,20 +52,25 @@ are the system zips; 2796 of the 2961 sets are there).
 | DCSP2K | DCS | 52 | 2 | 6 | 1999-2025 | Midway, Midway / mypinballs | 0 | swep1_130, rfm_120 | ✅ | Pinball 2000. Not in the full VPinMAME set (its swep1/rfm zips hold only update files): tried on complete sets that `rom2altsound roms --fix-names` builds from the version zips and MAME's rfmpb/swe1pb zips. Full runs: swep1_130 683 of its 690 catalog tracks (26 loops, 24 exact from the track programs), rfm_120 1538 of 1557 (34 loops, all exact), none clipped, all from silence. The game's 16-bit DCS2 protocol, read in its code (see how it works); no ducking/stop/channel analysis; the packs do not play in VPinball (no sound command reaches AltSound) |
 | GTS3 | GTS80B | 51 | 23 | 23 | 1989-2023 | Gottlieb, Gottlieb / Vifico | 47 | cueball | ✅ | 40 of 40 (Gottlieb System 3, GTS80B board code) |
 | S11CS | WMSS11C | 50 | 10 | 15 | 1988-2026 | Bally, Williams | 47 | diner_l4 | ✅ | first run of the separate board alone: 30 of 40, all from silence (the same board as the second one of whirl_l3) |
+| ZAC13136 | ZAC1370 | 45 | 5 | 20 | 1983-1985 | Zaccaria | 45 | tmachzac | ✅ | fixed as ZAC1370 (0 of 40 before): tmachzac 35 of 40, farfalla 34 of 40, all from silence, no board reset |
 | BY51 | BY51 | 41 | 14 | 14 | 1979-2019 | Bally / Oliver, Bally | 40 | spaceinv | ✅ | 32 of 32 |
 | BY32 | BY32 | 39 | 12 | 2 | 1978-2022 | Bally / Oliver, Bally | 39 | kiss | ✅ | no sound processor; 15 tones from the 32 commands on lostwrld (the first survey; kiss's count not recorded) |
 | BY61 | BYSNT | 34 | 10 | 12 | 1981-2019 | Bally, Bally / Oliver | 34 | flashgdn | ✅ | 26 of 40 (README: eballdlx) |
 | GTS80SP | GTS80 | 26 | 11 | 11 | 1983-2022 | Gottlieb, Flipprojets | 26 | alienstr | ✅ | 38 of 40 |
+| ZAC1370 | ZAC1370 | 25 | 3 | 8 | 1982-1987 | Zaccaria, Apple Time | 24 | socrking | ✅ | fixed: 0 of 40 before; each byte is now sent with its bit-7 strobe, low bits first, then with bit 7, then without (`7E FE 7E`, `zac_strobed`; the game sends `FE FE 7E`), the sweep FE..80 (commands 01..7F, read inverted), stop FF (command 00): socrking 25 of 40 (24 files, 1 blip), pinchamp 26 of 40, all from silence |
 | BY45 | BY45 | 23 | 10 | 12 | 1983-2021 | Bally, Bally / Oliver | 23 | xsandos | ✅ | 39 of 40 (README: Cheap Squeak) |
 | BY61B | BYSNT | 20 | 6 | 6 | 1981-2011 | Bally / Oliver, Bally | 20 | centaur | ✅ | 30 of 40 |
+| ZAC11178 | ZAC1370 | 18 | 4 | 9 | 1985-1986 | Zaccaria | 18 | clown | ✅ | fixed as ZAC1370 (0 of 40 before): clown 40 of 40, poolcham 40 of 40, all from silence, no board reset |
 | PLAY4 | PLAY4 | 16 | 13 | 13 | 1984-1987 | Playmatic, JocMatic | 16 | madrace | ✅ | 30 of 40 |
 | BYTCS | BYTCS | 12 | 5 | 5 | 1986-1987 | Bally | 11 | blackblt | ✅ | 40 of 40 (38 files, 2 blips; README: Turbo Cheap Squeak) |
 | S9S | WMSS11 | 12 | 7 | 7 | 1983-1985 | Williams | 12 | sorcr_l2 | ✅ | 40 of 40 |
+| ZAC11178_13181 | ZAC1370 | 12 | 2 | 6 | 1986-1987 | Zaccaria | 12 | spooky | ✅ | fixed as ZAC1370 (0 of 40 before): spooky 38 of 40, zankor 39 of 40, all from silence; the game's own framing `3F BF 3F` (bit 6 clear: the Z80 board's NMI) |
 | ALVGS1 | OKI | 10 | 3 | 5 | 1992-1993 | Alvin G | 10 | agsoccer | ✅ | 33 of 40 (OKI) |
 | ALVGS2 | BSMT | 10 | 5 | 6 | 1993-1994 | Alvin G | 9 | wrldtour | ✅ | 24 of 40 (BSMT2000, its own program) |
 | TAITO_SINTEVOX | TAITO | 10 | 5 | 7 | 1981-1982 | Taito | 10 | titan | ✅ | 38 of 40 |
 | BY56 | BY51 | 8 | 1 | 4 | 1980-2008 | Bally, Bally / Oliver | 8 | xenon | ✅ | 30 of 40 (README) |
 | ZAC1125 | ZAC1125 | 8 | 4 | 0 | 1979-1980 | Zaccaria | 8 | firemntn | ✅ | first run: 38 of 40, all from silence (no sound ROM: the board's tones) |
+| ZAC13181x3 | ZAC1370 | 8 | 2 | 2 | 1987-1987 | Zaccaria | 8 | strsphnx | ✅ | fixed as ZAC1370 (0 of 40 before): strsphnx 21 of 40 (20 files, 1 blip), nstrphnx the same, all from silence; the first 40 commands (FE..D7) all go to the third Z80 |
 | PLAY1 | PLAY1 | 7 | 7 | 0 | 1978-1979 | Playmatic, Sonic (Spain) | 7 | spcgambl | ✅ | first run: 39 of 40; 15 of them not from silence (a tone held between commands) |
 | NUOVA | NUOVA | 6 | 6 | 6 | 1986-1988 | Nuova Bell Games | 6 | f1gp | ✅ | first run: 15 of 40, all from silence |
 | PLAY2 | PLAY2 | 6 | 5 | 0 | 1979-1980 | Playmatic, Sonic (Spain) | 6 | antar | ✅ | 40 of 40 (tones) |
@@ -107,17 +112,12 @@ are the system zips; 2796 of the 2961 sets are there).
 | TABART2 | TABART | 1 | 1 | 1 | 1984-1984 | Christian Tabart (France) | 1 | sahalove | ⚠️ | first run, doubtful: 40 of 40 but 39 not from silence and all alike (-17.0 LUFS): one tone that never stops |
 | TABART3 | TABART | 1 | 1 | 1 | 1985-1985 | Christian Tabart (France) | 1 | grand8 | ⚠️ | first run: as sahalove |
 | ST300 | ST300 | 76 | 17 | 0 | 1979-2026 | Stern, Stern / Idleman | 67 | meteor | ❌ | not a command board: no sound ROM, the game programs the MC6840 timers itself (boot: register/value pairs 01 00 06 07 04 05); rom2altsound's command sweep does not apply |
-| ZAC13136 | ZAC1370 | 45 | 5 | 20 | 1983-1985 | Zaccaria | 45 | tmachzac | ❌ | 0 of 40, as ZAC1370 (boot 00 FF FF 7F) |
 | SPINB | SPINB | 27 | 16 | 14 | 1985-1996 | Inder (Spain), Spinball (Spain) | 26 | bushido | ❌ | 0 of 40: the game sent no sound byte at boot; two MSM5205 boards fed by their own CPUs, to look at |
-| ZAC1370 | ZAC1370 | 25 | 3 | 8 | 1982-1987 | Zaccaria, Apple Time | 24 | socrking | ❌ | 0 of 40; boot bytes 00 FE FE 7E: the board likely takes an inverted, strobed byte |
 | ST300V | ST300 | 21 | 6 | 7 | 1980-2024 | Stern, Stern / Idleman | 20 | flight2k | ❌ | as ST300, plus the S14001A speech chip |
 | TAITO_SINTETIZADOR | TAITO | 18 | 14 | 15 | 1979-1982 | Taito | 18 | shock | ❌ | 0 of 40; the game sends each command twice, with and without bit 7 (98 18): one byte per command does not start a sound |
-| ZAC11178 | ZAC1370 | 18 | 4 | 9 | 1985-1986 | Zaccaria | 18 | clown | ❌ | 0 of 40, as ZAC1370 |
 | CAPCOMS | TMS320AV120 | 17 | 6 | 11 | 1995-2000 | Capcom, Illinois Pinball | 17 | bsv103 | ❌ | 40 identical 0.2 s clicks (the same peak, after 121 board resets), no sound: the game sent no sound byte at boot; the Capcom board takes its commands some other way (capcoms.c); pmv112 gave 0 of 40 |
 | ATARI1 | ATARI1 | 12 | 5 | 3 | 1976-2024 | Atari | 12 | atarians | ❌ | first run (the full set's zip is complete): 0 of 40; the game streams 00 bytes (14498 in the boot): discrete sound driven by lines, not by command numbers |
-| ZAC11178_13181 | ZAC1370 | 12 | 2 | 6 | 1986-1987 | Zaccaria | 12 | spooky | ❌ | first run: 0 of 40; boot 00 7F FF 7F 3F BF: as ZAC1370, an inverted strobed byte |
 | TAITO_SINTETIZADORPP | TAITO | 8 | 5 | 5 | 1982-1985 | Taito | 8 | snake | ❌ | 0 of 40, as shock |
-| ZAC13181x3 | ZAC1370 | 8 | 2 | 2 | 1987-1987 | Zaccaria | 8 | strsphnx | ❌ | first run: 0 of 40, as spooky |
 | GPMSU3 | GPSM3 | 6 | 3 | 2 | 1985-1985 | Game Plan | 6 | andromed | ❌ | 0 of 40; the game sends nibbles at boot (0F 0C 00 0F): command protocol to look at |
 | BY45BP | BY45 | 4 | 2 | 2 | 1982-2006 | Bally, Bally / Oliver | 4 | babypac | ❌ | 0 of 40. Baby Pac-Man's Cheap Squeak sits behind the video board: the game sent 00/0F at boot, our commands never start a sound. To look at: which CPU feeds the board |
 | ATARI2 | ATARI2 | 3 | 3 | 1 | 1979-1979 | Atari | 3 | superman | ❌ | 0 of 40: discrete sound (no sound ROM), the game sent no sound byte at boot; the board is driven by lines, not by command numbers |

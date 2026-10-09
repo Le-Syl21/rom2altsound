@@ -4,15 +4,17 @@ The Zaccaria sound boards: `SNDBRD_ZAC1311`, `SNDBRD_ZAC1125`, `SNDBRD_ZAC1346`,
 five families of the 1370 board and its successors, `SNDBRD_ZAC1370`,
 `SNDBRD_ZAC13136`, `SNDBRD_ZAC11178`, `SNDBRD_ZAC11178_13181` and `SNDBRD_ZAC13181x3`,
 which PinMAME runs through one interface, `ZAC1370`. The board code is in PinMAME's
-`src/wpc/zacsnd.c`, the game side in `src/wpc/zac.c`. rom2altsound has no code of its
-own for any of them: they go through the [common method](common.md) (raw sweep
-`01`..`FF`, stop = board reset, the board's own level, default pack columns).
+`src/wpc/zacsnd.c`, the game side in `src/wpc/zac.c`. The `ZAC1125` and `ZAC1346`
+boards go through the [common method](common.md) (raw sweep `01`..`FF`, stop = board
+reset, the board's own level, default pack columns); the `ZAC1370` interface has its own
+framing, sweep and stop (`src/extract.rs`, `zac_strobed`, `sweep`, `BUILTIN_STOPS`), see
+[SNDBRD_ZAC1370](#sndbrd_zac1370).
 
-None of their interfaces (`ZAC1125`, `ZAC1346`, `ZAC1370`) has a stop in `BUILTIN_STOPS`
-or a sounds.dat section (`src/extract.rs`, `stop_sends`): after every sound the tool
-pulses the reset line of the audio CPUs (`shim_reset_audio_cpus`) and waits for 4 s of
-silence. No master volume is known for any of them (`volume::decode`): the files are at
-the board's own level (`"none: recorded at the game's own volume"`), not AC-coupled.
+None has a sounds.dat section. `ZAC1125` and `ZAC1346` have no stop in `BUILTIN_STOPS`
+(`src/extract.rs`, `stop_sends`): after every sound the tool pulses the reset line of the
+audio CPUs (`shim_reset_audio_cpus`) and waits for 4 s of silence. No master volume is
+known for any of them (`volume::decode`): the files are at the board's own level
+(`"none: recorded at the game's own volume"`), not AC-coupled.
 
 ## <a name="sndbrd_zac1311"></a>SNDBRD_ZAC1311
 
@@ -98,7 +100,7 @@ Space Shuttle (`sshtlzac`)
 ## <a name="sndbrd_zac1370"></a>SNDBRD_ZAC1370
 
 Zaccaria 1370 Sounds & Speech board · PinMAME interface `ZAC1370` (`src/wpc/zacsnd.c`)
-· ❌ · 25 sets, 3 games, 8 sound ROM ids, 1982-1987, Zaccaria, Apple Time · e.g. Soccer
+· ✅ · 25 sets, 3 games, 8 sound ROM ids, 1982-1987, Zaccaria, Apple Time · e.g. Soccer
 Kings (`socrking`), Pinball Champ (`pinchamp`), Thunder Man (`thndrman`)
 
 - **Hardware**: one 6802 (`MACHINE_DRIVER_START(zac1370)`, flagged `CPU_AUDIO_CPU`)
@@ -111,31 +113,40 @@ Kings (`socrking`), Pinball Champ (`pinchamp`), Thunder Man (`thndrman`)
   `~lastcmd`). The game's boot sends `00 FE FE 7E` ([board
   support](../board-support.md)): bit 7 up, then down with the same low bits, around
   each command.
-- **What rom2altsound sends**: one byte per command, `01`..`FF` in order. Bytes `01` to
-  `7F` all have bit 7 at 0, so CB1 never moves and none of them reaches the program;
-  from `80` on bit 7 stays at 1, so only the first of them makes an edge. That is the
-  0 of 40 of the survey (the first 40 commands are `01`..`28`).
-- **Sound list**: raw sweep `01`..`FF`, which does not fit this protocol.
-- **Stop, boot and resets**: no stop command: a 6802 reset after every sound.
+- **What rom2altsound sends** (`zac_strobed`, in `board_sends`, so the sweep, `--only`
+  and the stop all go through it): every byte with bit 7 set goes out as three bytes,
+  its low bits with bit 7 clear, the byte itself, then bit 7 clear again (`7E FE 7E`
+  for `FE`), one per send (4 frames apart). CB1 then makes one rising and one falling
+  edge per command, whichever edge the program arms, and the AY-3-8910's port reads the
+  command's bits while the strobe is up. A byte with bit 7 clear is sent as is. Before
+  this (0.2.3 and earlier), one byte per command, `01`..`FF` in order: `01` to `7F`
+  never moved CB1 and `80` on made only one edge, the 0 of 40 of the survey.
+- **Sound list**: sweep `FE` down to `80` (`sweep`, `"ZAC1370"`): commands `01` to `7F`
+  as the program reads them (inverted), 127 commands; the id is the byte with bit 7
+  set (`0xFE`). `FF` (command `00`) is left out: it is the stop.
+- **Stop, boot and resets**: `FF` (`BUILTIN_STOPS`), framed `7F FF 7F`: command `00`,
+  what the 13136 games send at boot (`00 FF FF 7F`). On socrking, tmachzac, clown,
+  spooky and strsphnx it silenced every sound within the wait (no board reset in the
+  survey runs but one on pinchamp).
 - **Volume**: the board's own level.
 - **Loops**: audio and sequencer-state (6802, `MRA_RAM` `0000`-`007F`, `sns_readmem`);
   nothing recorded.
 - **DUCK / STOP / CHANNEL**: defaults.
-- **Measured** ([board support](../board-support.md)): socrking 0 of 40.
-- **Limits and what is missing**: the strobe. Cheapest fix ([board
-  support](../board-support.md#cheapest-fixes), item 4, one change for the five
-  `ZAC1370` families): send each command as the game does, two bytes with the same low
-  bits, bit 7 set then cleared (`FE 7E` for the command the board reads as `01`), the
-  command number being the inverted low 7 bits. Not tried; which edge the program arms
-  was not determined.
-- **In VPinball**: AltSound would receive both bytes of each command (`FE`, then `7E`),
-  with no preprocessing for this generation, while the pack's ids are single bytes. Not
-  tested in VPinball.
+- **Measured** (survey settings, `--max-secs 5 --limit 40`; [board
+  support](../board-support.md)): socrking 25 of 40 (24 files, 1 blip), pinchamp 26 of
+  40, all from silence; 0 of 40 before the framing.
+- **Limits and what is missing**: no full sweep run yet; which edge of CB1 the program
+  arms was not needed (both are made). No names (no sounds.dat section).
+- **In VPinball**: AltSound receives every byte the game writes (`FE FE 7E` at boot,
+  `zac.c` `data_port_w` → `sndbrd_0_data_w`). libaltsound has no preprocessing for this
+  generation: its default path pairs the bytes it receives two by two into 16-bit ids
+  (`AltSoundProcessCommand`, `cmd_counter & 1`), so the pack's one-byte ids would not
+  match as written. Not tested in VPinball.
 
 ## <a name="sndbrd_zac13136"></a>SNDBRD_ZAC13136
 
 Zaccaria 13136 Sounds & Speech board · PinMAME interface `ZAC1370`
-(`src/wpc/zacsnd.c`, sub-type 1) · ❌ · 45 sets, 5 games, 20 sound ROM ids, 1983-1985,
+(`src/wpc/zacsnd.c`, sub-type 1) · ✅ · 45 sets, 5 games, 20 sound ROM ids, 1983-1985,
 Zaccaria · e.g. Time Machine (`tmachzac`), Farfalla (`farfalla`), Devil Riders
 (`dvlrider`), Magic Castle (`mcastle`), Robot (`robot`)
 
@@ -144,18 +155,20 @@ Zaccaria · e.g. Time Machine (`tmachzac`), Farfalla (`farfalla`), Devil Riders
 - **Commands**: `sns_data_w` drives the 6802's **IRQ line directly from bit 7** (asserted
   while bit 7 is 1, cleared when it is 0); the command is read inverted
   (`sns2_8910a_r`). The game's boot sends `00 FF FF 7F`.
-- **What rom2altsound sends**: one byte per command: `01`..`7F` never assert the IRQ
-  (0 of 40 in the survey); `80`..`FF` hold it asserted from one command to the next.
+- **What rom2altsound sends**: as ZAC1370 (`7F FF 7F` framing): the IRQ is asserted for
+  one send, then cleared. Before, one byte per command: `01`..`7F` never asserted the
+  IRQ (0 of 40 in the survey).
 - **Everything else** (sound list, stop, volume, loops, columns): as
   [SNDBRD_ZAC1370](#sndbrd_zac1370).
-- **Measured** ([board support](../board-support.md)): tmachzac 0 of 40.
-- **Limits and what is missing**: the same fix as ZAC1370 (bit 7 set, then cleared).
+- **Measured** ([board support](../board-support.md)): tmachzac 35 of 40, farfalla 34
+  of 40, all from silence, no board reset (0 of 40 before).
+- **Limits and what is missing**: as ZAC1370.
 - **In VPinball**: as ZAC1370. Not tested in VPinball.
 
 ## <a name="sndbrd_zac11178"></a>SNDBRD_ZAC11178
 
 Zaccaria 11178 Sounds & Speech board · PinMAME interface `ZAC1370`
-(`src/wpc/zacsnd.c`, sub-type 2) · ❌ · 18 sets, 4 games, 9 sound ROM ids, 1985-1986,
+(`src/wpc/zacsnd.c`, sub-type 2) · ✅ · 18 sets, 4 games, 9 sound ROM ids, 1985-1986,
 Zaccaria · e.g. Clown (`clown`), Pool Champion (`poolcham`), Black Belt (`bbeltzac`),
 Mexico 86 (`mexico`)
 
@@ -167,14 +180,15 @@ Mexico 86 (`mexico`)
 - **What rom2altsound sends**, **sound list**, **stop**, **volume**, **loops**,
   **columns**: as [SNDBRD_ZAC1370](#sndbrd_zac1370) (sequencer-state: `MRA_RAM`
   `0000`-`007F`, `sns3_readmem`).
-- **Measured** ([board support](../board-support.md)): clown 0 of 40.
-- **Limits and what is missing**: the strobe on bit 7, as ZAC1370.
+- **Measured** ([board support](../board-support.md)): clown 40 of 40, poolcham 40 of 40,
+  all from silence, no board reset (0 of 40 before the ZAC1370 framing).
+- **Limits and what is missing**: as ZAC1370.
 - **In VPinball**: as ZAC1370. Not tested in VPinball.
 
 ## <a name="sndbrd_zac11178_13181"></a>SNDBRD_ZAC11178_13181
 
 Zaccaria 11178 board with the 13181 daughter board · PinMAME interface `ZAC1370`
-(`src/wpc/zacsnd.c`, sub-type 3) · ❌ · 12 sets, 2 games, 6 sound ROM ids, 1986-1987,
+(`src/wpc/zacsnd.c`, sub-type 3) · ✅ · 12 sets, 2 games, 6 sound ROM ids, 1986-1987,
 Zaccaria · e.g. Spooky (`spooky`), Zankor (`zankor`)
 
 - **Hardware**: the 11178 (6802, TMS5220) plus a Z80 daughter board with its own DACs
@@ -183,19 +197,24 @@ Zaccaria · e.g. Spooky (`spooky`), Zankor (`zankor`)
   `(data & 0xC0) == 0xC0` (bits 7 and 6 both set), and a byte with bit 7 set and bit 6
   clear pulses the Z80's NMI, after which the Z80 reads the command (`readcmd`). The
   game's boot sends `00 7F FF 7F 3F BF`.
-- **What rom2altsound sends**: one byte per command, `01`..`FF`: `01`..`7F` reach
-  neither board; bytes `80`..`BF` pulse the Z80's NMI each time, `C0`..`FF` hold CA1 high.
-- **Everything else**: as [SNDBRD_ZAC1370](#sndbrd_zac1370); sequencer-state reads both
-  CPUs (Z80 `MRA_RAM` `FC00`-`FFFF`, `z80_readmem`).
-- **Measured** ([board support](../board-support.md)): spooky 0 of 40.
-- **Limits and what is missing**: the two-bit strobe; the command has to be sent as the
-  game does, with bits 6 and 7 selecting the board. Not tried.
+- **What rom2altsound sends**: the ZAC1370 framing, which is the game's own here
+  (`3F BF 3F`): the low bits are on the lines before the strobe byte, so the Z80, which
+  reads the command after its NMI, reads the right one. `FE`..`C0` go to the 11178's
+  6802 (CA1), `BF`..`80` to the Z80 (NMI). Before, one byte per command, `01`..`FF`:
+  `01`..`7F` reached neither board (0 of 40).
+- **Everything else**: as [SNDBRD_ZAC1370](#sndbrd_zac1370) (stop `7F FF 7F`, command 00
+  of the 6802);
+  sequencer-state reads both CPUs (Z80 `MRA_RAM` `FC00`-`FFFF`, `z80_readmem`).
+- **Measured** ([board support](../board-support.md)): spooky 38 of 40, zankor 39 of 40,
+  all from silence (the first 40 commands, `FE`..`D7`, are the 6802's).
+- **Limits and what is missing**: the Z80 half (`BF`..`80`) is not in the survey's first
+  40 commands; not measured.
 - **In VPinball**: as ZAC1370. Not tested in VPinball.
 
 ## <a name="sndbrd_zac13181x3"></a>SNDBRD_ZAC13181x3
 
 Zaccaria board with three 13181 Z80 boards · PinMAME interface `ZAC1370`
-(`src/wpc/zacsnd.c`, sub-type 4) · ❌ · 8 sets, 2 games, 2 sound ROM ids, 1987,
+(`src/wpc/zacsnd.c`, sub-type 4) · ✅ · 8 sets, 2 games, 2 sound ROM ids, 1987,
 Zaccaria · e.g. Star's Phoenix (`strsphnx`), New Star's Phoenix (`nstrphnx`)
 
 - **Hardware**: three Z80s flagged `CPU_AUDIO_CPU` (`zac11183` and following), DACs and
@@ -203,9 +222,11 @@ Zaccaria · e.g. Star's Phoenix (`strsphnx`), New Star's Phoenix (`nstrphnx`)
 - **Commands**: `sns_data_w`: a byte with bit 7 set and bit 6 clear pulses the NMI of the
   second Z80, bits 7 and 6 both set the NMI of the third; each reads the command after
   its NMI.
-- **What rom2altsound sends**: as ZAC11178_13181: `01`..`7F` reach no CPU.
+- **What rom2altsound sends**: as ZAC11178_13181 (`FE`..`C0` to the third Z80, `BF`..`80`
+  to the second). Before, one byte per command: `01`..`7F` reached no CPU (0 of 40).
 - **Everything else**: as [SNDBRD_ZAC1370](#sndbrd_zac1370) (sequencer-state: the
   Z80s' `MRA_RAM`).
-- **Measured** ([board support](../board-support.md)): strsphnx 0 of 40.
-- **Limits and what is missing**: as ZAC11178_13181.
+- **Measured** ([board support](../board-support.md)): strsphnx 21 of 40 (20 files, 1
+  blip), nstrphnx the same, all from silence, no board reset.
+- **Limits and what is missing**: the second Z80's half (`BF`..`80`) not measured.
 - **In VPinball**: as ZAC1370. Not tested in VPinball.

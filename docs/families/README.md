@@ -69,11 +69,11 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_GTS80SS_VOTRAX_OLD`](gottlieb.md#sndbrd_gts80ss_votrax_old) | ⚠️ | 1 | 0 | Mars - God of War |
 | [`SNDBRD_ZAC1125`](zaccaria.md#sndbrd_zac1125) | ✅ | 8 | 4 | Fire Mountain; Shooting the Rapids; Hot Wheels |
 | [`SNDBRD_ZAC1346`](zaccaria.md#sndbrd_zac1346) | ⚠️ | 6 | 3 | Locomotion; Space Shuttle; Earth, Wind & Fire |
-| [`SNDBRD_ZAC13136`](zaccaria.md#sndbrd_zac13136) | ❌ | 45 | 5 | Time Machine; Farfalla; Devil Riders |
-| [`SNDBRD_ZAC1370`](zaccaria.md#sndbrd_zac1370) | ❌ | 25 | 3 | Soccer Kings; Pinball Champ; Thunder Man |
-| [`SNDBRD_ZAC11178`](zaccaria.md#sndbrd_zac11178) | ❌ | 18 | 4 | Clown; Black Belt; Pool Champion |
-| [`SNDBRD_ZAC11178_13181`](zaccaria.md#sndbrd_zac11178_13181) | ❌ | 12 | 2 | Spooky; Zankor |
-| [`SNDBRD_ZAC13181x3`](zaccaria.md#sndbrd_zac13181x3) | ❌ | 8 | 2 | Star's Phoenix; New Star's Phoenix |
+| [`SNDBRD_ZAC13136`](zaccaria.md#sndbrd_zac13136) | ✅ | 45 | 5 | Time Machine; Farfalla; Devil Riders |
+| [`SNDBRD_ZAC1370`](zaccaria.md#sndbrd_zac1370) | ✅ | 25 | 3 | Soccer Kings; Pinball Champ; Thunder Man |
+| [`SNDBRD_ZAC11178`](zaccaria.md#sndbrd_zac11178) | ✅ | 18 | 4 | Clown; Black Belt; Pool Champion |
+| [`SNDBRD_ZAC11178_13181`](zaccaria.md#sndbrd_zac11178_13181) | ✅ | 12 | 2 | Spooky; Zankor |
+| [`SNDBRD_ZAC13181x3`](zaccaria.md#sndbrd_zac13181x3) | ✅ | 8 | 2 | Star's Phoenix; New Star's Phoenix |
 | [`SNDBRD_ZAC1311`](zaccaria.md#sndbrd_zac1311) | — | 6 | 3 | Future World; Winter Sports; House of Diamonds |
 | [`SNDBRD_GPMSU1`](game-plan.md#sndbrd_gpmsu1) | ⚠️ | 7 | 7 | Lizard; Global Warfare; Mike Bossy |
 | [`SNDBRD_GPSSU1`](game-plan.md#sndbrd_gpssu1) | ⚠️ | 3 | 3 | Star Trip; Family Fun!; Vegas |

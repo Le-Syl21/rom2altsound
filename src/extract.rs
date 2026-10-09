@@ -157,6 +157,7 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("BY56", &[0x05]),
     ("BYSNT", &[0x05]),
     ("BY32", &[0x0F]),
+    ("ZAC1370", &[0xFF]),
     // game.rom `DCSQuietAllTracks`: 55AE, then the mask of the six channels in the high byte.
     ("DCSP2K", &[0x55, 0xAE, 0x3F, 0x00]),
 ];
@@ -4822,8 +4823,10 @@ fn addressed(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
 /// of `79 vv ~vv` a frame later (with 4 frames between the bytes, and with 1, it played the
 /// level byte `0C`, a music, which no stop silenced); Twilight Zone's does.
 fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
-    if board_typestr(board).as_deref() == Some("DCSP2K") {
-        return p2k_sends(bytes);
+    match board_typestr(board).as_deref() {
+        Some("DCSP2K") => return p2k_sends(bytes),
+        Some("ZAC1370") => return addressed(mask, board, &zac_strobed(bytes)),
+        _ => {}
     }
     let double = unsafe { ffi::shim_board_flags(board) } & ffi::SNDBRD_DOUBLECMD != 0;
     let t = target(mask, board);
@@ -4839,6 +4842,29 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
             })
             .collect(),
     }
+}
+
+/// Zaccaria Sounds & Speech boards (`ZAC1370` and its successors, which PinMAME runs
+/// through one interface): bit 7 of the byte is the strobe. `sns_data_w` feeds it to a PIA
+/// input (CB1 on the 1370, CA1 on the 11178), holds the 6802's IRQ with it (13136), or,
+/// with bit 6, pulses one of the Z80 daughter boards' NMI (bit 7 set, bit 6 clear: the
+/// second CPU; both set: the third, on the 13181x3); the program reads the byte inverted
+/// (`sns_8910a_r`, `readcmd`). A byte with bit 7 at 0 never reaches the program, and one
+/// left with bit 7 at 1 makes no edge for the next one. Each byte with bit 7 set goes out
+/// as the game frames it at boot (socrking `FE FE 7E`, tmachzac `FF FF 7F`, spooky `3F BF`):
+/// its low bits first, bit 7 still clear (the Z80 boards read the byte after their NMI,
+/// so the low bits are already there), then the byte itself, then bit 7 cleared again.
+fn zac_strobed(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .iter()
+        .flat_map(|&b| {
+            if b & 0x80 != 0 {
+                vec![b & 0x7F, b, b & 0x7F]
+            } else {
+                vec![b]
+            }
+        })
+        .collect()
 }
 
 /// One range of a sweep while it is built: what it is, and its commands.
@@ -4911,6 +4937,18 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                     singles(0..=0x1F),
                 )],
                 format!("board {b} ({typestr}): bytes 00..1F (five command lines; 1E/0F = stop)"),
+            ),
+            // The command is the inverted byte, sent with its strobe (`zac_strobed`): the
+            // sweep goes from command 01 (`FE`) to 7F (`80`); `FF` (command 00) is the stop.
+            "ZAC1370" => (
+                vec![(
+                    "FE..80 (strobed with bit 7: command 01..7F, read inverted; FF = stop)"
+                        .to_string(),
+                    (0x80..=0xFEu8).rev().map(|c| vec![c]).collect(),
+                )],
+                format!(
+                    "board {b} (ZAC1370): bytes FE down to 80, each strobed with bit 7 (the board reads the command inverted: 01..7F; FF, command 00, is the stop)"
+                ),
             ),
             "BYSNT" => (
                 vec![(
