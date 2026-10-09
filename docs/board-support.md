@@ -19,6 +19,8 @@ recorded for at most 5 seconds, without loop search. "n of 40" is how many of th
 commands gave a sound. It says whether a family works, not how well: loops, volume,
 ducking and the full sweep are only verified for the families of the README's table.
 
+How each family is driven (hardware, commands, stop, volume, loops, what is missing): [sound board families](families/README.md).
+
 - ✅ sounds come out, distinct, each from silence;
 - ⚠️ partial: few commands give a sound, or doubtful: most files do not start from
   silence (something keeps playing between commands) or are all the same;
