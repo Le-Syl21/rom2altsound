@@ -166,6 +166,8 @@ fn ac_couples_dac(family: &str) -> bool {
 ///   files started over the last sound. `00` alone silences them, but on tmac_a24 nothing
 ///   played after its commands `0A`..`0D` (10 of 40, 38 with the reset): the reset puts the
 ///   program back as the stop leaves the chips silent.
+/// - BYSD (Bally Sounds Deluxe): `00`, which the games send at boot: specforc's first 40
+///   commands give the same 12 files with 1 board reset instead of 97.
 /// - ZAC1346 (Zaccaria 1346/1146): `00`, the idle value (T1 cleared; on Locomotion it also
 ///   mutes the SN76477), which the games send after every command.
 /// - GTS80, GTS80SS (Gottlieb System 80 sound, sound and speech): `00`, what the games
@@ -193,6 +195,7 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("AT91", &[0x00]),
     ("GTS80", &[0x00]),
     ("ZAC1346", &[0x00]),
+    ("BYSD", &[0x00]),
     ("GTS80SS", &[0x00]),
     ("DE", &[0x00]),
     ("SPINB", &[SPINB_STOP]),
@@ -223,7 +226,13 @@ const SPINB_STOP: u8 = 0x8F;
 ///   and drops the command that came meanwhile.
 /// - BYSNT: the Squawk & Talk program tests its RAM and the AY-3-8910's registers (eballdlx:
 ///   back in its main loop 4.0 to 4.25 s after the reset).
-const REBOOT_SECS: &[(&str, f64)] = &[("BYTCS", 7.0), ("BY51", 8.0), ("BY56", 8.0), ("BYSNT", 6.0)];
+const REBOOT_SECS: &[(&str, f64)] = &[
+    ("BYTCS", 7.0),
+    ("BY51", 8.0),
+    ("BY56", 8.0),
+    ("BY51N", 8.0),
+    ("BYSNT", 6.0),
+];
 /// Boards whose files are always written DC-blocked (10 Hz high-pass, `--dc-block`). The
 /// Squawk & Talk's DAC is unsigned and holds the last value a sound wrote, which PinMAME
 /// passes on as a DC level (0 to 6553 LSB at its mixing level, -14 dBFS): raw, eballdlx's
@@ -238,6 +247,8 @@ const BY45BP_SUBTYPE: c_int = 1;
 const ST300V_SUBTYPE: c_int = 1;
 /// `SNDBRD_BY56` is `SNDBRD_TYPE(5, 1)`: the BY51 interface, variant 1 (wpc/sndbrd.h).
 const BY56_SUBTYPE: c_int = 1;
+/// `SNDBRD_BY51N` is `SNDBRD_TYPE(5, 2)`: Bell Games' -51N, also named "BY51" by PinMAME.
+const BY51N_SUBTYPE: c_int = 2;
 /// Squawk & Talk bytes from here on set its volume lines (eballdlx: `DF`..`EE` the sounds',
 /// `EF`..`FE` the speech's, 16 steps each, $F915), which PinMAME does not emulate: the sweep
 /// stops before.
@@ -1898,7 +1909,7 @@ impl Extractor {
             }
             let board = match s {
                 Send::Wait(_) => unreachable!(),
-                Send::Byte(board, byte) if self.families[(board & 1) as usize] == "BY56" => {
+                Send::Byte(board, byte) if two_nibbles(&self.families[(board & 1) as usize]) => {
                     unsafe { ffi::shim_nibble_cmd(board, byte) };
                     Some(board)
                 }
@@ -2893,14 +2904,26 @@ impl Extractor {
             {
                 unsafe { ffi::shim_by45_p21(0) };
             }
-            if self.families[b as usize] == "BY56" {
+            if two_nibbles(&self.families[b as usize]) {
+                let f = &self.families[b as usize];
                 let hooked = unsafe { ffi::shim_nibble_hook(b) } != 0;
                 if !hooked {
                     return self.fail(format!(
-                        "sound board {b} (BY56): its command port could not be hooked: commands cannot be sent as two nibbles"
+                        "sound board {b} ({f}): its command port could not be hooked: commands cannot be sent as two nibbles"
                     ));
                 }
-                eprintln!("  board {b} (BY56): commands sent as two nibbles, low then high");
+                eprintln!("  board {b} ({f}): commands sent as two nibbles, low then high");
+                if f == "BY51N" {
+                    // The -51N's data handler raises the interrupt itself while the game's
+                    // strobe is high (by35snd.c `sp51_data_w`): the high nibble the hook puts
+                    // on the lines would start the command a second time. The strobe goes low,
+                    // as the game leaves it between commands.
+                    unsafe { ffi::sndbrd_ctrl_w(b, 0) };
+                    // Super Bowl's interrupt handler (`F8C0`) reads the lines twice to clear
+                    // the PIA's flags before the low nibble: the high one comes after the
+                    // third read.
+                    unsafe { ffi::shim_nibble_after(3) };
+                }
             }
             let family = &self.families[b as usize];
             if ac_couples_dac(family) && !ac_coupled {
@@ -4423,14 +4446,15 @@ impl Extractor {
         }
         if self.pass == Pass::Main
             && self.results.is_empty()
-            && self.families[(rec.cmd.board_no & 1) as usize] == "BY56"
+            && two_nibbles(&self.families[(rec.cmd.board_no & 1) as usize])
         {
             // The two-nibble protocol needs two reads of the command lines per command
             // (xenon reads them a third time, after both nibbles, to clear the interrupt).
             let reads = unsafe { ffi::shim_nibble_reads() };
             eprintln!(
-                "  board {} (BY56): the first command's lines were read {reads} time(s) (at least 2 needed; xenon: 3)",
-                rec.cmd.board_no
+                "  board {} ({}): the first command's lines were read {reads} time(s) (at least 2 needed; xenon: 3, suprbowl: 4)",
+                rec.cmd.board_no,
+                self.families[(rec.cmd.board_no & 1) as usize]
             );
         }
         let a = self.analyze(&rec);
@@ -4925,14 +4949,23 @@ fn board_typestr(board: c_int) -> Option<String> {
     let by56 = t == "BY51" && unsafe { ffi::shim_board_type(board) } & 0xFF == BY56_SUBTYPE;
     let p2k = t == "DCS" && unsafe { ffi::shim_board_type(board) } == ffi::SNDBRD_DCSP2K;
     let inder = t == "SPINB" && unsafe { ffi::shim_spinb_own(board) } == 0;
+    let by51n = t == "BY51" && unsafe { ffi::shim_board_type(board) } & 0xFF == BY51N_SUBTYPE;
     let capcom = t == "TMS320AV120" && unsafe { ffi::shim_board_type(board) } & 0xFF == 0;
     Some(match () {
         _ if capcom => "CAPCOMS".into(),
         _ if by56 => "BY56".into(),
+        _ if by51n => "BY51N".into(),
         _ if p2k => "DCSP2K".into(),
         _ if inder => "INDER".into(),
         _ => t,
     })
+}
+
+/// Boards that take a command as two nibbles on the same lines (`shim_nibble_cmd`): the
+/// Sounds Plus -56 and Bell Games' -51N (Super Bowl's sound program, interrupt handler at
+/// `F8C0`, reads the lines twice, about 50 us apart, low nibble first, as xenon's does).
+fn two_nibbles(family: &str) -> bool {
+    matches!(family, "BY56" | "BY51N")
 }
 
 /// A DCS board: WPC's (`DCS`) or Pinball 2000's DCS2 (`DCSP2K`, PinMAME's same "DCS"

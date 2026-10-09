@@ -156,7 +156,7 @@ pub fn full_scale(family: &str) -> Option<&'static str> {
     if family.starts_with("WMSS11")
         || matches!(
             family,
-            "BY45" | "BYTCS" | "BSMT (Data East)" | "BY32" | "BY51" | "BY56"
+            "BY45" | "BYTCS" | "BSMT (Data East)" | "BY32" | "BY51" | "BY56" | "BY51N"
         )
     {
         Some(FULL_SCALE)
@@ -184,7 +184,7 @@ pub fn none_reason(family: &str) -> &'static str {
         "BSMT (Data East)" => "Data East sets the master volume with a hardware pot",
         f if f.starts_with("WMSS11") => "System 11 sound boards have no volume stage",
         "BY45" | "BYTCS" => "Cheap Squeak boards have no volume stage",
-        "BY32" | "BY51" | "BY56" => "the early Bally sound boards have no volume stage",
+        "BY32" | "BY51" | "BY56" | "BY51N" => "the early Bally sound boards have no volume stage",
         "BYSNT" => {
             "the Squawk & Talk's volume lines are not emulated in PinMAME (its commands DF..FE)"
         }

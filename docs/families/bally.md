@@ -132,26 +132,33 @@ Xenon (`xenon`)
 ## <a name="sndbrd_by51n"></a>SNDBRD_BY51N
 
 Bell Games' -51N (Sounds Plus -51 variant) · interface `BY51`, sub-type 2, reported
-`BY51` (`src/wpc/by35snd.c`) · ⚠️ · 2 sets, 1 game, 1 sound ROM id, 1984-2018, Bell
-Games · Super Bowl (`suprbowl`, `src/wpc/nuova.c`)
+`BY51N` by rom2altsound (`board_typestr`; `src/wpc/by35snd.c`) · ✅ · 2 sets, 1 game, 1
+sound ROM id, 1984-2018, Bell Games · Super Bowl (`suprbowl`, `src/wpc/nuova.c`)
 
 - **Hardware**: the -51's M6802 and AY-3-8910 plus a DAC at `1000`
   (`MACHINE_DRIVER_START(by51N)`).
-- **Commands**: the game has no Sound E line (`BY35GD_NOSOUNDE`): four bits only.
+- **Commands**: the game has no Sound E line (`BY35GD_NOSOUNDE`): four lines.
   `sp51_data_w` (sub-type 2) keeps `data & 0x0f` and raises the CPU's IRQ when the
-  strobe is high and the nibble is not `0F`; the program reads the command through the
-  PIA's port A, inverted (`sp_8910r` returns `~lastcmd`). `sp51_manCmd_w` stores the whole
-  byte, pulses CA1 and the IRQ.
-- **Sound list, stop, reboot**: as reported `BY51`, it gets the -51's: `00`..`1F`, stop
-  `1E`, 8 s after a reset. None of these was checked against Super Bowl's program: the
-  game only sends `00`..`0F` (`0F` raises no interrupt), and what `1E` and the commands
-  `10`..`1F` do in its program is not known.
+  strobe is high and the nibble is not `0F`; the program reads the lines through the
+  PIA's port A, inverted (`sp_8910r` returns `~lastcmd`). **A command is a byte in two
+  nibbles**: Super Bowl's sound program (`suprbowl.snd`, interrupt handler at `F8C0`, read
+  with a 6800 disassembler) reads the port twice to clear its flags, then the low
+  nibble, then, about 50 us later, the high one, and inverts the byte, as the -56's
+  program does (see [SNDBRD_BY56](#sndbrd_by56)). `sp51_manCmd_w` leaves one value on
+  the lines for both reads.
+- **What rom2altsound sends**: the -56's two-nibble path (`shim_nibble_cmd`, the hook in
+  front of the PIA at `$0080`), with the high nibble handed over after the third read of
+  the port (`shim_nibble_after`), and the game's strobe set low once booted
+  (`sndbrd_ctrl_w(0)`), else the data handler would raise the interrupt a second time.
+  Before (0.2.3) it was driven as a -51, single bytes: 6 of 32.
+- **Sound list**: `01`..`FF` (the generic sweep). **Stop**: a board reset (8 s reboot, as
+  the -51's).
 - **Volume**: `full_scale (no volume stage)` (as `BY51`).
 - **Loops**: audio and sound CPU state (RAM `0000`-`007F`, `sp51N_readmem`).
 - **DUCK / STOP / CHANNEL**: defaults.
-- **Measured**: 6 of 32 (board-support).
-- **Limits**: not determined from the code why 26 commands are silent. A start: give
-  the sub-type its own sweep (`00`..`0E`) and stop, read in its sound program.
+- **Measured** (survey settings, board-support): 26 of 40, all from silence, 9 levels.
+- **Limits**: no stop command known (a board reset after each sound: 69 in the survey
+  run).
 
 ## <a name="sndbrd_by61"></a>SNDBRD_BY61
 
@@ -309,7 +316,7 @@ games, 5 sound ROM ids, 1986-1987, Bally · e.g. Black Belt (`blackblt`), MotorD
 
 ## <a name="sndbrd_bysd"></a>SNDBRD_BYSD
 
-Bally Sounds Deluxe · interface `BYSD` (`src/wpc/by35snd.c`) · ⚠️ · 10 sets, 6 games, 6
+Bally Sounds Deluxe · interface `BYSD` (`src/wpc/by35snd.c`) · ✅ · 10 sets, 6 games, 6
 sound ROM ids, 1986-1988, Bally · e.g. Special Force (`specforc`), Party Animal
 (`prtyanim`), Heavy Metal Meltdown (`hvymetal`), Blackwater 100 (`black100`)
 
@@ -319,12 +326,14 @@ sound ROM ids, 1986-1988, Bally · e.g. Special Force (`specforc`), Party Animal
   nibble then the high one. PinMAME's `sd_man_w` latches the byte, pulses the strobe and
   hands both nibbles.
 - **Sound list**: `01`..`FF` (the generic sweep).
-- **Stop, boot and resets**: no stop known (not in `BUILTIN_STOPS`): the board is reset
-  after every sound (68000 reset line), 4 s wait.
+- **Stop, boot and resets**: `00` (`BUILTIN_STOPS`), which the games send at boot (specforc:
+  `00 00 1F 01`). Until 0.2.3 a board reset (68000 reset line) after every sound, 4 s wait:
+  the same files, with 97 resets instead of 1 over the first 40 commands.
 - **Volume**: none decoded: `none: recorded at the game's own volume`.
 - **Loops**: audio method only: the probe reads only 8-bit audio CPUs
   (`shim_audio_cpu`), and the 68000's RAM is `MRA16_RAM`.
 - **DUCK / STOP / CHANNEL**: defaults.
-- **Measured**: specforc 12 of 40 (board-support).
-- **Limits**: 28 of the first 40 commands are silent; to check on a full sweep whether
-  the board takes a two-byte command (board-support). Not determined from the code.
+- **Measured**: specforc 12 of 40 in the survey; the full sweep `01`..`FF` gives 75 of 255
+  (67 files, 8 blips), all from silence: most bytes are simply not commands. The two-nibble
+  path of `sd_man_w` is the game's (data, strobe, high nibble).
+- **Limits**: no full run with the loop search.

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Bell Games' -51N** (BY51N, Super Bowl): commands are two nibbles, as on the -56
+  (read in its sound program), sent through the same hook: 26 of 40, all from silence,
+  distinct (6 of 32 before).
+- **Bally Sounds Deluxe** (BYSD): stop `00` instead of a board reset; a full sweep gives
+  75 of 255 commands, all from silence (the survey's 12 of 40 were not a protocol problem).
 - **Tabart's Sahara Love and Le Grand 8** (TABART2, TABART3): the commands go out through
   the game's own path (the sound lines, then idle), not the manual command, which stored
   them unconverted: 28 of 31 and 26 of 31, all from silence (one held tone before).

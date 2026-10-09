@@ -261,12 +261,13 @@ static const struct sndbrdIntf *shim_nib_intf;
 static int shim_nib_board;
 static int shim_nib_hi = -1;  // the high nibble still to hand over, or -1
 static int shim_nib_reads;    // port A reads since the last armed command
+static int shim_nib_after = 1; // the read after which the high nibble goes on the lines
 
 static READ_HANDLER(shim_nib_r) {
   data8_t v = shim_nib_orig(offset);
   if ((offset & 3) == 0) {
     shim_nib_reads++;
-    if (shim_nib_hi >= 0) {
+    if (shim_nib_hi >= 0 && shim_nib_reads >= shim_nib_after) {
       shim_nib_intf->data_w(shim_nib_board, shim_nib_hi);
       shim_nib_hi = -1;
     }
@@ -309,6 +310,13 @@ void shim_nibble_cmd(int board, int data) {
   shim_nib_reads = 0;
   shim_nib_hi = (data >> 4) & 0x0f;
   sndbrd_manCmd(board, data);
+}
+
+// After which read of the lines the high nibble is handed over: 1 on the -56 (xenon reads
+// the low nibble first), 3 on Bell Games' -51N (Super Bowl's interrupt handler reads the
+// port twice to clear its flags, then the low nibble, then the high one).
+void shim_nibble_after(int n) {
+  shim_nib_after = n < 1 ? 1 : n;
 }
 
 // How many times the board read its command lines since the last `shim_nibble_cmd`.

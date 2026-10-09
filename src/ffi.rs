@@ -133,6 +133,7 @@ unsafe extern "C" {
     pub fn shim_nibble_hook(board: c_int) -> c_int;
     pub fn shim_nibble_cmd(board: c_int, data: c_int);
     pub fn shim_nibble_reads() -> c_int;
+    pub fn shim_nibble_after(n: c_int);
     pub fn shim_spinb_own(board: c_int) -> c_int;
     pub fn shim_by45_p21(on: c_int);
     pub fn shim_mancmd_pairs(board: c_int, a: c_int, b: c_int, n: c_int, slices: c_int);

@@ -79,6 +79,7 @@ are the system zips; 2796 of the 2961 sets are there).
 | ALVGS2 | BSMT | 10 | 5 | 6 | 1993-1994 | Alvin G | 9 | wrldtour | ✅ | 24 of 40 (BSMT2000, its own program) |
 | TAITO_SINTEVOX | TAITO | 10 | 5 | 7 | 1981-1982 | Taito | 10 | titan | ✅ | 38 of 40 (titan, with the stop 00 since the Sintetizador fix: the same 38, 11 board resets instead of 45) |
 | ST100 | ST100 | 10 | 4 | 0 | 1978-2022 | Stern, Stern / Idleman | 10 | dracula | ✅ | as ST100B: dracula 40 of 40, all from silence with the stop 00 (38 not from silence before) |
+| BYSD | BYSD | 10 | 6 | 6 | 1986-1988 | Bally | 10 | specforc | ✅ | sounds come out, all from silence: 12 of the first 40 commands, and 75 of 255 on a full sweep (67 files, 8 blips): most bytes are no command. The stop is now 00 (sent by the game at boot): 1 board reset instead of 97 |
 | BY56 | BY51 | 8 | 1 | 4 | 1980-2008 | Bally, Bally / Oliver | 8 | xenon | ✅ | 30 of 40 (README) |
 | ZAC1125 | ZAC1125 | 8 | 4 | 0 | 1979-1980 | Zaccaria | 8 | firemntn | ✅ | first run: 38 of 40, all from silence (no sound ROM: the board's tones) |
 | ZAC13181x3 | ZAC1370 | 8 | 2 | 2 | 1987-1987 | Zaccaria | 8 | strsphnx | ✅ | fixed as ZAC1370 (0 of 40 before): strsphnx 21 of 40 (20 files, 1 blip), nstrphnx the same, all from silence; the first 40 commands (FE..D7) all go to the third Z80 |
@@ -103,6 +104,7 @@ are the system zips; 2796 of the 2961 sets are there).
 | BARNI | BARNI | 2 | 2 | 2 | 1985-1985 | Barni | 2 | redbaron | ✅ | first run: 26 of 40, all from silence |
 | PLAY3 | PLAY3 | 2 | 2 | 2 | 1982-1982 | Playmatic | 2 | cerberus | ✅ | 19 of 40 |
 | TAITO_SINTEVOXPP | TAITO | 2 | 2 | 2 | 1982-1982 | Taito | 2 | gork | ✅ | 37 of 40 (gork; with the stop 00: the same 37, 28 board resets instead of 47) |
+| BY51N | BY51 | 2 | 1 | 1 | 1984-2018 | Bell Games, Bell Games / Quench | 2 | suprbowl | ✅ | fixed (6 of 32 before): a command is two nibbles, read after two dummy reads (Super Bowl's sound program), sent through the -56's hook: suprbowl 26 of 40, all from silence, distinct |
 | BY61B2 | BYSNT | 1 | 1 | 1 | 1982-1982 | Bally | 1 | mysteria | ✅ | first run: 18 of 40, all from silence |
 | BY61N | BYSNT | 1 | 1 | 1 | 1985-1985 | Bell Games | 1 | cosflash | ✅ | first run: 26 of 40, all from silence |
 | JVH2 | JVH | 1 | 1 | 1 | 1988-1988 | Jac Van Ham (Royal) | 1 | formula1 | ✅ | first run: 27 of 40, all from silence |
@@ -116,9 +118,7 @@ are the system zips; 2796 of the 2961 sets are there).
 | TABART3 | TABART | 1 | 1 | 1 | 1985-1985 | Christian Tabart (France) | 1 | grand8 | ✅ | as TABART2: grand8 26 of 31, all from silence |
 | SPINB | SPINB | 27 | 16 | 14 | 1985-1996 | Inder (Spain), Spinball (Spain) | 26 | bushido, corsario | ⚠️ | Spinball's own boards fixed (bushido, mach2, jolypark, vrnwrld: 7 sets; 0 of 40 before): both sound CPUs poll the latch and take a byte only while its bit 7 is set, so each command is `8x`..`FF` followed by `00`, stop `8F`; the MSM6585 boards' step volume, which the games' boot steps down to 0, is set back to 122. bushido 31 of 40, mach2 40, jolypark 40, vrnwrld 40, all from silence. Inder's machines (20 sets, their own command handler, `INDER` in the logs) unchanged: lapbylap 30 of 40, corsario and atleta 40 of 40 but 39 not from silence (a sound playing on), brvteam no board |
 | ST300V | ST300 | 21 | 6 | 7 | 1980-2024 | Stern, Stern / Idleman | 20 | flight2k | ⚠️ | speech only: the sweep is now 40..7F, the S14001A's 64 words (the manual command is the speech path): flight2k 37 of 40, freefall 40 of 40, all from silence, 0.2 to 0.4 s each, some clipped (0 of 40 before). The effects are the game's own timer programming (as ST300), not extracted |
-| BYSD | BYSD | 10 | 6 | 6 | 1986-1988 | Bally | 10 | specforc | ⚠️ | 12 of 40 (Sounds Deluxe): sounds come out, but 28 of the first 40 commands are silent; to check on a full sweep whether the board takes a two-byte command |
 | JVH | JVH | 3 | 3 | 2 | 1986-1987 | Jac Van Ham (Royal) | 3 | icemania | ⚠️ | 1 of 40 (a 0.2 s file): to look at |
-| BY51N | BY51 | 2 | 1 | 1 | 1984-2018 | Bell Games, Bell Games / Quench | 2 | suprbowl | ⚠️ | first run: 6 of 32 (the BY51 board of Bell Games' conversion; spaceinv gives 32 of 32 on BY51) |
 | ROMSTAR | TMS320AV120 | 1 | 1 | 1 | 1994-1994 | Romstar | 1 | ghv101 | ⚠️ | 40 of 40 but doubtful: every file runs to the 5 s cap and none starts from silence (something keeps playing under every command) |
 | ROWAMET | ROWAMET | 1 | 1 | 1 | ? | Rowamet | 1 | heavymtl | ⚠️ | first run: 5 of 40 |
 | S3DFS | WMSS67 | 1 | 1 | 1 | 1978-1978 | Williams | 1 | disco_l1 | ⚠️ | with the S67S idle framing (1 of 40 before): 40 of 40, all from silence, but few distinct (the files repeat with the lowest low bit of the command); the control bit (s67s_ctrl_w) is never set |
