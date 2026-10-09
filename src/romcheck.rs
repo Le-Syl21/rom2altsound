@@ -104,7 +104,7 @@ pub struct Index<'a> {
     by_no_dump: HashMap<String, Vec<usize>>,
     by_name: HashMap<&'a str, usize>,
     by_sound_id: HashMap<String, Vec<usize>>,
-    boards: HashMap<String, Board>,
+    pub boards: HashMap<String, Board>,
     /// For each system set, how many sets load from it.
     system_users: HashMap<String, usize>,
 }
@@ -219,7 +219,7 @@ pub struct BoardInfo {
 }
 
 impl BoardInfo {
-    fn of(b: Option<&Board>) -> Self {
+    pub fn of(b: Option<&Board>) -> Self {
         let Some(b) = b else {
             return Self::default();
         };
@@ -919,7 +919,7 @@ fn folder_members(dir: &Path) -> Result<Vec<Member>, String> {
     Ok(out)
 }
 
-fn member_bytes(m: &Member) -> Result<Vec<u8>, String> {
+pub fn member_bytes(m: &Member) -> Result<Vec<u8>, String> {
     match &m.origin {
         Some(Origin::Zip(p, e)) => zipread::read(p, e),
         Some(Origin::File(p)) => std::fs::read(p).map_err(|e| format!("{}: {e}", p.display())),
@@ -976,7 +976,7 @@ fn deep_check(ix: &Index, unit: &mut Unit) {
 
 /// The units of the command line: each zip, each folder of ROM files, and in a folder each
 /// *.zip and each subfolder.
-fn collect_units(paths: &[PathBuf]) -> (Vec<(PathBuf, bool)>, Vec<String>) {
+pub fn collect_units(paths: &[PathBuf]) -> (Vec<(PathBuf, bool)>, Vec<String>) {
     let mut units = Vec::new();
     let mut ignored = Vec::new();
     for p in paths {
@@ -1420,6 +1420,43 @@ struct TableRow<'a> {
     sound_rom_id: Option<String>,
 }
 
+/// Reads and identifies every unit (see [`collect_units`]), `deep` also checking SHA-1s,
+/// and finds the split and completable sets among them.
+pub fn scan(ix: &Index, paths: &[(PathBuf, bool)], deep: bool) -> Vec<Unit> {
+    let mut units: Vec<Unit> = Vec::new();
+    for (p, is_zip) in paths {
+        let members = if *is_zip {
+            zip_members(p)
+        } else {
+            folder_members(p)
+        };
+        let path = p.display().to_string();
+        let stem = stem_of(p);
+        let kind = if *is_zip { "zip" } else { "folder" };
+        let mut u = match members {
+            Ok(m) => identify(ix, &path, kind, &stem, m),
+            Err(e) => Unit {
+                path,
+                kind,
+                stem,
+                status: "error",
+                issues: Vec::new(),
+                sets: Vec::new(),
+                also_closest: Vec::new(),
+                extras: Vec::new(),
+                error: Some(e),
+                members: Vec::new(),
+            },
+        };
+        if deep && u.error.is_none() {
+            deep_check(ix, &mut u);
+        }
+        units.push(u);
+    }
+    find_split_sets(&mut units);
+    units
+}
+
 /// Entry point of `rom2altsound roms`; returns the exit code.
 pub fn cli(args: Vec<String>) -> i32 {
     let cli = RomsCli::parse_from(std::iter::once("rom2altsound roms".to_owned()).chain(args));
@@ -1470,37 +1507,7 @@ pub fn cli(args: Vec<String>) -> i32 {
             return 2;
         }
     }
-    let mut units: Vec<Unit> = Vec::new();
-    for (p, is_zip) in &paths {
-        let members = if *is_zip {
-            zip_members(p)
-        } else {
-            folder_members(p)
-        };
-        let path = p.display().to_string();
-        let stem = stem_of(p);
-        let kind = if *is_zip { "zip" } else { "folder" };
-        let mut u = match members {
-            Ok(m) => identify(&ix, &path, kind, &stem, m),
-            Err(e) => Unit {
-                path,
-                kind,
-                stem,
-                status: "error",
-                issues: Vec::new(),
-                sets: Vec::new(),
-                also_closest: Vec::new(),
-                extras: Vec::new(),
-                error: Some(e),
-                members: Vec::new(),
-            },
-        };
-        if cli.deep && u.error.is_none() {
-            deep_check(&ix, &mut u);
-        }
-        units.push(u);
-    }
-    find_split_sets(&mut units);
+    let units = scan(&ix, &paths, cli.deep);
 
     let mut summary: BTreeMap<&'static str, usize> = BTreeMap::new();
     for u in &units {

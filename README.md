@@ -6,6 +6,10 @@
 
 **rom2altsound turns a pinball ROM's sounds into an AltSound pack for Visual Pinball.**
 
+**[Sound ROM catalog](https://le-syl21.github.io/rom2altsound/)**: every sound ROM PinMAME knows,
+by sound ROM id, with its games, its sound board, how far rom2altsound gets with it and the
+number of tracks read from the ROMs (data only: no ROM, no sound).
+
 > **0.2.2.** The packs it writes play in VPinball (Stern SAM packs
 > not yet, see [Stern SAM](#stern-sam)); please report what you find (see
 > [Help and feedback](#help-and-feedback)). What is in it: [CHANGELOG.md](CHANGELOG.md).
@@ -94,6 +98,14 @@ files that are no ROM, a zip named after another set, merged zips. Each game als
 sound board and its sound ROM id, the same for all the revisions of a game that share
 their sound ROMs. Nothing is changed in your folder; `--fix-names` writes correctly named
 zips (or links) to another one. See [how it works](docs/how-it-works.md#rom-verification).
+
+The [catalog site](https://le-syl21.github.io/rom2altsound/) is built from a ROM folder the same
+way, metadata only (names, sizes, checksums, counts), then the pages around it:
+
+```
+rom2altsound catalog ~/vpinball/roms --out docs/catalog.json
+python3 docs/build_site.py
+```
 
 Then copy the ROM's folder next to your table, as `<table folder>/altsound/<rom>/` (for
 example `Tables/Attack from Mars/altsound/afm_113b/`), and turn on the AltSound plugin in
@@ -531,6 +543,10 @@ The release binaries embed PinMAME, so they are distributed under PinMAME's term
 
 **rom2altsound transforme les sons d'une ROM de flipper en pack AltSound pour Visual Pinball.**
 
+**[Catalogue des ROM son](https://le-syl21.github.io/rom2altsound/fr/)** : toutes les ROM son que
+connaît PinMAME, par id de ROM son, avec leurs jeux, leur carte son, ce que rom2altsound en tire et
+le nombre de pistes lues dans les ROM (des données seulement : ni ROM, ni son).
+
 > **0.2.2.** Les packs qu'il écrit se jouent dans VPinball (pas
 > encore ceux des Stern SAM, voir [Stern SAM](#stern-sam-1)) ; merci de signaler ce que
 > vous trouvez (voir [Aide et retours](#aide-et-retours)). Son contenu (en anglais) :
@@ -622,6 +638,15 @@ jeu, les zips fusionnés. Chaque jeu reçoit aussi sa carte son et l'identifiant
 son, le même pour toutes les révisions d'un jeu qui partagent leurs ROM son. Rien n'est
 modifié dans votre dossier ; `--fix-names` écrit des zips correctement nommés (ou des
 liens) dans un autre. Voir [le fonctionnement](docs/how-it-works.md#rom-verification).
+
+Le [site du catalogue](https://le-syl21.github.io/rom2altsound/fr/) se construit de la même façon
+à partir d'un dossier de ROM, en métadonnées seulement (noms, tailles, sommes de contrôle,
+nombres), puis les pages autour :
+
+```
+rom2altsound catalog ~/vpinball/roms --out docs/catalog.json
+python3 docs/build_site.py
+```
 
 Copiez ensuite le dossier de la ROM à côté de votre table, en
 `<dossier de la table>/altsound/<rom>/` (par exemple

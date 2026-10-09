@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en" data-base="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sound ROM catalog · rom2altsound</title>
+<meta name="description" content="Every pinball sound ROM PinMAME knows, grouped by sound ROM id: the games and revisions that share it, their sound board, how far rom2altsound gets with it, the ROM files' checksums and the number of tracks read from the ROMs.">
+<meta name="google-site-verification" content="TqbXre6qrm9jaoj6tFwRRiI2vuQilAZLm6kUJA-etmo">
+<link rel="canonical" href="https://le-syl21.github.io/rom2altsound/">
+<link rel="alternate" hreflang="en" href="https://le-syl21.github.io/rom2altsound/">
+<link rel="alternate" hreflang="fr" href="https://le-syl21.github.io/rom2altsound/fr/">
+<link rel="alternate" hreflang="x-default" href="https://le-syl21.github.io/rom2altsound/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="rom2altsound">
+<meta property="og:title" content="Sound ROM catalog · rom2altsound">
+<meta property="og:description" content="Every pinball sound ROM PinMAME knows, grouped by sound ROM id: the games and revisions that share it, their sound board, how far rom2altsound gets with it, the ROM files' checksums and the number of tracks read from the ROMs.">
+<meta property="og:url" content="https://le-syl21.github.io/rom2altsound/">
+<meta property="og:locale" content="en_GB">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" type="image/svg+xml" href="img/favicon.svg">
+<link rel="stylesheet" href="style.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "Dataset", "name": "Sound ROM catalog", "description": "Every pinball sound ROM PinMAME knows, grouped by sound ROM id: the games and revisions that share it, their sound board, how far rom2altsound gets with it, the ROM files' checksums and the number of tracks read from the ROMs.", "url": "https://le-syl21.github.io/rom2altsound/", "inLanguage": "en", "isAccessibleForFree": true, "distribution": {"@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://le-syl21.github.io/rom2altsound/catalog.json"}}</script>
+<script defer src="app.js"></script>
+</head>
+<body>
+<header class="site"><div class="wrap wide">
+<a class="brand" href="./"><img src="img/favicon.svg" alt="" width="24" height="24"><span>rom2<b>altsound</b></span></a>
+<nav class="main"><a href="#catalog">Catalog</a><a href="#about">About</a><a href="https://github.com/Le-Syl21/rom2altsound">GitHub</a></nav>
+<a class="lang" href="fr/" hreflang="fr" lang="fr"><img src="img/fr.svg" alt="" width="21" height="14">Version française</a>
+</div></header>
+<main><div class="wrap wide">
+<div class="hero">
+<p class="eyebrow">rom2altsound</p>
+<h1>Sound ROM catalog</h1>
+<p class="lead">Every pinball sound ROM the PinMAME of rom2altsound knows, grouped by <strong>sound ROM id</strong>: one entry per set of sound ROMs, with every game revision that plays it, its sound board, how far rom2altsound gets with that board, the files' sizes and checksums, and the number of tracks or calls read straight from the ROMs.</p>
+<p class="note">Data only: this site holds no ROM and no sound, only names, sizes, checksums and counts. ROM images are copyrighted: use your own.</p>
+</div>
+<p id="status" class="count">Loading the catalog…</p>
+<div id="app" hidden>
+<div id="stats" class="stats"></div>
+<section id="detail" hidden aria-live="polite"></section>
+<h2 id="catalog">Sound ROM catalog</h2>
+<div class="controls">
+<label class="grow"><span>&#128269;</span><input type="search" id="q" autocomplete="off" spellcheck="false"></label>
+<label>Board family<select id="family"><option value=""></option></select></label>
+<label>rom2altsound support<select id="support"><option value=""></option></select></label>
+<label>Maker<select id="maker"><option value=""></option></select></label>
+<label class="check"><input type="checkbox" id="onlyIds"><span id="lOnlyIds"></span></label>
+<label class="check"><input type="checkbox" id="onlyFound"><span id="lOnlyFound"></span></label>
+</div>
+<p id="count" class="count"></p>
+<div class="table"><table><thead><tr><th data-k="title" class="" aria-sort="none"><button type="button">Game</button></th><th data-k="maker" class="hide-sm" aria-sort="none"><button type="button">Maker</button></th><th data-k="year" class="" aria-sort="none"><button type="button">Year</button></th><th data-k="family" class="" aria-sort="none"><button type="button">Board</button></th><th data-k="support" class="" aria-sort="none"><button type="button">rom2altsound</button></th><th data-k="sets" class="num" aria-sort="none"><button type="button">Sets</button></th><th data-k="sounds" class="num" aria-sort="none"><button type="button">Sounds</button></th><th data-k="names" class="num" aria-sort="none"><button type="button">Names</button></th><th data-k="id" class="hide-sm" aria-sort="none"><button type="button">Sound ROM id</button></th></tr></thead><tbody id="rows"></tbody></table></div>
+<p class="more"><button class="btn" type="button" id="more" hidden></button></p>
+</div>
+<section class="about">
+<h2 id="about">About</h2>
+<h3>What a sound ROM id is</h3>
+<p>The SHA-1 of the SHA-1s of a game's sound ROMs: the distinct SHA-1s (lowercase hex) of the files
+PinMAME loads for the sound board, sorted, each followed by a line feed. Every revision of a game that
+kept its sound ROMs has the same id, so one AltSound pack, and one list of sound names, serves all of
+them. Stern SAM games have none: their sounds are in the main image (one entry per set here).</p>
+<h3>Getting the id of your ROMs</h3>
+<pre><code>rom2altsound roms ~/vpinball/roms</code></pre>
+<p>identifies each zip by its content and prints, for each verified game, its sound board and its sound
+ROM id (<code>--json roms.json</code> for the full report). A pack also carries it, as
+<code>sound_rom_id</code> in <code>manifest.json</code>. Type the first characters of an id in the search
+box above, or open <code>#&lt;id&gt;</code> on this page.</p>
+<h3>Sound names</h3>
+<p>Names belong to a sound ROM, not to a game version. Type names on a pack's listening page
+(<code>index.html</code>), <strong>Export names</strong> saves a <code>names.csv</code> that carries the
+sound ROM id; put it in a pack with</p>
+<pre><code>rom2altsound names afm_113b names.csv
+rom2altsound afm_113b --names names.csv</code></pre>
+<p>A <code>names.csv</code> fits every set of the same entry, and is refused for other sound ROMs.
+The <em>Names</em> column counts the commands that PinMAME's <a href="https://github.com/vpinball/pinmame/blob/master/release/sounds.dat">sounds.dat</a>
+names for the entry's sets (the names themselves are not reproduced here).</p>
+<h3>The columns</h3>
+<ul>
+<li><strong>Board</strong>: the sound board family (PinMAME's <code>SNDBRD_*</code>), as the game's machine
+init starts it, with a link to the family's notes.</li>
+<li><strong>rom2altsound</strong>: the result of the <a href="https://github.com/Le-Syl21/rom2altsound/blob/main/docs/board-support.md">board survey</a>
+for the family: <em>Works</em> (sounds come out, distinct, each from silence), <em>Partial</em>,
+<em>No sound yet</em>, <em>No sound board</em>.</li>
+<li><strong>Sets</strong>: how many of the entry's PinMAME sets were complete in the reference ROM set the
+catalog was built from (2804 VPinMAME zips), out of all.</li>
+<li><strong>Sounds</strong>: read from the ROMs without running them, where the layout is known: the populated
+tracks of the DCS (and Pinball 2000) track catalog, the records of a Stern SAM call table. Empty for
+the other boards: their commands are only found by playing them.</li>
+</ul>
+<h3>Rebuilding the catalog</h3>
+<pre><code>rom2altsound catalog ~/vpinball/roms --out docs/catalog.json
+python3 docs/build_site.py</code></pre>
+<p>The ROMs never leave your machine: the command reads them and writes metadata only.</p>
+</section>
+</div></main>
+<footer class="site"><div class="wrap wide">
+<a href="https://github.com/Le-Syl21/rom2altsound">Source code and issues on GitHub</a><a href="https://github.com/Le-Syl21/rom2altsound/blob/main/README.md">README</a>
+<span>rom2altsound is free software (BSD-3-Clause). PinMAME and Visual Pinball are separate projects by their own authors.</span>
+</div></footer>
+</body>
+</html>

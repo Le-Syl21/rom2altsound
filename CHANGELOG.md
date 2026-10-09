@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- **Sound ROM catalog site** (https://le-syl21.github.io/rom2altsound/, English and French):
+  every sound ROM id of the PinMAME built in (673) and every set without one (Stern SAM,
+  games with no sound ROM), 1473 entries for 2961 sets: the sets sharing it and whether
+  they were complete in the reference ROM set, the board family with a link to its notes
+  and rom2altsound's support level for it (docs/board-support.md), the sound ROM files
+  (names, sizes, CRC32, SHA-1), the tracks or calls read statically from the ROMs (DCS and
+  Pinball 2000 track catalogs, Stern SAM call tables) and how many commands sounds.dat
+  names. Search, filters, sortable columns, one link per entry (`#<sound ROM id>`). Data
+  only: no ROM content, no sound, and no sounds.dat name (only their count).
+- **`rom2altsound catalog <roms> --out catalog.json`** writes that catalog (one entry per
+  line); `python3 docs/build_site.py` writes the pages around it.
+- Fixed: Williams' shuffle alleys (alcat_l7, tts_l1/l2, gmine_l2, tdawg_l1, shfin_l1) were
+  given no sound board: `GEN_S11` was read as 0x8000000 instead of gen.h's 0x80000000. They
+  are SNDBRD_S11S (the System 11 CPU board's sound); a test now checks every generation
+  value against gen.h.
+
 ## 0.2.3 (2026-10-08)
 
 - **Listening page: a table, and names you can type.** The sounds are now a table (play

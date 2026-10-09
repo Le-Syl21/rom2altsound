@@ -4,6 +4,7 @@
 mod altsound;
 mod batch;
 mod bsmtfw;
+mod catalog;
 mod dcsrom;
 mod drivers;
 mod ducking;
@@ -64,6 +65,9 @@ Examples:
                                         misnamed zips (rom2altsound roms --help)
   rom2altsound names afm_113b names.csv put the names typed on the listening page (its
                                         \"Export names\") in the pack (rom2altsound names --help)
+  rom2altsound catalog ~/vpinball/roms --out catalog.json
+                                        the sound ROM catalog of the web site (rom2altsound
+                                        catalog --help)
 
 Each ROM folder holds the WAV files, altsound.csv, g-sound.csv, altsound.ini,
 manifest.json, cold-boot.json and factory-nvram/.
@@ -369,6 +373,7 @@ fn main() {
         Some("page") => return listen::page_cli(std::env::args().skip(2).collect()),
         Some("names") => std::process::exit(names::cli(std::env::args().skip(2).collect())),
         Some("roms") => std::process::exit(romcheck::cli(std::env::args().skip(2).collect())),
+        Some("catalog") => std::process::exit(catalog::cli(std::env::args().skip(2).collect())),
         Some("__driver-boards") => {
             return drivers::print_boards(std::env::args().skip(2).collect());
         }

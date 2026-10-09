@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="fr" data-base="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catalogue des ROM son · rom2altsound</title>
+<meta name="description" content="Toutes les ROM son de flipper que connaît PinMAME, groupées par id de ROM son : les jeux et révisions qui la partagent, leur carte son, ce que rom2altsound en tire, les sommes de contrôle des fichiers et le nombre de pistes lues dans les ROM.">
+<link rel="canonical" href="https://le-syl21.github.io/rom2altsound/fr/">
+<link rel="alternate" hreflang="en" href="https://le-syl21.github.io/rom2altsound/">
+<link rel="alternate" hreflang="fr" href="https://le-syl21.github.io/rom2altsound/fr/">
+<link rel="alternate" hreflang="x-default" href="https://le-syl21.github.io/rom2altsound/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="rom2altsound">
+<meta property="og:title" content="Catalogue des ROM son · rom2altsound">
+<meta property="og:description" content="Toutes les ROM son de flipper que connaît PinMAME, groupées par id de ROM son : les jeux et révisions qui la partagent, leur carte son, ce que rom2altsound en tire, les sommes de contrôle des fichiers et le nombre de pistes lues dans les ROM.">
+<meta property="og:url" content="https://le-syl21.github.io/rom2altsound/fr/">
+<meta property="og:locale" content="fr_FR">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" type="image/svg+xml" href="../img/favicon.svg">
+<link rel="stylesheet" href="../style.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "Dataset", "name": "Catalogue des ROM son", "description": "Toutes les ROM son de flipper que connaît PinMAME, groupées par id de ROM son : les jeux et révisions qui la partagent, leur carte son, ce que rom2altsound en tire, les sommes de contrôle des fichiers et le nombre de pistes lues dans les ROM.", "url": "https://le-syl21.github.io/rom2altsound/fr/", "inLanguage": "fr", "isAccessibleForFree": true, "distribution": {"@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://le-syl21.github.io/rom2altsound/catalog.json"}}</script>
+<script defer src="../app.js"></script>
+</head>
+<body>
+<header class="site"><div class="wrap wide">
+<a class="brand" href="./"><img src="../img/favicon.svg" alt="" width="24" height="24"><span>rom2<b>altsound</b></span></a>
+<nav class="main"><a href="#catalog">Catalogue</a><a href="#about">À propos</a><a href="https://github.com/Le-Syl21/rom2altsound">GitHub</a></nav>
+<a class="lang" href="../" hreflang="en" lang="en"><img src="../img/gb.svg" alt="" width="21" height="14">English version</a>
+</div></header>
+<main><div class="wrap wide">
+<div class="hero">
+<p class="eyebrow">rom2altsound</p>
+<h1>Catalogue des ROM son</h1>
+<p class="lead">Toutes les ROM son de flipper que connaît le PinMAME de rom2altsound, groupées par <strong>id de ROM son</strong> : une entrée par jeu de ROM son, avec chaque révision du jeu qui le joue, sa carte son, ce que rom2altsound tire de cette carte, la taille et les sommes de contrôle des fichiers, et le nombre de pistes ou d'appels lus directement dans les ROM.</p>
+<p class="note">Des données seulement : ce site ne contient ni ROM ni son, seulement des noms, des tailles, des sommes de contrôle et des nombres. Les images de ROM sont protégées par le droit d'auteur : utilisez les vôtres.</p>
+</div>
+<p id="status" class="count">Chargement du catalogue…</p>
+<div id="app" hidden>
+<div id="stats" class="stats"></div>
+<section id="detail" hidden aria-live="polite"></section>
+<h2 id="catalog">Catalogue des ROM son</h2>
+<div class="controls">
+<label class="grow"><span>&#128269;</span><input type="search" id="q" autocomplete="off" spellcheck="false"></label>
+<label>Famille de carte<select id="family"><option value=""></option></select></label>
+<label>Prise en charge<select id="support"><option value=""></option></select></label>
+<label>Fabricant<select id="maker"><option value=""></option></select></label>
+<label class="check"><input type="checkbox" id="onlyIds"><span id="lOnlyIds"></span></label>
+<label class="check"><input type="checkbox" id="onlyFound"><span id="lOnlyFound"></span></label>
+</div>
+<p id="count" class="count"></p>
+<div class="table"><table><thead><tr><th data-k="title" class="" aria-sort="none"><button type="button">Jeu</button></th><th data-k="maker" class="hide-sm" aria-sort="none"><button type="button">Fabricant</button></th><th data-k="year" class="" aria-sort="none"><button type="button">Année</button></th><th data-k="family" class="" aria-sort="none"><button type="button">Carte</button></th><th data-k="support" class="" aria-sort="none"><button type="button">rom2altsound</button></th><th data-k="sets" class="num" aria-sort="none"><button type="button">Jeux de ROM</button></th><th data-k="sounds" class="num" aria-sort="none"><button type="button">Sons</button></th><th data-k="names" class="num" aria-sort="none"><button type="button">Noms</button></th><th data-k="id" class="hide-sm" aria-sort="none"><button type="button">Id de ROM son</button></th></tr></thead><tbody id="rows"></tbody></table></div>
+<p class="more"><button class="btn" type="button" id="more" hidden></button></p>
+</div>
+<section class="about">
+<h2 id="about">À propos</h2>
+<h3>Ce qu'est un id de ROM son</h3>
+<p>Le SHA-1 des SHA-1 des ROM son d'un jeu : les SHA-1 distincts (hexadécimal minuscule) des fichiers que
+PinMAME charge pour la carte son, triés, chacun suivi d'un saut de ligne. Toutes les révisions d'un jeu qui
+ont gardé leurs ROM son ont le même id : un seul pack AltSound, et une seule liste de noms de sons, sert à
+toutes. Les Stern SAM n'en ont pas : leurs sons sont dans l'image principale (une entrée par jeu de ROM
+ici).</p>
+<h3>Obtenir l'id de vos ROM</h3>
+<pre><code>rom2altsound roms ~/vpinball/roms</code></pre>
+<p>identifie chaque zip par son contenu et affiche, pour chaque jeu vérifié, sa carte son et son id de ROM
+son (<code>--json roms.json</code> pour le rapport complet). Un pack le porte aussi, dans
+<code>manifest.json</code> (<code>sound_rom_id</code>). Tapez les premiers caractères d'un id dans la
+recherche ci-dessus, ou ouvrez <code>#&lt;id&gt;</code> sur cette page.</p>
+<h3>Les noms des sons</h3>
+<p>Les noms appartiennent à une ROM son, pas à une version du jeu. Tapez des noms sur la page d'écoute d'un
+pack (<code>index.html</code>) ; <strong>Export names</strong> enregistre un <code>names.csv</code> qui porte
+l'id de ROM son ; mettez-le dans un pack avec</p>
+<pre><code>rom2altsound names afm_113b names.csv
+rom2altsound afm_113b --names names.csv</code></pre>
+<p>Un <code>names.csv</code> convient à tous les jeux de ROM d'une même entrée, et il est refusé pour d'autres
+ROM son. La colonne <em>Noms</em> compte les commandes que le <a href="https://github.com/vpinball/pinmame/blob/master/release/sounds.dat">sounds.dat</a> de PinMAME
+nomme pour les jeux de ROM de l'entrée (les noms eux-mêmes ne sont pas reproduits ici).</p>
+<h3>Les colonnes</h3>
+<ul>
+<li><strong>Carte</strong> : la famille de carte son (le <code>SNDBRD_*</code> de PinMAME), telle que
+l'initialisation de la machine la démarre, avec un lien vers les notes de la famille.</li>
+<li><strong>rom2altsound</strong> : le résultat du <a href="https://github.com/Le-Syl21/rom2altsound/blob/main/docs/board-support.md">relevé des cartes</a>
+pour la famille : <em>Fonctionne</em> (les sons sortent, distincts, chacun depuis le silence),
+<em>Partiel</em>, <em>Pas encore de son</em>, <em>Pas de carte son</em>.</li>
+<li><strong>Jeux de ROM</strong> : combien des jeux de ROM PinMAME de l'entrée étaient complets dans la
+collection de référence d'où le catalogue est tiré (2804 zips VPinMAME), sur le total.</li>
+<li><strong>Sons</strong> : lu dans les ROM sans les faire tourner, là où leur organisation est connue : les
+pistes remplies du catalogue DCS (et Pinball 2000), les entrées de la table d'appels d'un Stern SAM. Vide
+pour les autres cartes : leurs commandes ne se trouvent qu'en les jouant.</li>
+</ul>
+<h3>Refaire le catalogue</h3>
+<pre><code>rom2altsound catalog ~/vpinball/roms --out docs/catalog.json
+python3 docs/build_site.py</code></pre>
+<p>Les ROM ne quittent jamais votre machine : la commande les lit et n'écrit que des métadonnées.</p>
+</section>
+</div></main>
+<footer class="site"><div class="wrap wide">
+<a href="https://github.com/Le-Syl21/rom2altsound">Code source et tickets sur GitHub</a><a href="https://github.com/Le-Syl21/rom2altsound/blob/main/README.md">README</a>
+<span>rom2altsound est un logiciel libre (BSD-3-Clause). PinMAME et Visual Pinball sont des projets distincts, développés par leurs propres auteurs.</span>
+</div></footer>
+</body>
+</html>
