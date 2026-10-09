@@ -222,10 +222,24 @@ Christian Tabart L'Hexagone board (Z80 + YM2203 + YM3526) · PinMAME interface `
 - **Limits and what is missing**: tried after 0.2.3 and dropped: each command as a pair
   through the toggle (`00`, then the line state as `tabart_data_w` stores it, `data ^
   C7`), then the idle `10` the same way (hexagone's boot: `58` between `10`s): 8 of 40,
-  all the same held sound at -19.4 LUFS, 105 board resets. The NMI the program reads the
-  command in comes from the game's switch strobe (`tabart_ctrl_w`, strobe 1), which the
-  halted game no longer makes; the command would need that strobe sequence. Not
-  determined further.
+  all the same held sound at -19.4 LUFS, 105 board resets. Read in hexagone's sound program
+  (`hexagone.bin`, Z80) since: the board is not driven by command numbers. Its NMI
+  (`0066`, raised by the game's switch strobe 1, `tabart_ctrl_w`) reads YM2203 port B,
+  the switch returns of the strobed row (`ym2203_port_b_r`: `swMatrix[swStrobe]`), and
+  port A, the game's lines (`0E`, kept at `4022`); the next four YM2203 timer interrupts
+  (`01BD`, count at `4020`) read rows 2 to 5 as the game's strobe moves on. The main loop
+  (`0376`) then finds the newly closed switches (`0209`: the rows XOR their last state)
+  and plays the sound of each of eleven of them (table `02E7`: `47 17 07 06 16 03 13 12
+  42 32 02`, row and column), plus one per chime line (bits 0-2, the game's 10, 100 and
+  1000 chimes, `04B6`) and the outhole (bit 4, switch 66). The two sound DIP bits (lines
+  bits 5 and 6, `core_getDip(3) & 0x90` in `gts1.c` `snd_w`) choose the mode: both off,
+  the program only plays its tune (`04CE`), which is what PinMAME plays from 1 s into
+  the boot with the default DIPs (measured: a continuous tune for 40 s, the game
+  running). With the game halted, nothing strobes the rows: port B gives the manual
+  command's byte, and the lines only reach the board at each strobe-1 NMI. Getting the
+  switch sounds out would mean closing switches with the game's strobe running, and
+  AltSound could not key them anyway: they never pass through a sound command (the
+  stream AltSound sees is the line writes, chimes and game state). Left as is.
 - **In VPinball**: AltSound gets the game's line writes (`data` before the `^ 0xC7` of
   `tabart_data_w`), not the manual handler's pairs; not tested in VPinball.
 
@@ -375,28 +389,59 @@ Tecnoplay Scramble board (two 6502 + TMS7000, System 80B-like) · PinMAME interf
 ## <a name="sndbrd_tecnoplay"></a>SNDBRD_TECNOPLAY
 
 Tecnoplay X Force board (TMS7000 + Y8950 + DAC) · PinMAME interface `TECNOPLAY`
-(`src/wpc/techno.c`) · status ❌ · 2 sets, 2 games, 1 sound ROM id, 1987-1988, Tecnoplay ·
+(`src/wpc/techno.c`) · status ✅ · 2 sets, 2 games, 1 sound ROM id, 1987-1988, Tecnoplay ·
 e.g. X Force (`xforce`), Space Team (`spcteam`)
 
 - **Hardware**: a 68000 game CPU; a TMS7000 at 4 MHz (`MACHINE_DRIVER_START(tecno)`), a
-  Y8950 (OPL with ADPCM, samples in `REGION_USER1`) and a DAC.
+  Y8950 (OPL with ADPCM; its sample region `REGION_USER1` has no ROM) and a DAC. X Force's
+  sound ROM is not dumped (`sound.bin`, `NO_DUMP`): only Space Team has a sound program.
 - **Commands**: the game's 68000 writes a 16-bit word to `016000` (`sound_w`): D0-D7 the
   sound data, D8 the strobe, D9 a reset, D10 the display data clock, D11-D15 auxiliary
-  outputs. `sound_w` passes the low byte of **every** write to `sndbrd_data_w`, display
-  clocking included: hence the 76978 bytes logged during the survey's boot. The board's
-  handler `tecsnd_data_w` (data and manual): a non-zero byte is latched and **asserts**
-  the TMS7000's IRQ3; a zero byte clears it. The strobe bit D8 never reaches the board.
-- **Sound list**: raw sweep `01`..`FF`: each command asserts IRQ3 and nothing clears it
-  until a `00`, which the sweep never sends (the stop is a reset).
+  outputs. Read in Space Team's game program: a request (`1D70`) puts the byte on D0-D7
+  with the strobe low, then high, and the byte stays on the lines (the display writes of
+  the interrupt routine, `0510`, carry it); a "reset" request lowers D9 instead. The
+  game's bytes are whole bytes (`35`, `95`, `E3`, `8C`, `F1`, `FF`, `00`...). `sound_w`
+  passes the low byte of **every** write to `sndbrd_data_w`, display clocking included
+  (the boot's 170413 bytes, all `00`); the handler `tecsnd_data_w` latches a non-zero
+  byte and **asserts** IRQ3, a zero byte only clears it. The strobe bit D8 never reaches
+  the board.
+- **The sound program** (Space Team's `sound.bin`, read with PinMAME's own TMS7000
+  disassembler, `cpu/tms7000/7000dasm.c` compiled on its own): everything runs from
+  interrupts; between them the CPU sleeps in `IDLE` (`DB4A`). INT3 (`E049`) reads the
+  command on port A: `00` back to the silent sound 0 (`E0EB`), `01`..`3F` the effects
+  (low nibble the sound, bits 4-5 its variants: repeated or held), `40`..`7F` the DAC
+  samples (low nibble, `E26D`; `4F` stops the sample, `DC38`; bits 4-5 ignored),
+  `80`..`FF` a note on channel 0 (`E101`). INT2 is the CPU's Timer 1 (`E688`, the voice
+  update, about 1.45 kHz), INT1 the Y8950 (`DBB8`: timer B steps the effects, timer A
+  plays the samples at 6.25 kHz).
+- **What PinMAME loses** (why the board played only the first notes of a command, and
+  nothing after a board reset): `cpu/tms7000/tms7000.c` only looks at the interrupt
+  lines at the start of a timeslice that follows a `tms7000_set_irq_line` call
+  (`checkIrqs`; `eint`, `reti` and IOCNT0 writes do not look again), keeps a line
+  asserted after its interrupt is taken (the highest asserted line wins every look), and
+  its Timer 1 (`tms7000_int2_callback`) asserts IRQ2 without waking a CPU in `IDLE`
+  (`cpu_triggerint`); the Y8950 (`sound/fmopl.c`) keeps its BRDY flag set from reset,
+  unmasked by the program, so its IRQ output never drops and the timer flags make no
+  edge; and a reset (`tms7000_reset`) leaves the CPU asleep, and allocates a new timer
+  every time: after about 250 board resets the machine runs out of timers and crashes.
+  Also, `tecsnd_data_w` cannot deliver the command `00`, which the game sends.
+- **What rom2altsound does** (shim.c `shim_tecnoplay_hook`, `shim_tecnoplay_cmd`): a
+  50 kHz tick, started after the boot, wakes the CPU, holds IRQ1 while one of the Y8950's
+  two timer flags waits (cleared once the program has acknowledged them), and holds IRQ3
+  from a command until the program reads port A (a hook in front of `tms_port_r`, which
+  also hands it `00` for the stop). Nothing in PinMAME is changed.
+- **Sound list**: raw sweep `01`..`FF`.
+- **Stop**: `4F` (stops the sample) then `00` (`BUILTIN_STOPS`); no board reset.
 - **Loops**: audio only: the TMS7000's read map (`snd_readmem`) has no `MRA_RAM` range
   (its RAM is internal), so there is no state to read.
-- **Measured**: `xforce`, 0 of 40 ([board support](../board-support.md)).
-- **Limits and what is missing**: tried after 0.2.3: each command followed by `00`
-  (`--only 0x0100,0x0200,...`, which releases IRQ3 as the game's next write does) plays
-  nothing either, and the game's boot writes only `00` (all 76923 bytes: its display
-  clocking), so there is no sound request to copy; the boot plays no sound. Whether the
-  program needs the game's D8 strobe, which PinMAME's `sound_w` drops, or something else,
-  is not determined: the TMS7000 program was not read (no disassembler at hand).
+- **Measured** (survey settings, [board support](../board-support.md)): `spcteam` 38 of
+  40, all from silence (31 run to the 5 s cap: the held variants); a full sweep, 109 of
+  255 (105 files, 4 blips), all from silence, no board reset: `01`..`3F` and `40`..`7F`,
+  nothing from `80`..`FF`. `xforce` 0 of 40 (no sound ROM). Before: 0 of 40 on xforce,
+  and on spcteam each command played its first notes only.
+- **Limits and what is missing**: `80`..`FF` (a note on channel 0, which the game sends
+  often) give no sound on their own; the samples' bank lines (port B bits 2-3, `E338`)
+  select nothing in PinMAME's flat ROM map, so `41`..`47` play the same sample.
 - **In VPinball**: AltSound gets every low byte the game writes to that port, display
   clocking included: the stream does not isolate the sound commands. Not tested in
   VPinball.

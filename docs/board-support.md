@@ -30,8 +30,8 @@ How each family is driven (hardware, commands, stop, volume, loops, what is miss
 
 PinMAME 3.7 (the submodule) knows 2971 sets, 10 of them shared system ROM sets (`gts80s`,
 `allied`...: no game, see [how it works](how-it-works.md#rom-verification)). Of the other
-2961, 2557 (573 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
-sets built outside the full set, see its row), 52 in a ⚠️ one, 95 in a ❌ one, 257 have
+2961, 2559 (575 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
+sets built outside the full set, see its row), 52 in a ⚠️ one, 93 in a ❌ one, 257 have
 no sound board (October 2026, after the protocol fixes listed below; before them: 1939
 ✅, 444 ⚠️, 315 ❌, 6 not run). "Sets" counts every set (clones
 and revisions included), "games" the sets without a parent, "sound ROM ids" the distinct
@@ -119,17 +119,17 @@ are the system zips; 2796 of the 2961 sets are there).
 | TABART3 | TABART | 1 | 1 | 1 | 1985-1985 | Christian Tabart (France) | 1 | grand8 | ✅ | as TABART2: grand8 26 of 31, all from silence |
 | ROWAMET | ROWAMET | 1 | 1 | 1 | ? | Rowamet | 1 | heavymtl | ✅ | fixed (5 of 40 before): stop 00, which the game sends after each command: heavymtl 38 of 40, all from silence, no board reset |
 | JOCTRONIC | JOCTRONIC | 3 | 3 | 3 | 1986-1986 | Joctronic | 3 | punkywil, walkyria | ✅ | fixed (punkywil 0 of 40 before): the sweep is the range each sound program plays (read in both programs): Punky Willy's 40..9F (it ignores the 01..28 the survey sent, and 01 restarts it), Walkyria's and Pin Ball's 01..3C (80 restarts them): punkywil 29 of 40, walkyria 39 of 40, jpinball 28 of 40. The CTC interrupt the program counts does reach the sound CPU once the game has set the CTC up (0.52 s into the boot); the earlier note that it never came was wrong |
+| TECNOPLAY | TECNOPLAY | 2 | 2 | 1 | 1987-1988 | Tecnoplay | 2 | spcteam, xforce | ✅ | fixed (0 of 40 before): the TMS7000 program (read with PinMAME's own disassembler) runs from interrupts that PinMAME's TMS7000 core and Y8950 lose (see the family's notes); a shim tick drives the lines as the chip's flags would, commands are held until the program reads them, stop 4F 00 (no board reset: each reset leaks a PinMAME timer): spcteam 38 of 40, all from silence; full sweep 109 of 255, no board reset. xforce has no sound ROM (not dumped): 0 of 40 |
 | SPINB | SPINB | 27 | 16 | 14 | 1985-1996 | Inder (Spain), Spinball (Spain) | 26 | bushido, corsario | ⚠️ | Spinball's own boards fixed (bushido, mach2, jolypark, vrnwrld: 7 sets; 0 of 40 before): both sound CPUs take a byte only while its bit 7 is set, so each command is 8x..FF followed by 00, stop 8F; the MSM6585 boards' step volume, which the games' boot steps down to 0, is set back to 122. bushido 31 of 40, mach2, jolypark, vrnwrld 40 of 40, all from silence. Inder's machines (20 sets, INDER in the logs): stop 00, lapbylap 28 of 40 from silence; the MSM5205 ones (moonlght, pinclown, corsario, atleta) play their background music whenever bit 7 is clear, under every command (read in corsario's program) |
 | ST300V | ST300 | 21 | 6 | 7 | 1980-2024 | Stern, Stern / Idleman | 20 | flight2k | ⚠️ | speech only: the sweep is now 40..7F, the S14001A's 64 words (the manual command is the speech path): flight2k 37 of 40, freefall 40 of 40, all from silence, 0.2 to 0.4 s each, some clipped (0 of 40 before). The effects are the game's own timer programming (as ST300), not extracted |
 | ROMSTAR | TMS320AV120 | 1 | 1 | 1 | 1994-1994 | Romstar | 1 | ghv101 | ⚠️ | 40 of 40 but doubtful: every file runs to the 5 s cap and none starts from silence (something keeps playing under every command) |
 | S3DFS | WMSS67 | 1 | 1 | 1 | 1978-1978 | Williams | 1 | disco_l1 | ⚠️ | with the S67S idle framing (1 of 40 before): 40 of 40, all from silence, but few distinct (the files repeat with the lowest low bit of the command); the control bit (s67s_ctrl_w) is never set |
-| TABART | TABART | 1 | 1 | 1 | 1986-1986 | Christian Tabart (France) | 1 | hexagone | ⚠️ | doubtful: 31 of 40, 22 not from silence, 5 distinct levels, then "still not silent after 3 waits". The program reads the lines in an NMI raised by the game's switch strobe; commands sent as manual-command pairs with the idle 10 after gave one held sound for all (8 of 40): left as is |
+| TABART | TABART | 1 | 1 | 1 | 1986-1986 | Christian Tabart (France) | 1 | hexagone | ⚠️ | doubtful: 31 of 40, 22 not from silence, 5 distinct levels. Read in its sound program: not a command board: it plays on eleven playfield switches it reads itself (YM2203 port B, during the switch-strobe NMI and the four timer interrupts after it), the three chime lines and the outhole, and with the default sound DIPs only its tune (what PinMAME plays from 1 s into the boot); AltSound could not key the switch sounds. Left as is |
 | S3WCS | WMSS67 | 1 | 1 | 1 | 1978-1978 | Williams | 1 | wldcp_l1 | ⚠️ | with the S67S idle framing (0 of 40 before): 16 of 40, all from silence, but all alike (one 2.6 s sound); the control bit (s67s_ctrl_w) is never set |
 | ST300 | ST300 | 76 | 17 | 0 | 1979-2026 | Stern, Stern / Idleman | 67 | meteor | ❌ | not a command board: no sound ROM, the game programs the MC6840 timers itself (boot: register/value pairs 01 00 06 07 04 05); rom2altsound's command sweep does not apply |
 | ATARI1 | ATARI1 | 12 | 5 | 3 | 1976-2024 | Atari | 12 | atarians | ❌ | first run (the full set's zip is complete): 0 of 40; the game streams 00 bytes (14498 in the boot): discrete sound driven by lines, not by command numbers |
 | ATARI2 | ATARI2 | 3 | 3 | 1 | 1979-1979 | Atari | 3 | superman | ❌ | 0 of 40: discrete sound (no sound ROM), the game sent no sound byte at boot; the board is driven by lines, not by command numbers |
 | ASTRO | ASTRO | 2 | 1 | 0 | ? | Stern | 2 | sam_iii | ❌ | first run: 0 of 40; the game toggles 00/01 (20 bytes at boot): a line, not a command |
-| TECNOPLAY | TECNOPLAY | 2 | 2 | 1 | 1987-1988 | Tecnoplay | 2 | xforce | ❌ | 0 of 40: the game writes only 00 to the board in attract (76923 bytes, its display clocking), and commands followed by 00 (which releases the TMS7000's IRQ3) play nothing either; the TMS7000 program not read (no disassembler at hand) |
 | NONE (other) | - | 251 | 167 | 13 | 1974-2025 | Bally, LTD | 212 | - | — | no sound board in PinMAME's sound board interface (sndbrd.c): sound on the CPU board, chimes, or a sound CPU the driver runs by itself (LTD, Bally -17, Recel, Sleic, Juegos Populares...); rom2altsound has nothing to send commands to |
 | ZAC1311 | - | 6 | 3 | 0 | 1978-1978 | Zaccaria | 6 | futurwld | — | no sound board interface: PinMAME has no manual command handler for it, nothing to drive |
 
@@ -175,6 +175,8 @@ row give the before and after of the survey run. In short:
   (Stern SB-100, Game Plan SSU), Bally Sounds Deluxe, Rowamet;
 - **the game's own path**: Tabart's Sahara Love and Le Grand 8 (`sndbrd_data_w`);
 - **the range the program plays**: Joctronic (two sound programs, two ranges);
+- **interrupts the emulation loses**: Tecnoplay (a shim tick in front of PinMAME's TMS7000
+  and Y8950);
 - **the board's level**: Spinball's MSM6585 boards, stepped back up after the boot steps
   them down to 0.
 
@@ -183,8 +185,8 @@ What is left, and why (each family's notes say what was tried):
 - **No command to send**: ST300 (76 sets; the game programs the timers itself; ST300V's
   speech is extracted), Atari Generation 1 and 2 and Astro (the game writes the tone
   registers), Romstar's Goofy Hoops (the game drives its QSound chip).
-- **Not reached**: Tecnoplay (nothing found that the TMS7000 program takes), Tabart's
-  L'Hexagone (its NMI comes from the game's switch strobe).
+- **Not a command board**: Tabart's L'Hexagone (its program plays on the playfield
+  switches it reads itself, the chime lines and the outhole, read in its program).
 - **Doubtful**: Inder's MSM5205 machines (their background music plays under every
   command), Williams' Disco Fever and World Cup (few distinct sounds; a control bit the
   tool does not set).

@@ -130,6 +130,8 @@ unsafe extern "C" {
     pub fn shim_cpu_read(cpu: c_int, addr: c_uint, len: c_uint, out: *mut u8) -> c_int;
     pub fn shim_cpu_reg(cpu: c_int, reg: c_int) -> c_uint;
     pub fn shim_cpu_region(cpu: c_int, len: *mut c_uint) -> *const u8;
+    pub fn shim_tecnoplay_hook(board: c_int) -> c_int;
+    pub fn shim_tecnoplay_cmd(board: c_int, data: c_int);
     pub fn shim_board_type(board: c_int) -> c_int;
     pub fn shim_nibble_hook(board: c_int) -> c_int;
     pub fn shim_nibble_cmd(board: c_int, data: c_int);

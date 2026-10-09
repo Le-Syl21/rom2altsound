@@ -109,7 +109,7 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_TABART3`](other-makers.md#sndbrd_tabart3) | ✅ | 1 | 1 | Grand 8, Le |
 | [`SNDBRD_SPINB`](other-makers.md#sndbrd_spinb) | ⚠️ | 27 | 16 | Bushido; Brave Team; Canasta '86' |
 | [`SNDBRD_JOCTRONIC`](other-makers.md#sndbrd_joctronic) | ✅ | 3 | 3 | Punky Willy; Walkyria; Pin Ball |
-| [`SNDBRD_TECNOPLAY`](other-makers.md#sndbrd_tecnoplay) | ❌ | 2 | 2 | X Force; Space Team |
+| [`SNDBRD_TECNOPLAY`](other-makers.md#sndbrd_tecnoplay) | ✅ | 2 | 2 | X Force; Space Team |
 | [`NONE (other)`](no-sound-board.md#sndbrd_none_other) | — | 257 | 172 | Mata Hari; Golden Game; Michigan |
 
 

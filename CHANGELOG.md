@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Tecnoplay** (TECNOPLAY, Space Team): the TMS7000 sound program (read with PinMAME's
+  own disassembler) runs from interrupts that PinMAME's TMS7000 core and Y8950 lose
+  (lines looked at only after a change, never acknowledged, Timer 1 not waking the CPU
+  from IDLE, the Y8950's IRQ held by its BRDY flag). A shim tick drives the lines as the
+  chip's flags would, a command is held until the program reads it, and the stop is
+  `4F 00` (`00` delivered through the shim; a board reset leaks a PinMAME timer and
+  crashed a full sweep): spcteam 38 of 40, all from silence (first notes only before);
+  full sweep 109 of 255, no board reset. X Force has no sound ROM.
+- **Tabart's L'Hexagone** (TABART): documented: its program plays on the playfield
+  switches it reads itself, the chime lines and the outhole, not on commands.
 - **Joctronic** (JOCTRONIC): the sweep is the range each sound program plays (read in
   the three programs): Punky Willy's `40`..`9F` (it ignores everything else, and `01`
   restarts it), Walkyria's and Pin Ball's `01`..`3C` (`80` restarts them): punkywil 29 of
