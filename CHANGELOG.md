@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Capcom boards** (SNDBRD_CAPCOMS, 17 sets, 0 sounds before): a command is a serial
+  message, `DA 04 07 0F nnnn` (play sample `nnnn`), and `DA 02 03 01` stops; the sweep
+  is the sample number `0000`..`03FF`, after sounds.dat's commands where it has some.
+  Survey runs: Breakshot, Pinball Magic, Kingpin, Flipper Football 40 of 40, all from
+  silence.
+- **Stern SB-100 tones** (ST100, ST100B: 26 sets): the stop is now `00`, the empty tone
+  mask; a held tone no longer plays under the next command (trident, dracula: 40 of 40,
+  all from silence, 38 not before). **SB-300 with speech** (ST300V, 21 sets): the sweep
+  is the speech chip's 64 words (`40`..`7F`), 0 sounds before; the effects stay out of
+  reach (the game programs the timers itself).
 - **Spinball boards** (SNDBRD_SPINB on bushido, mach2, jolypark, vrnwrld: 7 sets, 0
   sounds before): both sound CPUs poll the command latch and take a byte only while its
   bit 7 is set, so the sweep is `81`..`FF`, each command followed by `00`, and `8F`

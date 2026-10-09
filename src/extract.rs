@@ -148,6 +148,11 @@ fn ac_couples_dac(family: &str) -> bool {
 ///   the tone at once (by35snd.c `by32_ctrl_w`). Not measured: no ROM at hand.
 /// - ZAC1370 (Zaccaria Sounds & Speech and successors): `FF`, command 00 once inverted,
 ///   framed with its strobe (`zac_strobed`), which the 13136 games send at boot.
+/// - ST100 (Stern SB-100 tones, no CPU): `00`. The byte is a mask of the tones to hold
+///   (stsnd.c `sts_data_w`) and a board reset resets nothing; 00 switches them off
+///   (trident, dracula: every file from silence, 38 of 40 over a held tone before).
+/// - CAPCOMS: `DA 02 03 01`, sounds.dat's "Stop sound?" of Big Bang Bar (pmv112: silent at
+///   once, no board reset).
 /// - TAITO: `00`, the games' idle value (taito.c `taito_silenceSavedSndCmd`). The board
 ///   raises CB1 for any byte but 00 (taitos.c `taitos_data_w`), and the program arms CB1's
 ///   rising edge (CRB 07, shock); the Sintetizador programs of 1979-82 never drop CB1
@@ -169,9 +174,19 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("ZAC1370", &[0xFF]),
     ("TAITO", &[0x00]),
     ("SPINB", &[SPINB_STOP]),
+    ("ST100", &[0x00]),
+    ("CAPCOMS", &[0xDA, 0x02, 0x03, 0x01]),
     // game.rom `DCSQuietAllTracks`: 55AE, then the mask of the six channels in the high byte.
     ("DCSP2K", &[0x55, 0xAE, 0x3F, 0x00]),
 ];
+/// Capcom: the last sample number swept (Big Bang Bar's sounds.dat names `0298`; Pinball
+/// Magic plays `0100` and not `0200`).
+const CAPCOMS_LAST: u16 = 0x03FF;
+/// Capcom: the command that plays sample `n` once (see `sweep`).
+fn capcoms_play(n: u16) -> Vec<u8> {
+    let [hi, lo] = n.to_be_bytes();
+    vec![0xDA, 0x04, 0x07, 0x0F, hi, lo]
+}
 /// Spinball / Inder: `8F` ends the music (bushido's music program: `& 3F` = `0F`, at `00B7`,
 /// and `xF` with bit 7 interrupts a playing music, `0142`). The effects end by themselves.
 const SPINB_STOP: u8 = 0x8F;
@@ -190,6 +205,8 @@ const REBOOT_SECS: &[(&str, f64)] = &[("BYTCS", 7.0), ("BY51", 8.0), ("BY56", 8.
 /// files started and ended on held levels up to 6553 LSB (a click in AltSound, which
 /// starts and stops a file from 0), where the board's output is AC-coupled.
 const DC_BLOCKED: &[&str] = &["BYSNT"];
+/// `SNDBRD_ST300V` is `SNDBRD_TYPE(31, 1)`: the ST300 interface with the speech board.
+const ST300V_SUBTYPE: c_int = 1;
 /// `SNDBRD_BY56` is `SNDBRD_TYPE(5, 1)`: the BY51 interface, variant 1 (wpc/sndbrd.h).
 const BY56_SUBTYPE: c_int = 1;
 /// Squawk & Talk bytes from here on set its volume lines (eballdlx: `DF`..`EE` the sounds',
@@ -4127,6 +4144,18 @@ impl Extractor {
                 self.opts.parent.as_deref().unwrap_or(&self.opts.rom),
                 entries.len()
             )];
+            // Capcom: sounds.dat names a handful of Kingpin's and Big Bang Bar's commands (5
+            // and 21): the swept samples go after them.
+            if self.families.iter().any(|f| f == "CAPCOMS") {
+                let (sweep, notes, _) = sweep(self.mask);
+                let extra: Vec<Cmd> = sweep
+                    .into_iter()
+                    .filter(|c| !cmds.iter().any(|d| d.id == c.id))
+                    .collect();
+                self.commands_from
+                    .push(format!("{} + {} swept", notes.join("; "), extra.len()));
+                cmds.extend(extra);
+            }
             // A sounds.dat section is not always complete (afm_113b leaves out 14 populated
             // tracks, among them 0013, a 120 s loop): on DCS, add the catalog's other tracks.
             if let Some(dcs) = self
@@ -4841,13 +4870,16 @@ fn board_mask() -> u8 {
 /// The board's type string, PinMAME's own, except for the Sounds Plus -56 (`SNDBRD_BY56`),
 /// which PinMAME also names "BY51" but which takes its commands as two nibbles, and for
 /// Inder's machines, which PinMAME runs as a "SPINB" board with a command handler of their
-/// own (shim.c `shim_spinb_own`): "INDER".
+/// own (shim.c `shim_spinb_own`): "INDER"; and for Capcom's board (`SNDBRD_CAPCOMS`), which
+/// PinMAME's interface "TMS320AV120" shares with Romstar's: "CAPCOMS".
 fn board_typestr(board: c_int) -> Option<String> {
     let t = ffi::cstr(unsafe { ffi::sndbrd_typestr(board) })?;
     let by56 = t == "BY51" && unsafe { ffi::shim_board_type(board) } & 0xFF == BY56_SUBTYPE;
     let p2k = t == "DCS" && unsafe { ffi::shim_board_type(board) } == ffi::SNDBRD_DCSP2K;
     let inder = t == "SPINB" && unsafe { ffi::shim_spinb_own(board) } == 0;
+    let capcom = t == "TMS320AV120" && unsafe { ffi::shim_board_type(board) } & 0xFF == 0;
     Some(match () {
+        _ if capcom => "CAPCOMS".into(),
         _ if by56 => "BY56".into(),
         _ if p2k => "DCSP2K".into(),
         _ if inder => "INDER".into(),
@@ -5125,6 +5157,32 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                 )],
                 format!(
                     "board {b} (ZAC1370): bytes FE down to 80, each strobed with bit 7 (the board reads the command inverted: 01..7F; FF, command 00, is the stop)"
+                ),
+            ),
+            // Stern SB-300 with the VS-1000 speech board: the manual command is the speech
+            // path (stsnd.c `st300_man_w`): `40 | word` starts one of the S14001A's 64 words,
+            // `80` and up set its speed and volume. The timers are the game's own (see the
+            // family's notes): nothing else to sweep.
+            "ST300" if unsafe { ffi::shim_board_type(b) } & 0xFF == ST300V_SUBTYPE => (
+                vec![(
+                    "40..7F (the speech chip's 64 words)".to_string(),
+                    singles(0x40..=0x7F),
+                )],
+                format!("board {b} (ST300, VS-1000 speech): bytes 40..7F, the S14001A's 64 words"),
+            ),
+            // Capcom: one command is a serial message, `DA 04 07 vv nnnn` (sounds.dat's Kingpin
+            // and Big Bang Bar sections: `DA` command, `07` once / `06` looped, `vv` taken as
+            // the volume there but which changes nothing measured, `nnnn` the sample): the
+            // sweep is the sample number.
+            "CAPCOMS" => (
+                vec![(
+                    format!(
+                        "DA 04 07 0F 0000..{CAPCOMS_LAST:04X} (the sample number; DA 02 03 01 = stop)"
+                    ),
+                    (0..=CAPCOMS_LAST).map(capcoms_play).collect(),
+                )],
+                format!(
+                    "board {b} (CAPCOMS): DA 04 07 0F nnnn, samples 0000..{CAPCOMS_LAST:04X}"
                 ),
             ),
             // Bit 7 is the "command" flag both sound CPUs wait for (`spinb_released`).

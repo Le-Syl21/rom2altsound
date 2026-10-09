@@ -55,10 +55,10 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_BY45BP`](bally.md#sndbrd_by45bp) | ❌ | 4 | 2 | Baby Pac-Man; Granny and the Gators |
 | [`SNDBRD_ATARI1`](atari.md#sndbrd_atari1) | ❌ | 12 | 5 | Atarians, The; Middle Earth; Time 2000 |
 | [`SNDBRD_ATARI2`](atari.md#sndbrd_atari2) | ❌ | 3 | 3 | Superman; Hercules; Road Runner |
-| [`SNDBRD_ST100B`](stern-early.md#sndbrd_st100b) | ⚠️ | 16 | 7 | Trident; Magic; Cosmic Princess |
-| [`SNDBRD_ST100`](stern-early.md#sndbrd_st100) | ⚠️ | 10 | 4 | Dracula; Wild Fyre; Lectronamo |
+| [`SNDBRD_ST100B`](stern-early.md#sndbrd_st100b) | ✅ | 16 | 7 | Trident; Magic; Cosmic Princess |
+| [`SNDBRD_ST100`](stern-early.md#sndbrd_st100) | ✅ | 10 | 4 | Dracula; Wild Fyre; Lectronamo |
 | [`SNDBRD_ST300`](stern-early.md#sndbrd_st300) | ❌ | 76 | 17 | Meteor; Dragonfist; Seawitch |
-| [`SNDBRD_ST300V`](stern-early.md#sndbrd_st300v) | ❌ | 21 | 6 | Flight 2000; Lightning; Orbitor 1 |
+| [`SNDBRD_ST300V`](stern-early.md#sndbrd_st300v) | ⚠️ | 21 | 6 | Flight 2000; Lightning; Orbitor 1 |
 | [`SNDBRD_ASTRO`](stern-early.md#sndbrd_astro) | ❌ | 2 | 1 | S.A.M. III Board Tester |
 | [`SNDBRD_GTS80B`](gottlieb.md#sndbrd_gts80b) | ✅ | 148 | 32 | Bad Girls; Monte Carlo; Spring Break |
 | [`SNDBRD_GTS3`](gottlieb.md#sndbrd_gts3) | ✅ | 51 | 23 | Cue Ball Wizard; Super Mario Bros.; Stargate |
@@ -92,7 +92,7 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_PLAY3`](playmatic.md#sndbrd_play3) | ✅ | 2 | 2 | Cerberus; Spain 82 |
 | [`SNDBRD_PLAYZ`](playmatic.md#sndbrd_playz) | ❌ | 1 | 1 | Zira |
 | [`SNDBRD_ROMSTAR`](capcom-romstar.md#sndbrd_romstar) | ⚠️ | 1 | 1 | Goofy Hoops |
-| [`SNDBRD_CAPCOMS`](capcom-romstar.md#sndbrd_capcoms) | ❌ | 17 | 6 | Breakshot; Airborne; Flipper Football |
+| [`SNDBRD_CAPCOMS`](capcom-romstar.md#sndbrd_capcoms) | ✅ | 17 | 6 | Breakshot; Airborne; Flipper Football |
 | [`SNDBRD_NUOVA`](other-makers.md#sndbrd_nuova) | ✅ | 6 | 6 | F1 Grand Prix; Skill Flight; Cobra |
 | [`SNDBRD_HANKIN`](other-makers.md#sndbrd_hankin) | ✅ | 5 | 5 | FJ Holden; Orbit 1; Howzat |
 | [`SNDBRD_MRGAME`](other-makers.md#sndbrd_mrgame) | ✅ | 5 | 4 | Dakar; Motor Show; Mac Attack |

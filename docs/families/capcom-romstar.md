@@ -11,7 +11,7 @@ if the game has one, else the raw sweep `01`..`FF`; a board reset as the stop
 ## <a name="sndbrd_capcoms"></a>SNDBRD_CAPCOMS
 
 Capcom sound board (Intel 87C52 + one or two TMS320AV120 MPEG decoders) · PinMAME
-interface `TMS320AV120` (`src/wpc/capcoms.c`) · status ❌ · 17 sets, 6 games, 11 sound ROM
+interface `TMS320AV120` (`src/wpc/capcoms.c`) · status ✅ · 17 sets, 6 games, 11 sound ROM
 ids, 1995-2000, Capcom, Illinois Pinball · e.g. Breakshot (`bsv103`), Pinball Magic
 (`pmv112`), Flipper Football (`ffv104`), Big Bang Bar (`bbb109`)
 
@@ -32,28 +32,34 @@ ids, 1995-2000, Capcom, Illinois Pinball · e.g. Breakshot (`bsv103`), Pinball M
   the comments of `bbb109:` reading `DA` "command", `04` unknown, `07` "don't loop?" /
   `06` "loop", `vv` "volume?", `nnnn` the sample number; `DA 02 03 01` is listed as
   "Stop sound?".
-- **Sound list**: `kpb105`, `bbb109` and its clone `bbb108` have a sounds.dat section
-  (`game_entries`, prefix rule: 5 entries for Kingpin, 21 for Big Bang Bar): for these
-  three sets the tool plays those multi-byte commands, one byte every 4 frames, with their
-  names. Every other set gets the raw sweep `01`..`FF`, single bytes, which are not
-  commands of this protocol.
-- **Stop, boot and resets**: board reset after every sound (the 87C52's reset line), 4 s
-  wait. The `DA 02 03 01` entry of sounds.dat is not used as the stop: `stop_sends` only
-  looks for "sound off"/"reset sound" names in a section named after the interface.
+- **Board name**: rom2altsound calls this board `CAPCOMS` (`board_typestr`: the
+  `TMS320AV120` interface, sub-type 0), Romstar's being sub-type 1.
+- **Sound list** (`sweep`, `"CAPCOMS"`): `DA 04 07 0F nnnn` for every sample number
+  `0000`..`03FF` (`capcoms_play`, `CAPCOMS_LAST`), one byte every 4 frames. `vv` changes
+  nothing measured (pmv112, sample `0010` at `01`, `0F`, `26`, `7F`, `FF`: the same
+  -20.9 LUFS; `00` plays nothing), so it is not the volume. The format, read from
+  Big Bang Bar's sounds.dat comments, is the same on Breakshot, Pinball Magic, Kingpin
+  and Flipper Football. `kpb105`, `bbb109` and `bbb108` have a sounds.dat section (5 and
+  21 entries): its commands go first, with their names, then the swept samples it does
+  not list. Before (0.2.3), the raw sweep `01`..`FF` sent single bytes, which are not
+  commands of this protocol (bsv103: 40 identical clicks, pmv112: 0 of 40).
+- **How many samples**: not read from the ROM; pmv112 plays `0100` and nothing from
+  `0200` on, Big Bang Bar's sounds.dat names `0298`. The empty numbers end as `no_sound`.
+- **Stop, boot and resets**: `DA 02 03 01` (`BUILTIN_STOPS`), sounds.dat's "Stop sound?"
+  of Big Bang Bar: silent at once on pmv112 (0 board resets in the survey runs of bsv103
+  and pmv112, 1 or 2 on kpb105 and ffv104). Before, a board reset after every sound.
 - **Volume**: the X9241 pot is the board's volume, set by its own program from what the
   game sends (`X9241_DELAY_COMMAND`); no master volume command is decoded by rom2altsound.
 - **Loops**: audio only: the 87C52's read map has no `MRA_RAM` range (external RAM goes
   through `ram_r`, `capcoms_readmem`), so there is no sequencer state to read.
 - **DUCK / STOP / CHANNEL**: defaults.
-- **Measured**: `bsv103`: 40 identical 0.2 s clicks, the same peak, after 121 board
-  resets, no sound; `pmv112` 0 of 40 ([board support](../board-support.md)). The sets
-  with a sounds.dat section were not run.
-- **Limits and what is missing**: the single-byte sweep does not speak the board's
-  serial protocol. The cheapest fix from what is known: build the commands as sounds.dat's
-  `DA 04 07 vv nnnn` and sweep the sample number `nnnn` (with `DA 04 06 ...` for loops),
-  and try `DA 02 03 01` as the stop; whether the other games use the same format is not
-  known. PinMAME's own notes (start-up tests bypassed, reset problems) may still limit the
-  result.
+- **Measured** (survey settings, [board support](../board-support.md)): bsv103 40 of 40,
+  pmv112 40 of 40, kpb105 40 of 40, ffv104 40 of 40, all from silence (before: bsv103 40
+  identical clicks after 121 board resets, pmv112 0 of 40).
+- **Limits and what is missing**: the sample count is not read from the ROM (the sweep
+  stops at `03FF`); `DA 04 06 ...` (the looped play) is not swept, the loops come from the
+  audio. The board's volume (the X9241 pot, set by its program from the game's messages)
+  stays where the boot left it.
 - **In VPinball**: **the pack cannot play**: the game's bytes go from the 68306's DUART
   straight to `send_data_to_8752`, never through `sndbrd_data_w`, so `snd_cmd_log` (and
   AltSound) never sees them.

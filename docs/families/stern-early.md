@@ -7,14 +7,14 @@ Everything not said here is the [common method](common.md).
 
 None of these boards has a CPU: PinMAME emulates them as custom sound generators
 (`st100_sh_start`, `st100b_sh_start`, `st300_sh_start`). So a board reset
-(`shim_reset_audio_cpus`, the only stop they get: none is in `BUILTIN_STOPS`) resets
-nothing, and the sound CPU state method has nothing to read: loops can only come from the
+(`shim_reset_audio_cpus`, the stop of the boards with none in `BUILTIN_STOPS`: all but
+`ST100`) resets nothing, and the sound CPU state method has nothing to read: loops can only come from the
 audio. No master volume is decoded (`none: recorded at the game's own volume`), and the
 pack has the default columns. None has a sound ROM except the ST300V's speech ROM.
 
 ## <a name="sndbrd_st100"></a>SNDBRD_ST100
 
-Stern SB-100 · PinMAME interface `ST100` (`src/wpc/stsnd.c`) · ⚠️ · 10 sets, 4 games, no
+Stern SB-100 · PinMAME interface `ST100` (`src/wpc/stsnd.c`) · ✅ · 10 sets, 4 games, no
 sound ROM, 1978-2022, Stern · Dracula (`dracula`), Lectronamo (`lectrono`), Wild Fyre
 (`wildfyre`), Nugent (`nugent`)
 
@@ -26,26 +26,31 @@ sound ROM, 1978-2022, Stern · Dracula (`dracula`), Lectronamo (`lectrono`), Wil
   (`sts_data_w`); the switching off of bit 5 is commented out. `manCmd_w` is
   `sts_data_w` itself, so a swept byte turns on the tones of its bits.
 - **Sound list**: the generic `01`..`FF`, i.e. tone combinations, many alike.
-- **Stop, boot and resets**: no stop: the reset does nothing, so a tone left on sustains
-  into the next command.
-- **Measured**: dracula 40 of 40, 38 not from silence (board-support).
-- **Limits**: "the tones sustain, no stop known"; the fix listed is the board's idle byte
-  as the stop (board-support, cheapest fix 6). From `sts_data_w`, `00` switches off the
-  tones of bits 0 to 4 (not bit 5); not tried (`--stop 0x00`).
+- **Stop, boot and resets**: `00` (`BUILTIN_STOPS`), the empty mask, which switches the
+  tones off (`sts_data_w`; the switching off of bit 5 is commented out there, yet the
+  commands `20`..`28` were followed by silent starts too). Before, the stop was a board
+  reset, which does nothing on this board: the tone left on sustained into the next
+  command.
+- **Measured** (survey settings, board-support): dracula 40 of 40, all from silence (38
+  not from silence before the stop `00`). 39 of the 40 files run to the 5 s cap: a tone
+  is held as long as its bit is set, so each file is one held tone combination.
+- **Limits**: the files are held tones, cut at `--max-secs` or at their loop (a full run
+  with the loop search is not measured).
 - **In VPinball**: AltSound receives the mask bytes the game writes at `A0`, one per
   change; the pack's ids are masks too, but a tone is a state, not a sound with an end.
   Not tested.
 
 ## <a name="sndbrd_st100b"></a>SNDBRD_ST100B
 
-Stern SB-100 without chimes · interface `ST100`, sub-type 1 (`src/wpc/stsnd.c`) · ⚠️ ·
+Stern SB-100 without chimes · interface `ST100`, sub-type 1 (`src/wpc/stsnd.c`) · ✅ ·
 16 sets, 7 games, no sound ROM, 1979-2022, Stern, Monroe Bowling · Trident (`trident`),
 Hot Hand (`hothand`), Magic (`magic`), Cosmic Princess (`princess`)
 
 - **Hardware**: the ST100's tones without the chimes (`st100b_sh_start`); the game only
   writes `A0` (`by35.c` `MACHINE_INIT(by35)`).
 - **Everything else**: as [SNDBRD_ST100](#sndbrd_st100).
-- **Measured**: trident 40 of 40, 38 not from silence: the tones sustain (board-support).
+- **Measured**: trident 40 of 40, all from silence with the stop `00` (38 not from silence
+  before: the tones sustained), 39 held to the 5 s cap (board-support).
 
 ## <a name="sndbrd_st300"></a>SNDBRD_ST300
 
@@ -74,7 +79,7 @@ sound ROM, 1979-2026, Stern · Meteor (`meteor`), Galaxy (`galaxy`), Seawitch
 ## <a name="sndbrd_st300v"></a>SNDBRD_ST300V
 
 Stern SB-300 with the VS-1000 speech board · interface `ST300`, sub-type 1
-(`src/wpc/stsnd.c`) · ❌ · 21 sets, 6 games, 7 sound ROM ids, 1980-2024, Stern · Flight
+(`src/wpc/stsnd.c`) · ⚠️ · 21 sets, 6 games, 7 sound ROM ids, 1980-2024, Stern · Flight
 2000 (`flight2k`), Free Fall (`freefall`), Split Second (`splitsec`), Orbitor 1
 (`orbitor1`)
 
@@ -84,11 +89,18 @@ Stern SB-300 with the VS-1000 speech board · interface `ST300`, sub-type 1
   `pia1ca2_w`: `sndbrd_0_diag(1)` (`st300_switch_w`, the speech path) then
   `sndbrd_0_ctrl_w` with the word; a write `40 | word` starts word `word` (`S14001A_reg_0_w`),
   `80 | ...` sets speed and volume. `st300_man_w` takes the same path.
-- **Sound list**: the generic `01`..`FF`. From the code, `40`..`7F` should play the 64
-  speech words; the survey (`01`..`28`) never reached them.
-- **Measured**: flight2k 0 of 40 (board-support).
-- **Limits**: as ST300 for the effects. The speech words look reachable with a full sweep
-  or `--only 0x40,...`; not tried.
+- **Sound list**: `40`..`7F`, the S14001A's 64 words (`sweep`, `"ST300"` with sub-type 1,
+  `ST300V_SUBTYPE`); the generic `01`..`FF` before, whose first 40 commands (`01`..`28`)
+  never reached them. The speech plays at the chip's power-on rate (34722 Hz, "what is
+  set by all Stern machines as first clock", `s14001a_sh_start`) and the mixer's
+  default volume: the game's own speed and volume byte (`80` and up, sent through
+  `sndbrd_ctrl_w`, which the boot log does not show) is not known.
+- **Measured** (survey settings, board-support): flight2k 37 of 40, freefall 40 of 40,
+  all from silence: the speech words, 0.2 to 0.4 s each (12 and 10 of them clipped,
+  peaks at 0 dBFS; 0 of 40 before).
+- **Limits**: as ST300 for the effects, which are most of the game's sounds; only the
+  speech is extracted. The stop is still a board reset, which does nothing on a board
+  without a CPU (the words end by themselves).
 - **In VPinball**: the speech goes through `sndbrd_ctrl_w`, which AltSound does not
   receive (`snd_cmd_log` is called from `sndbrd_data_w` only). Not tested.
 
