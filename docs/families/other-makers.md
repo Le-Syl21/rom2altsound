@@ -372,10 +372,12 @@ e.g. X Force (`xforce`), Space Team (`spcteam`)
 - **Loops**: audio only: the TMS7000's read map (`snd_readmem`) has no `MRA_RAM` range
   (its RAM is internal), so there is no state to read.
 - **Measured**: `xforce`, 0 of 40 ([board support](../board-support.md)).
-- **Limits and what is missing**: the cheapest next step from `tecsnd_data_w`: send each
-  command followed by `00`, which releases IRQ3 as the game's next write does. Whether
-  the program also needs the game's D8 strobe, which PinMAME's `sound_w` drops, is not
-  determined.
+- **Limits and what is missing**: tried after 0.2.3: each command followed by `00`
+  (`--only 0x0100,0x0200,...`, which releases IRQ3 as the game's next write does) plays
+  nothing either, and the game's boot writes only `00` (all 76923 bytes: its display
+  clocking), so there is no sound request to copy; the boot plays no sound. Whether the
+  program needs the game's D8 strobe, which PinMAME's `sound_w` drops, or something else,
+  is not determined: the TMS7000 program was not read (no disassembler at hand).
 - **In VPinball**: AltSound gets every low byte the game writes to that port, display
   clocking included: the stream does not isolate the sound commands. Not tested in
   VPinball.

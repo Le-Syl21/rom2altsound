@@ -126,7 +126,7 @@ Playmatic, JocMatic · e.g. Meg-Aaton (`megaaton`), Nautilus (`nautilus`), Mad R
 ## <a name="sndbrd_playz"></a>SNDBRD_PLAYZ
 
 Playmatic Zira board (COP420 + AY-3-8910) · PinMAME interface `PLAYZ`
-(`src/wpc/playsnd.c`) · status ❌ · 1 set, 1 game, 1 sound ROM id, 1981, Playmatic · e.g.
+(`src/wpc/playsnd.c`) · status ✅ · 1 set, 1 game, 1 sound ROM id, 1981, Playmatic · e.g.
 Zira (`zira`)
 
 - **Hardware**: a National COP420 microcontroller at 2.01216 MHz / 16
@@ -137,22 +137,21 @@ Zira (`zira`)
   handler (`NULL`), and its manual handler is the control handler `playzs_ctrl_w`. The
   COP420 reads `(~cmd >> 4) & 7` on its IN port (`in_snd_z`): **8 commands**, inverted,
   bits 4-6 only.
-- **Sound list**: raw sweep `01`..`FF`: only bits 4-6 reach the board, so the 255 bytes are
-  8 distinct values, each repeated 32 times; `01`..`0F` read as 7, the same as the
-  power-on value 0.
+- **Sound list** (`sweep`, `"PLAYZ"`): the 7 values `10`, `20` .. `70`, each sent between
+  two `00`, the idle value (no line on, read as 7), as a change from idle (`board_sends`).
+  Before (0.2.3), the raw sweep `01`..`FF`, single bytes back to back: `01`..`0F` read as
+  the idle 7, and a value after another played nothing.
 - **Stop, boot and resets**: board reset (the COP420's reset line).
 - **Volume**: the board's only level.
 - **Loops**: audio only: the COP420's RAM is internal, its read map has no `MRA_RAM`
   range (`playsound_readmemz`), so there is no state to read.
 - **DUCK / STOP / CHANNEL**: defaults.
-- **Measured**: `zira`, 0 of 40; "the game sent no sound byte at boot"
-  ([board support](../board-support.md)): expected, since the game uses `sndbrd_ctrl_w`,
-  which is not logged.
-- **Limits and what is missing**: the first 40 commands of the sweep (`01`..`28`) cover
-  only the values 7, 6 and 5. Whether the board starts a sound on a level or on a change
-  of level is not determined from the code. Cheapest next step: sweep the 8 values
-  `00`, `10`, ... `70` with the idle value between them; nothing in the boot log shows the
-  game's own sequence, since nothing is logged on this path.
+- **Measured** (survey settings, [board support](../board-support.md)): `zira` 4 of 7,
+  all from silence (0 of 40 before); "the game sent no sound byte at boot": the game uses
+  `sndbrd_ctrl_w`, which is not logged.
+- **Limits and what is missing**: no stop (a board reset after each sound); the program
+  is not read, so whether the three silent values are commands of their own (or need a
+  sequence) is not known.
 - **In VPinball**: **the pack cannot play**: the game's commands go through
   `sndbrd_ctrl_w`, which does not call `snd_cmd_log`, so AltSound receives nothing.
 

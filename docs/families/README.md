@@ -36,8 +36,8 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_S7S_ND`](williams-system3-7.md#sndbrd_s7s_nd) | ✅ | 3 | 1 | Thunderball |
 | [`SNDBRD_S3WCS`](williams-system3-7.md#sndbrd_s3wcs) | ⚠️ | 1 | 1 | World Cup |
 | [`SNDBRD_DE2S`](data-east-sega-stern.md#sndbrd_de2s) | ✅ | 307 | 48 | Jurassic Park; Playboy; Batman Forever |
-| [`SNDBRD_DE3S`](data-east-sega-stern.md#sndbrd_de3s) | ⚠️ | 156 | 7 | Lord of the Rings, The; Grand Prix; Ripley's Believe It or Not! |
-| [`SNDBRD_DE1S`](data-east-sega-stern.md#sndbrd_de1s) | ⚠️ | 38 | 15 | Time Machine; Teenage Mutant Ninja Turtles; Back to the Future |
+| [`SNDBRD_DE3S`](data-east-sega-stern.md#sndbrd_de3s) | ✅ | 156 | 7 | Lord of the Rings, The; Grand Prix; Ripley's Believe It or Not! |
+| [`SNDBRD_DE1S`](data-east-sega-stern.md#sndbrd_de1s) | ✅ | 38 | 15 | Time Machine; Teenage Mutant Ninja Turtles; Back to the Future |
 | [`SNDBRD_ALVGS1`](alvin-g.md#sndbrd_alvgs1) | ✅ | 10 | 3 | A.G. Soccer-Ball; U.S.A. Football; Punchy The Clown |
 | [`SNDBRD_ALVGS2`](alvin-g.md#sndbrd_alvgs2) | ✅ | 10 | 5 | Al's Garage Band Goes On a World Tour; Mystery Castle; Pistol Poker |
 | [`NONE (Stern SAM)`](stern-sam.md#sndbrd_none_sam) | ✅ | 406 | 27 | AC/DC Limited Edition; World Poker Tour; Spider-Man |
@@ -90,7 +90,7 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_PLAY2`](playmatic.md#sndbrd_play2) | ✅ | 6 | 5 | Antar; Storm; Evil Fight |
 | [`SNDBRD_ZSU`](playmatic.md#sndbrd_zsu) | ✅ | 6 | 6 | Skill Flight; Cobra; Phantom Ship |
 | [`SNDBRD_PLAY3`](playmatic.md#sndbrd_play3) | ✅ | 2 | 2 | Cerberus; Spain 82 |
-| [`SNDBRD_PLAYZ`](playmatic.md#sndbrd_playz) | ❌ | 1 | 1 | Zira |
+| [`SNDBRD_PLAYZ`](playmatic.md#sndbrd_playz) | ✅ | 1 | 1 | Zira |
 | [`SNDBRD_ROMSTAR`](capcom-romstar.md#sndbrd_romstar) | ⚠️ | 1 | 1 | Goofy Hoops |
 | [`SNDBRD_CAPCOMS`](capcom-romstar.md#sndbrd_capcoms) | ✅ | 17 | 6 | Breakshot; Airborne; Flipper Football |
 | [`SNDBRD_NUOVA`](other-makers.md#sndbrd_nuova) | ✅ | 6 | 6 | F1 Grand Prix; Skill Flight; Cobra |

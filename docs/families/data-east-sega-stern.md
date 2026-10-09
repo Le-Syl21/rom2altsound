@@ -16,7 +16,7 @@ CPU flags, so `shim_halt_game_cpus` halts it with the game CPU.
 ## <a name="sndbrd_de1s"></a>SNDBRD_DE1S
 
 Data East alphanumeric sound board (YM2151 + MSM5205) · PinMAME interface `DE`
-(`src/wpc/desound.c`, `de1sIntf`) · status ⚠️ · 38 sets, 15 games, 14 sound ROM ids,
+(`src/wpc/desound.c`, `de1sIntf`) · status ✅ · 38 sets, 15 games, 14 sound ROM ids,
 1987-2025, Data East, Leon · e.g. Laser War, Time Machine (`tmac_a24`), Back to the Future
 (`bttf_a28`), The Simpsons (`simp_a27`)
 
@@ -34,11 +34,12 @@ Data East alphanumeric sound board (YM2151 + MSM5205) · PinMAME interface `DE`
   command. Multi-byte commands: not determined from the code.
 - **Sound list**: no sounds.dat section for any DE1S set: the generic sweep, single bytes
   `01`..`FF` (`sweep`, default branch).
-- **Stop, boot and resets**: `DE` is in neither `BUILTIN_STOPS` nor a sounds.dat family
-  section, so `stop_sends` falls back to a board reset after every sound:
-  `shim_reset_audio_cpus` pulses the 6809's reset line, then the tool waits 4 s for
-  silence (`QUIET_AFTER_RESET_SECS`). The pulse resets the CPU, not the YM2151 or the
-  MSM5205 (`de1s_init` is not run again).
+- **Stop, boot and resets**: `00` (`BUILTIN_STOPS`), what the games send after a sound
+  (tmac_a24's boot: `53` then `00`), **then** a board reset (`stop_sends`), then 4 s of
+  silence (`QUIET_AFTER_RESET_SECS`). The reset alone (the stop until 0.2.3) resets the
+  6809, not the YM2151 or the MSM5205 (`de1s_init` is not run again), which kept playing
+  on the later games; `00` alone silences them, but on tmac_a24 nothing played after its
+  commands `0A`..`0D` (10 of 40): with the reset after it, 38 of 40.
 - **Volume**: no volume command is decoded (`volume::decode` has no `DE` case) and `DE`
   is not in `volume::full_scale`: the files are at whatever level the board plays,
   `reference_volume: "none: recorded at the game's own volume"`, not scaled, not
@@ -47,17 +48,13 @@ Data East alphanumeric sound board (YM2151 + MSM5205) · PinMAME interface `DE`
   `$0000`-`$1FFF` in `de1s_readmem`: 8 KB of state). Never measured on this family (the
   survey runs without loop search).
 - **DUCK / STOP / CHANNEL**: the defaults.
-- **Measured** ([board support](../board-support.md)): `tmac_a24` 38 of 40, all from
-  silence; `bttf_a28` 40 of 40 and `simp_a27` 37 of 40, but the files run to the 5 s cap
-  and 34 to 38 of them do not start from silence; `simp_a27` ends with "still not silent
-  after 3 waits".
-- **Limits and what is missing**: on the later games the board keeps playing through the
-  reset that serves as the stop. Board support's fix: find the stop command of the later
-  DE sound programs. From the code: the tool never sends a stop command on this board,
-  only the CPU reset, which leaves the YM2151's and MSM5205's own state alone; whether
-  that is what keeps them playing is not known. A cheap test is `--stop` with the byte the
-  game sends between sounds (its boot log shows it); `00` would be the first candidate,
-  as on the BSMT board of the same maker, but this is untried.
+- **Measured** (survey settings, [board support](../board-support.md)): `tmac_a24` 38 of
+  40, `bttf_a28` 40 of 40, `simp_a27` 40 of 40, all from silence (before: 34 to 38 of
+  bttf's and simp's files over the last sound, and simp ended with "still not silent
+  after 3 waits"). bttf's first commands (`01`..`1B`) and all of simp's first 40 run to
+  the 5 s cap: music and long cues.
+- **Limits and what is missing**: no full run; the stop and its reset cost about 5 s per
+  command.
 - **In VPinball**: AltSound gets the byte `pia5b_w` writes; for `GEN_DE` and the DMD
   generations `snd_alt.cpp` `preprocess_commands` takes every byte but `00` and `FF` as an
   8-bit command, `00`/`FF` starting a 16-bit one. The pack's ids are single bytes
@@ -143,7 +140,7 @@ Monopoly (`monopole`)
 ## <a name="sndbrd_de3s"></a>SNDBRD_DE3S
 
 Whitestar "CPU/Sound Board II" with an Atmel AT91 (ARM7) · PinMAME interface `AT91`
-(`src/wpc/desound.c`, `de3sIntf`) · status ⚠️ · 156 sets, 7 games, 30 sound ROM ids,
+(`src/wpc/desound.c`, `de3sIntf`) · status ✅ · 156 sets, 7 games, 30 sound ROM ids,
 2003-2008, Stern · e.g. The Lord of the Rings (`lotr`), Elvis (`elvis`), The Sopranos
 (`sopranos`), NASCAR (`nascar`)
 
@@ -164,9 +161,10 @@ Whitestar "CPU/Sound Board II" with an Atmel AT91 (ARM7) · PinMAME interface `A
   by the prefix rule), so their list is that section's, with names (`build_commands`);
   each two-byte entry goes out as two `sndbrd_manCmd` calls 4 frames apart
   (`game_cmd`). A set without a section would get `01`..`FB` (`sweep`, `"BSMT" | "AT91"`).
-- **Stop, boot and resets**: `AT91` is not in `BUILTIN_STOPS` and there is no `at91:`
-  sounds.dat section, so the stop is a board reset: `shim_reset_audio_cpus` pulses the
-  AT91's reset line (`AT91` is not in `CTRL_RESET`), then 4 s of silence are awaited.
+- **Stop, boot and resets**: `00` (`BUILTIN_STOPS`), which the games send at boot (lotr:
+  `00 00 FD 00` first). Until 0.2.3 there was none, and the stop was a board reset
+  (`shim_reset_audio_cpus` pulses the AT91's reset line), which does not empty the
+  command queue: the AT91 then rereads its last byte (`scmd_r`), and the sound went on.
   The halt's `FD` completion and the Whitestar refresh apply (`end_boot`, `set_refresh`
   match `"BSMT" | "AT91"`).
 - **Volume**: the code treats it as Whitestar: `FE 10`..`2F` from the game are decoded as
@@ -179,20 +177,16 @@ Whitestar "CPU/Sound Board II" with an Atmel AT91 (ARM7) · PinMAME interface `A
 - **Loops**: audio only. The AT91 has a 32-bit bus, so `shim_audio_cpu` (8-bit audio CPUs
   only) gives no sequencer state to read.
 - **DUCK / STOP / CHANNEL**: the defaults; `CHANNEL` 0 for sounds.dat `Music:` names.
-- **Measured** ([board support](../board-support.md)): lotr 39 of 40 (speech and
-  effects), elvis 40 of 40 (songs and effects), distinct and named from sounds.dat, but
-  24 (lotr) and 31 (elvis) files start over what was playing: neither the stop (the
-  reset) nor a second reset silences the board within 10 s.
-- **Limits and what is missing**: board support's fix: find how the AT91 board is
-  stopped, its real stop or its idle floor. What the code shows, not verified: (1) the
-  tool sends no stop command at all, only the reset; Whitestar's `00` was never tried here
-  (`--stop 0x00` would); (2) after a reset the AT91 reads the queue again and gets the
-  last byte written (`scmd_r`), which may restart a sound; (3) because `scmd_w` drops a
-  repeated byte, an `FD xx` command sent right after the `FE 11 FD` refresh loses its
-  `FD` and reaches the board as `xx` alone (only when the game sent an `FE xx` at boot,
-  which turns the refresh on). lotr's first 40 commands are all `FC xx`, elvis's all
-  `FD xx`; the survey does not record whether elvis's refresh ran, so its 40 of 40 does
-  not tell whether (3) happened.
+- **Measured** (survey settings, [board support](../board-support.md)): lotr 39 of 40,
+  elvis 40 of 40, sopranos 40 of 40, nascar 40 of 40, all from silence, no board reset
+  (before the stop `00`: 24 of lotr's and 31 of elvis's files started over what was
+  playing).
+- **Limits and what is missing**: because `scmd_w` drops a repeated byte, an `FD xx`
+  command sent right after the `FE 11 FD` refresh loses its `FD` and reaches the board as
+  `xx` alone; measured on elvis, `02` alone and `FD 02` play the same "Main Theme" at the
+  same level, so this costs nothing there (other games not checked). Inserting a `00`
+  between the refresh and the command was tried and dropped: the files came out at
+  another level.
 - **In VPinball**: the game's bytes reach AltSound unchanged (`se.c` writes the same
   queue), and `snd_alt.cpp` joins `FC`..`FF xx` into one 16-bit id, which is how sounds.dat
   and the pack name them (`0xFC01`). Not tested in VPinball.

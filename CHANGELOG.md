@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Whitestar II (AT91, DE3S: 156 sets) and the Data East alphanumeric board (DE1S, 38
+  sets)**: a real stop, `00`, which the games send; on DE1S followed by the board reset.
+  The files no longer start over the last sound: lotr 39 of 40, elvis, sopranos, nascar,
+  bttf_a28, simp_a27 40 of 40, all from silence (before: up to 38 of 40 over the last
+  sound).
+- **Playmatic Zira** (PLAYZ): the board reads three lines; the sweep is their 7 values,
+  each between two idle `00`: 4 of 7 (0 of 40 before).
 - **Baby Pac-Man's Cheap Squeak** (BY45BP: 4 sets, 0 sounds before): commands go out
   as the video CPU sends them, two nibbles with the PIA's CB2 as the strobe (read in the
   sound program); Baby Pac-Man 32 of 40, Granny and the Gators 28 of 40, all from silence.

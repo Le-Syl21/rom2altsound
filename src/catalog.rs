@@ -742,7 +742,8 @@ mod tests {
         let real = parse_support(BOARD_SUPPORT);
         assert!(real.len() > 80, "{} rows", real.len());
         assert_eq!(real["DCS95"].support, Support::Works);
-        assert_eq!(real["DE3S"].support, Support::Partial);
+        assert_eq!(real["DE3S"].support, Support::Works);
+        assert_eq!(real["ST300"].support, Support::None);
     }
 
     #[test]

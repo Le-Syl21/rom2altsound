@@ -157,6 +157,15 @@ fn ac_couples_dac(family: &str) -> bool {
 ///   tone voltage (gpsnd.c `gpss1_data_w`, `gpss2_data_w`), which turns the tone chip off;
 ///   the effects are one-shots. GPS4 (SSU-4): `00`, which also stops its wave ("stop
 ///   wave", `gpss4_data_w`) and mutes the effects chip. A board reset does nothing there.
+/// - AT91 (Whitestar II, DE3S): `00`, which the games send at boot and which silenced every
+///   sound of lotr's and elvis's first 12 commands with no board reset (a reset alone left
+///   9 and 11 of them over what was playing: the AT91 rereads the last byte of its queue).
+/// - DE (Data East alphanumeric, DE1S): `00`, what the games send after a sound (tmac_a24's
+///   boot: `53`, then `00`), then a board reset (`stop_sends`). A reset of the 6809 alone
+///   leaves the YM2151 and the MSM5205 playing: on bttf_a28 and simp_a27, 34 to 38 of 40
+///   files started over the last sound. `00` alone silences them, but on tmac_a24 nothing
+///   played after its commands `0A`..`0D` (10 of 40, 38 with the reset): the reset puts the
+///   program back as the stop leaves the chips silent.
 /// - TAITO: `00`, the games' idle value (taito.c `taito_silenceSavedSndCmd`). The board
 ///   raises CB1 for any byte but 00 (taitos.c `taitos_data_w`), and the program arms CB1's
 ///   rising edge (CRB 07, shock); the Sintetizador programs of 1979-82 never drop CB1
@@ -177,6 +186,8 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("BY32", &[0x0F]),
     ("ZAC1370", &[0xFF]),
     ("TAITO", &[0x00]),
+    ("AT91", &[0x00]),
+    ("DE", &[0x00]),
     ("SPINB", &[SPINB_STOP]),
     ("ST100", &[0x00]),
     ("GPS1", &[0x0F]),
@@ -4133,6 +4144,13 @@ impl Extractor {
                     .map(|(_, bytes)| bytes.to_vec())
             });
             match stop {
+                // Data East alphanumeric: `00`, then the reset (see `BUILTIN_STOPS`).
+                Some(bytes) if typestr == "DE" => {
+                    v.extend(board_sends(self.mask, b, &bytes));
+                    if !v.iter().any(|s| matches!(s, Send::Reset)) {
+                        v.push(Send::Reset);
+                    }
+                }
                 Some(bytes) => v.extend(board_sends(self.mask, b, &bytes)),
                 None if !v.iter().any(|s| matches!(s, Send::Reset)) => v.push(Send::Reset),
                 None => {}
@@ -5011,6 +5029,20 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
         Some("ZAC1370") => return addressed(mask, board, &zac_strobed(bytes)),
         Some("SPINB") => return addressed(mask, board, &spinb_released(bytes)),
         Some("GPSM") => return addressed(mask, board, &gpsm_framed(bytes)),
+        // Zira: the COP420 reads three lines and acts on a change from idle.
+        Some("PLAYZ") => {
+            let framed: Vec<u8> = bytes
+                .iter()
+                .flat_map(|&b| {
+                    if b & 0x70 == 0 {
+                        vec![b]
+                    } else {
+                        vec![0x00, b, 0x00]
+                    }
+                })
+                .collect();
+            return addressed(mask, board, &framed);
+        }
         Some("GPSM3") => return addressed(mask, board, &gpsm3_framed(bytes)),
         Some("WMSS67") => {
             let sub = unsafe { ffi::shim_board_type(board) } & 0xFF;
@@ -5287,6 +5319,18 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
             ),
             // Game Plan MSU-1: the 15 nibbles (`gpsm_framed`); MSU-3: the bytes made of two
             // different nibbles, neither `F` (`gpsm3_framed`).
+            // Playmatic Zira (`PLAYZ`): the game writes bits 4-6 of its lamp output to the
+            // board (play.c `out2_n`), which the COP420 reads inverted (playsnd.c
+            // `in_snd_z`: `(~cmd >> 4) & 7`); `00` is the idle value (no line on). Each
+            // value goes out between two `00` (`board_sends`), as a change from idle (zira:
+            // 0 of 40 from the single bytes `01`..`28`; framed, 4 of the 7 values).
+            "PLAYZ" => (
+                vec![(
+                    "10..70 (bits 4-6, the three lines; each between two idle 00)".to_string(),
+                    (1..=7u8).map(|v| vec![v << 4]).collect(),
+                )],
+                format!("board {b} (PLAYZ): bytes 10, 20 .. 70 (bits 4-6), each between two idle 00"),
+            ),
             // Game Plan SSU boards: four lines, `F` is no tone (the stop).
             "GPS1" | "GPS2" | "GPS4" => (
                 vec![("00..0E (the board reads four lines)".to_string(), singles(0x00..=0x0E))],
