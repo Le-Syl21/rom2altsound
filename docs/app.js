@@ -13,7 +13,7 @@
       all: "All", shown: function (n, m, t) { return (n < m ? fmt(n) + " shown of " : "") + fmt(m) + " matching, of " + fmt(t) + " entries"; },
       more: "Show more", game: "Game", maker: "Maker", year: "Year", family: "Board family",
       support: "rom2altsound", setsCol: "Sets", sounds: "Sounds", names: "Names", id: "Sound ROM id",
-      noid: "none", close: "Close", copy: "Copy link", copied: "Copied",
+      close: "Close", copy: "Copy link", copied: "Copied",
       dIdNone: "None: the sounds are not in sound ROMs of their own",
       dFamily: "Sound board family", dSupport: "rom2altsound support", dSounds: "Read from the ROMs",
       dNames: "Commands named in sounds.dat", dDoc: "Family notes",
@@ -26,6 +26,9 @@
       none_roms: "No sound ROM: the board makes its sounds without one (tones, chimes) or the game has no sound board.",
       onlyIds: "Only sound ROM ids", onlyFound: "Only in the reference set", search: "Search: game, set, sound ROM id",
       notFound: "No entry for this link.",
+      bySupport: "PinMAME sets by rom2altsound support", dash: "—",
+      boards: { "NONE (Stern SAM)": "Stern SAM", "NONE (other)": "No sound board" },
+      noVpx: "not in VPX", hideNoVpx: "Hide what VPinball cannot play yet", dVpx: "In VPinball",
     },
     fr: {
       loading: "Chargement du catalogue…",
@@ -35,7 +38,7 @@
       all: "Tous", shown: function (n, m, t) { return (n < m ? fmt(n) + " affichées sur " : "") + fmt(m) + " trouvées, sur " + fmt(t) + " entrées"; },
       more: "Afficher plus", game: "Jeu", maker: "Fabricant", year: "Année", family: "Famille de carte",
       support: "rom2altsound", setsCol: "Jeux de ROM", sounds: "Sons", names: "Noms", id: "Id de ROM son",
-      noid: "aucun", close: "Fermer", copy: "Copier le lien", copied: "Copié",
+      close: "Fermer", copy: "Copier le lien", copied: "Copié",
       dIdNone: "Aucun : les sons ne sont pas dans des ROM son à part",
       dFamily: "Famille de carte son", dSupport: "Prise en charge par rom2altsound", dSounds: "Lu dans les ROM",
       dNames: "Commandes nommées dans sounds.dat", dDoc: "Notes sur la famille",
@@ -48,6 +51,9 @@
       none_roms: "Pas de ROM son : la carte fait ses sons sans (tonalités, carillons) ou le jeu n'a pas de carte son.",
       onlyIds: "Seulement les ids de ROM son", onlyFound: "Seulement la collection de référence", search: "Recherche : jeu, jeu de ROM, id de ROM son",
       notFound: "Aucune entrée pour ce lien.",
+      bySupport: "Jeux de ROM PinMAME par prise en charge", dash: "—",
+      boards: { "NONE (Stern SAM)": "Stern SAM", "NONE (other)": "Aucune carte son" },
+      noVpx: "pas dans VPX", hideNoVpx: "Masquer ce que VPinball ne joue pas encore", dVpx: "Dans VPinball",
     },
   }[lang];
   var SUPPORT_ORDER = ["works", "partial", "none", "no-board", "untested"];
@@ -66,6 +72,21 @@
     return n + " B";
   }
   function short(f) { return f.replace(/SNDBRD_/g, ""); }
+  // The board as shown: PinMAME's "NONE (...)" labels get a plain name (the label itself
+  // stays the filter value and the tooltip).
+  function boardName(label) { return T.boards[label] || short(label); }
+  function dash() { return '<span class="sets">' + esc(T.dash) + "</span>"; }
+  // Why the entry's packs cannot play in VPinball today (vpx_playback.json, through
+  // build_site.py), or "" when nothing is known against it.
+  function vpxReason(e) {
+    if (e.vpx_playable !== false) return "";
+    var r = (data.vpx_not_playable || {})[e.label];
+    return r ? r[lang] || r.en : "";
+  }
+  function vpxBadge(e) {
+    if (e.vpx_playable !== false) return "";
+    return ' <span class="badge b-novpx" title="' + esc(vpxReason(e)) + '">' + esc(T.noVpx) + "</span>";
+  }
   function badge(s) { return '<span class="badge b-' + esc(s) + '">' + esc(T[s] || s) + "</span>"; }
   function soundCount(e) { return e.sounds ? e.sounds.count : -1; }
   function foundCount(e) { return e.sets.filter(function (s) { return s.found !== "absent"; }).length; }
@@ -77,14 +98,17 @@
   // the board survey when the per-family docs do not list it.
   function docLink(family, label) {
     var docs = data.family_docs || {};
-    // The per-family docs tell Stern SAM's "no board" from the others' ("SNDBRD_NONE (other)").
-    if (docs["SNDBRD_" + label]) return '<a href="' + esc(docs["SNDBRD_" + label]) + '">' + esc(label) + "</a>";
+    // A link for the whole label first: Stern SAM's "no board" apart from the others'
+    // ("SNDBRD_NONE (other)"), a two-board family's own section ("SNDBRD_S11XS+SNDBRD_S11CS").
+    var name = boardName(label);
+    var whole = docs["SNDBRD_" + label] || docs[family];
+    if (whole) return '<a href="' + esc(whole) + '"' + (name !== short(label) ? ' title="' + esc(label) + '"' : "") + ">" + esc(name) + "</a>";
     var parts = family.split("+"), out = [];
     parts.forEach(function (p) {
       var u = docs[p];
-      if (u) out.push('<a href="' + esc(u) + '">' + esc(parts.length > 1 ? short(p) : label) + "</a>");
+      if (u) out.push('<a href="' + esc(u) + '">' + esc(parts.length > 1 ? short(p) : name) + "</a>");
     });
-    if (out.length !== parts.length) return '<a href="' + esc(data.family_docs_default) + '">' + esc(label) + "</a>";
+    if (out.length !== parts.length) return '<a href="' + esc(data.family_docs_default) + '">' + esc(name) + "</a>";
     return out.join(" + ");
   }
 
@@ -108,12 +132,14 @@
     var cards = [
       [s.entries, T.entries], [s.sound_rom_ids, T.ids], [s.sets, T.sets], [s.sets_found, T.found],
     ];
-    SUPPORT_ORDER.forEach(function (k) {
-      if (s.support[k]) cards.push([s.support[k].sets, T.sets + " · " + T[k]]);
+    // The support counts share one card, so the row does not leave one of them alone.
+    var subs = SUPPORT_ORDER.filter(function (k) { return s.support[k]; }).map(function (k) {
+      return '<div class="sub"><b>' + fmt(s.support[k].sets) + "</b>" + badge(k) + "</div>";
     });
     $("stats").innerHTML = cards.map(function (c) {
       return '<div class="stat"><b>' + fmt(c[0]) + "</b><span>" + esc(c[1]) + "</span></div>";
-    }).join("");
+    }).join("") +
+      '<div class="stat group"><span>' + esc(T.bySupport) + '</span><div class="subs">' + subs.join("") + "</div></div>";
   }
 
   function compare(a, b) {
@@ -121,7 +147,7 @@
     switch (sortKey) {
       case "maker": x = a.manufacturer.toLowerCase(); y = b.manufacturer.toLowerCase(); break;
       case "year": x = a.year; y = b.year; break;
-      case "family": x = a.label; y = b.label; break;
+      case "family": x = boardName(a.label).toLowerCase(); y = boardName(b.label).toLowerCase(); break;
       case "support": x = SUPPORT_ORDER.indexOf(a.support); y = SUPPORT_ORDER.indexOf(b.support); break;
       case "sets": x = a.sets.length; y = b.sets.length; break;
       case "sounds": x = soundCount(a); y = soundCount(b); break;
@@ -137,7 +163,7 @@
   function apply() {
     var q = $("q").value.trim().toLowerCase();
     var fam = $("family").value, sup = $("support").value, maker = $("maker").value;
-    var onlyIds = $("onlyIds").checked, onlyFound = $("onlyFound").checked;
+    var onlyIds = $("onlyIds").checked, onlyFound = $("onlyFound").checked, hideNoVpx = $("hideNoVpx").checked;
     var words = q.split(/\s+/).filter(Boolean);
     view = entries.filter(function (e) {
       if (fam && e.label !== fam) return false;
@@ -145,6 +171,7 @@
       if (maker && !e._makers[maker]) return false;
       if (onlyIds && !e.id) return false;
       if (onlyFound && !foundCount(e)) return false;
+      if (hideNoVpx && e.vpx_playable === false) return false;
       for (var i = 0; i < words.length; i++) if (e._hay.indexOf(words[i]) < 0) return false;
       return true;
     });
@@ -162,16 +189,17 @@
     var found = foundCount(e);
     var sets = e.sets.slice(0, 4).map(function (s) { return s.name; }).join(", ") + (e.sets.length > 4 ? ", …" : "");
     var snd = e.sounds ? fmt(e.sounds.count) : "";
+    var board = boardName(e.label);
     return "<tr>" +
       '<td><a class="game" href="#' + esc(e.key) + '">' + esc(e.title) + '</a><div class="sets">' + esc(sets) + "</div></td>" +
       '<td class="hide-sm">' + esc(e.manufacturer) + "</td>" +
       "<td>" + esc(e.year) + "</td>" +
-      "<td>" + esc(short(e.label)) + "</td>" +
-      "<td>" + badge(e.support) + "</td>" +
+      "<td" + (board !== short(e.label) ? ' title="' + esc(e.label) + '"' : "") + ">" + esc(board) + "</td>" +
+      "<td>" + badge(e.support) + vpxBadge(e) + "</td>" +
       '<td class="num">' + found + " / " + e.sets.length + "</td>" +
       '<td class="num">' + snd + "</td>" +
-      '<td class="num">' + (e.names ? fmt(e.names) : "") + "</td>" +
-      '<td class="hide-sm">' + (e.id ? '<code class="id" title="' + esc(e.id) + '">' + esc(e.id.slice(0, 10)) + "</code>" : '<span class="sets">' + esc(T.noid) + "</span>") + "</td>" +
+      '<td class="num">' + (e.names ? fmt(e.names) : dash()) + "</td>" +
+      '<td class="hide-sm">' + (e.id ? '<code class="id" title="' + esc(e.id) + '">' + esc(e.id.slice(0, 10)) + "</code>" : '<span class="sets" title="' + esc(T.dIdNone) + '">' + esc(T.dash) + "</span>") + "</td>" +
       "</tr>";
   }
 
@@ -209,6 +237,7 @@
       "<dt>" + esc(T.id) + "</dt><dd>" + (e.id ? "<code>" + esc(e.id) + "</code>" : esc(T.dIdNone)) + "</dd>" +
       "<dt>" + esc(T.dFamily) + "</dt><dd>" + docLink(e.family, e.label) + "</dd>" +
       "<dt>" + esc(T.dSupport) + "</dt><dd>" + badge(e.support) + "</dd>" +
+      (e.vpx_playable === false ? "<dt>" + esc(T.dVpx) + "</dt><dd>" + vpxBadge(e).trim() + " " + esc(vpxReason(e)) + "</dd>" : "") +
       "<dt>" + esc(T.dSounds) + "</dt><dd>" + esc(soundsTxt) + "</dd>" +
       "<dt>" + esc(T.dNames) + "</dt><dd>" + fmt(e.names) + "</dd>" +
       "</dl>" +
@@ -217,7 +246,7 @@
       '<div class="table"><table><thead><tr><th>' + esc(T.sName) + "</th><th>" + esc(T.sDesc) + '</th><th class="hide-sm">' + esc(T.maker) + "</th><th>" + esc(T.year) + "</th><th>" + esc(T.sFound) + '</th><th class="num">' + esc(T.names) + "</th></tr></thead><tbody>" +
       e.sets.map(function (x) {
         return "<tr><td><code>" + esc(x.name) + "</code>" + (x.parent ? '<div class="sets">' + esc(T.sParent) + " " + esc(x.parent) + "</div>" : "") + "</td><td>" + esc(x.description) +
-          '</td><td class="hide-sm">' + esc(x.manufacturer) + "</td><td>" + esc(x.year) + "</td><td>" + esc(T.f[x.found] || x.found) + '</td><td class="num">' + (x.names ? fmt(x.names) : "") + "</td></tr>";
+          '</td><td class="hide-sm">' + esc(x.manufacturer) + "</td><td>" + esc(x.year) + "</td><td>" + esc(T.f[x.found] || x.found) + '</td><td class="num">' + (x.names ? fmt(x.names) : dash()) + "</td></tr>";
       }).join("") + "</tbody></table></div>" +
       "<h3>" + esc(e.id ? T.hRoms : T.hSam) + "</h3>" +
       (e.roms.length
@@ -250,11 +279,15 @@
       byKey[e.key] = e;
     });
     stats();
-    fillSelect($("family"), Object.keys(labels).sort(), short);
+    $("hideNoVpx").parentNode.hidden = !entries.some(function (e) { return e.vpx_playable === false; });
+    fillSelect($("family"), Object.keys(labels).sort(function (a, b) {
+      var x = boardName(a).toLowerCase(), y = boardName(b).toLowerCase();
+      return x < y ? -1 : x > y ? 1 : 0;
+    }), boardName);
     fillSelect($("support"), SUPPORT_ORDER.filter(function (k) { return data.stats.support[k]; }), function (k) { return T[k]; });
     fillSelect($("maker"), Object.keys(makers).sort(function (a, b) { return makers[b] - makers[a] || (a < b ? -1 : 1); }));
     try { $("q").value = new URL(location.href).searchParams.get("q") || ""; } catch (err) { /* file: URLs */ }
-    ["q", "family", "support", "maker", "onlyIds", "onlyFound"].forEach(function (id) {
+    ["q", "family", "support", "maker", "onlyIds", "onlyFound", "hideNoVpx"].forEach(function (id) {
       $(id).addEventListener(id === "q" ? "input" : "change", apply);
     });
     document.querySelectorAll("th[data-k] button").forEach(function (b) {
@@ -277,6 +310,7 @@
   $("q").placeholder = T.search;
   $("lOnlyIds").textContent = T.onlyIds;
   $("lOnlyFound").textContent = T.onlyFound;
+  $("lHideNoVpx").textContent = T.hideNoVpx;
   document.querySelectorAll("select option[value='']").forEach(function (o) { o.textContent = T.all; });
   $("more").textContent = T.more;
   $("status").textContent = T.loading;

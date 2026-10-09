@@ -39,7 +39,7 @@
 <div id="app" hidden>
 <div id="stats" class="stats"></div>
 <section id="detail" hidden aria-live="polite"></section>
-<h2 id="catalog">Sound ROM catalog</h2>
+<h2 id="catalog">Catalog</h2>
 <div class="controls">
 <label class="grow"><span>&#128269;</span><input type="search" id="q" autocomplete="off" spellcheck="false"></label>
 <label>Board family<select id="family"><option value=""></option></select></label>
@@ -47,6 +47,7 @@
 <label>Maker<select id="maker"><option value=""></option></select></label>
 <label class="check"><input type="checkbox" id="onlyIds"><span id="lOnlyIds"></span></label>
 <label class="check"><input type="checkbox" id="onlyFound"><span id="lOnlyFound"></span></label>
+<label class="check"><input type="checkbox" id="hideNoVpx"><span id="lHideNoVpx"></span></label>
 </div>
 <p id="count" class="count"></p>
 <div class="table"><table><thead><tr><th data-k="title" class="" aria-sort="none"><button type="button">Game</button></th><th data-k="maker" class="hide-sm" aria-sort="none"><button type="button">Maker</button></th><th data-k="year" class="" aria-sort="none"><button type="button">Year</button></th><th data-k="family" class="" aria-sort="none"><button type="button">Board</button></th><th data-k="support" class="" aria-sort="none"><button type="button">rom2altsound</button></th><th data-k="sets" class="num" aria-sort="none"><button type="button">Sets</button></th><th data-k="sounds" class="num" aria-sort="none"><button type="button">Sounds</button></th><th data-k="names" class="num" aria-sort="none"><button type="button">Names</button></th><th data-k="id" class="hide-sm" aria-sort="none"><button type="button">Sound ROM id</button></th></tr></thead><tbody id="rows"></tbody></table></div>
@@ -80,7 +81,9 @@ names for the entry's sets (the names themselves are not reproduced here).</p>
 init starts it, with a link to the family's notes.</li>
 <li><strong>rom2altsound</strong>: the result of the <a href="https://github.com/Le-Syl21/rom2altsound/blob/main/docs/board-support.md">board survey</a>
 for the family: <em>Works</em> (sounds come out, distinct, each from silence), <em>Partial</em>,
-<em>No sound yet</em>, <em>No sound board</em>.</li>
+<em>No sound yet</em>, <em>No sound board</em>. A second badge, <em>not in VPX</em>, marks the families
+whose packs VPinball cannot play today because its AltSound does not receive their sound commands;
+its tooltip says why.</li>
 <li><strong>Sets</strong>: how many of the entry's PinMAME sets were complete in the reference ROM set the
 catalog was built from (2804 VPinMAME zips), out of all.</li>
 <li><strong>Sounds</strong>: read from the ROMs without running them, where the layout is known: the populated

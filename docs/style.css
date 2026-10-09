@@ -53,6 +53,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
@@ -91,10 +92,16 @@ h2 { font-size: 1.3rem; margin: 2rem 0 0.7rem; scroll-margin-top: 1rem; }
 .eyebrow { margin: 0 0 0.3rem; font-size: 0.85rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
 .note { background: var(--warn-bg); border-left: 4px solid var(--warn-line); padding: 0.6rem 1rem; border-radius: 6px; margin: 1rem 0; }
 
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: 0.7rem; margin: 1rem 0; }
-.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.6rem 0.8rem; }
+/* Four totals, then one card for the support counts: one row on a wide screen; below
+   ~62rem the support card takes a row of its own; on a phone the totals go two by two. */
+.stats { display: flex; flex-wrap: wrap; gap: 0.7rem; margin: 1rem 0; }
+.stat { flex: 1 1 8.5rem; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.6rem 0.8rem; }
 .stat b { display: block; font-size: 1.45rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
-.stat span { color: var(--muted); font-size: 0.88rem; }
+.stat > span { color: var(--muted); font-size: 0.88rem; }
+.stat.group { flex: 3 1 26rem; }
+.stat .subs { display: flex; flex-wrap: wrap; gap: 0.2rem 1.1rem; }
+.stat .sub { display: flex; align-items: baseline; gap: 0.4rem; }
+.stat .sub b { display: inline; font-size: 1.2rem; }
 
 .controls { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; margin: 1rem 0 0.6rem; }
 .controls label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; color: var(--muted); }
@@ -125,6 +132,7 @@ code.id { font-size: 0.82rem; }
 .b-partial { color: var(--part); background: var(--part-bg); }
 .b-none { color: var(--no); background: var(--no-bg); }
 .b-no-board, .b-untested { color: var(--nb); background: var(--nb-bg); }
+.b-novpx { color: var(--part); background: transparent; border: 1px dashed currentColor; padding-block: 0; cursor: help; }
 
 #detail { background: var(--surface); border: 2px solid var(--accent); border-radius: 12px; padding: 0.4rem 1.1rem 1rem; margin: 1rem 0; scroll-margin-top: 0.5rem; }
 #detail h2 { margin: 0.6rem 0 0.3rem; font-size: 1.3rem; padding: 0; }
@@ -146,6 +154,7 @@ footer.site .wrap { padding-block: 1.4rem; display: flex; flex-wrap: wrap; gap: 
   .wrap { padding-inline: 1rem; }
   th, td { padding: 0.4rem 0.45rem; }
   .hide-sm { display: none; }
+  .stat.group { flex-basis: 100%; }
   #detail { padding-inline: 0.8rem; }
   #detail dl { grid-template-columns: 1fr; }
   #detail dt { margin-top: 0.3rem; }

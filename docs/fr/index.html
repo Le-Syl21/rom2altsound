@@ -38,7 +38,7 @@
 <div id="app" hidden>
 <div id="stats" class="stats"></div>
 <section id="detail" hidden aria-live="polite"></section>
-<h2 id="catalog">Catalogue des ROM son</h2>
+<h2 id="catalog">Catalogue</h2>
 <div class="controls">
 <label class="grow"><span>&#128269;</span><input type="search" id="q" autocomplete="off" spellcheck="false"></label>
 <label>Famille de carte<select id="family"><option value=""></option></select></label>
@@ -46,6 +46,7 @@
 <label>Fabricant<select id="maker"><option value=""></option></select></label>
 <label class="check"><input type="checkbox" id="onlyIds"><span id="lOnlyIds"></span></label>
 <label class="check"><input type="checkbox" id="onlyFound"><span id="lOnlyFound"></span></label>
+<label class="check"><input type="checkbox" id="hideNoVpx"><span id="lHideNoVpx"></span></label>
 </div>
 <p id="count" class="count"></p>
 <div class="table"><table><thead><tr><th data-k="title" class="" aria-sort="none"><button type="button">Jeu</button></th><th data-k="maker" class="hide-sm" aria-sort="none"><button type="button">Fabricant</button></th><th data-k="year" class="" aria-sort="none"><button type="button">Année</button></th><th data-k="family" class="" aria-sort="none"><button type="button">Carte</button></th><th data-k="support" class="" aria-sort="none"><button type="button">rom2altsound</button></th><th data-k="sets" class="num" aria-sort="none"><button type="button">Jeux de ROM</button></th><th data-k="sounds" class="num" aria-sort="none"><button type="button">Sons</button></th><th data-k="names" class="num" aria-sort="none"><button type="button">Noms</button></th><th data-k="id" class="hide-sm" aria-sort="none"><button type="button">Id de ROM son</button></th></tr></thead><tbody id="rows"></tbody></table></div>
@@ -80,7 +81,9 @@ nomme pour les jeux de ROM de l'entrée (les noms eux-mêmes ne sont pas reprodu
 l'initialisation de la machine la démarre, avec un lien vers les notes de la famille.</li>
 <li><strong>rom2altsound</strong> : le résultat du <a href="https://github.com/Le-Syl21/rom2altsound/blob/main/docs/board-support.md">relevé des cartes</a>
 pour la famille : <em>Fonctionne</em> (les sons sortent, distincts, chacun depuis le silence),
-<em>Partiel</em>, <em>Pas encore de son</em>, <em>Pas de carte son</em>.</li>
+<em>Partiel</em>, <em>Pas encore de son</em>, <em>Pas de carte son</em>. Un second badge, <em>pas dans
+VPX</em>, marque les familles dont VPinball ne peut pas jouer les packs aujourd'hui, faute de recevoir
+leurs commandes son dans son AltSound ; son infobulle dit pourquoi.</li>
 <li><strong>Jeux de ROM</strong> : combien des jeux de ROM PinMAME de l'entrée étaient complets dans la
 collection de référence d'où le catalogue est tiré (2804 zips VPinMAME), sur le total.</li>
 <li><strong>Sons</strong> : lu dans les ROM sans les faire tourner, là où leur organisation est connue : les

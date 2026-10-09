@@ -3,10 +3,12 @@
 
 Run from anywhere: python3 docs/build_site.py
 The table itself is filled by app.js from catalog.json, which `rom2altsound catalog` writes
-(see the README): this script only writes the two pages around it, the sitemap and
-.nojekyll. The site holds metadata only: no ROM, no sound, no sounds.dat name.
+(see the README): this script writes the two pages around it, the sitemap and .nojekyll,
+and marks in catalog.json the entries whose packs cannot play in VPinball today (from
+vpx_playback.json). The site holds metadata only: no ROM, no sound, no sounds.dat name.
 """
 import json
+import sys
 from pathlib import Path
 
 DOCS = Path(__file__).resolve().parent
@@ -27,6 +29,7 @@ UI = {
         "nav": [("#catalog", "Catalog"), ("#about", "About"), (REPO, "GitHub")],
         "eyebrow": "rom2altsound",
         "h1": "Sound ROM catalog",
+        "catalog": "Catalog",
         "lead": "Every pinball sound ROM the PinMAME of rom2altsound knows, grouped by <strong>sound ROM "
                 "id</strong>: one entry per set of sound ROMs, with every game revision that plays it, its "
                 "sound board, how far rom2altsound gets with that board, the files' sizes and checksums, and "
@@ -65,7 +68,9 @@ names for the entry's sets (the names themselves are not reproduced here).</p>
 init starts it, with a link to the family's notes.</li>
 <li><strong>rom2altsound</strong>: the result of the <a href="{BLOB}docs/board-support.md">board survey</a>
 for the family: <em>Works</em> (sounds come out, distinct, each from silence), <em>Partial</em>,
-<em>No sound yet</em>, <em>No sound board</em>.</li>
+<em>No sound yet</em>, <em>No sound board</em>. A second badge, <em>not in VPX</em>, marks the families
+whose packs VPinball cannot play today because its AltSound does not receive their sound commands;
+its tooltip says why.</li>
 <li><strong>Sets</strong>: how many of the entry's PinMAME sets were complete in the reference ROM set the
 catalog was built from (2804 VPinMAME zips), out of all.</li>
 <li><strong>Sounds</strong>: read from the ROMs without running them, where the layout is known: the populated
@@ -91,6 +96,7 @@ python3 docs/build_site.py</code></pre>
         "nav": [("#catalog", "Catalogue"), ("#about", "À propos"), (REPO, "GitHub")],
         "eyebrow": "rom2altsound",
         "h1": "Catalogue des ROM son",
+        "catalog": "Catalogue",
         "lead": "Toutes les ROM son de flipper que connaît le PinMAME de rom2altsound, groupées par "
                 "<strong>id de ROM son</strong> : une entrée par jeu de ROM son, avec chaque révision du jeu qui "
                 "le joue, sa carte son, ce que rom2altsound tire de cette carte, la taille et les sommes de "
@@ -131,7 +137,9 @@ nomme pour les jeux de ROM de l'entrée (les noms eux-mêmes ne sont pas reprodu
 l'initialisation de la machine la démarre, avec un lien vers les notes de la famille.</li>
 <li><strong>rom2altsound</strong> : le résultat du <a href="{BLOB}docs/board-support.md">relevé des cartes</a>
 pour la famille : <em>Fonctionne</em> (les sons sortent, distincts, chacun depuis le silence),
-<em>Partiel</em>, <em>Pas encore de son</em>, <em>Pas de carte son</em>.</li>
+<em>Partiel</em>, <em>Pas encore de son</em>, <em>Pas de carte son</em>. Un second badge, <em>pas dans
+VPX</em>, marque les familles dont VPinball ne peut pas jouer les packs aujourd'hui, faute de recevoir
+leurs commandes son dans son AltSound ; son infobulle dit pourquoi.</li>
 <li><strong>Jeux de ROM</strong> : combien des jeux de ROM PinMAME de l'entrée étaient complets dans la
 collection de référence d'où le catalogue est tiré (2804 zips VPinMAME), sur le total.</li>
 <li><strong>Sons</strong> : lu dans les ROM sans les faire tourner, là où leur organisation est connue : les
@@ -214,7 +222,7 @@ def render(lang):
 <div id="app" hidden>
 <div id="stats" class="stats"></div>
 <section id="detail" hidden aria-live="polite"></section>
-<h2 id="catalog">{u["h1"]}</h2>
+<h2 id="catalog">{u["catalog"]}</h2>
 <div class="controls">
 <label class="grow"><span>&#128269;</span><input type="search" id="q" autocomplete="off" spellcheck="false"></label>
 <label>{u["family"]}<select id="family"><option value=""></option></select></label>
@@ -222,6 +230,7 @@ def render(lang):
 <label>{u["maker"]}<select id="maker"><option value=""></option></select></label>
 <label class="check"><input type="checkbox" id="onlyIds"><span id="lOnlyIds"></span></label>
 <label class="check"><input type="checkbox" id="onlyFound"><span id="lOnlyFound"></span></label>
+<label class="check"><input type="checkbox" id="hideNoVpx"><span id="lHideNoVpx"></span></label>
 </div>
 <p id="count" class="count"></p>
 <div class="table"><table><thead><tr>{heads}</tr></thead><tbody id="rows"></tbody></table></div>
@@ -240,7 +249,35 @@ def render(lang):
 """
 
 
+def mark_vpx_playback():
+    """Copy vpx_playback.json into catalog.json: `vpx_not_playable` (label -> reason, per
+    language) at the top, `vpx_playable: false` on each entry of those families. Kept in
+    the format `rom2altsound catalog` writes (sorted head, one entry per line), so running
+    this twice changes nothing."""
+    path = DOCS / "catalog.json"
+    if not path.exists():
+        return
+    rules = json.loads((DOCS / "vpx_playback.json").read_text(encoding="utf-8"))
+    reasons = {label: rules["reasons"][r] for label, r in rules["families"].items()}
+    catalog = json.loads(path.read_text(encoding="utf-8"))
+    entries = catalog.pop("entries")
+    labels = {e["label"] for e in entries}
+    for label in sorted(set(reasons) - labels):
+        print(f"vpx_playback.json: no catalog entry has the family {label!r}", file=sys.stderr)
+    catalog["vpx_not_playable"] = {k: v for k, v in sorted(reasons.items()) if k in labels}
+    for e in entries:
+        e.pop("vpx_playable", None)
+        if e["label"] in reasons:
+            e["vpx_playable"] = False
+    compact = {"ensure_ascii": False, "separators": (",", ":")}
+    head = json.dumps(catalog, sort_keys=True, **compact)
+    text = (head[:-1] + ',"entries":[\n'
+            + ",\n".join(json.dumps(e, **compact) for e in entries) + "\n]}\n")
+    path.write_text(text, encoding="utf-8")
+
+
 def main():
+    mark_vpx_playback()
     (DOCS / "fr").mkdir(exist_ok=True)
     (DOCS / "index.html").write_text(render("en"), encoding="utf-8")
     (DOCS / "fr" / "index.html").write_text(render("fr"), encoding="utf-8")

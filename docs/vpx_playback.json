@@ -1,0 +1,17 @@
+{
+  "_comment": "Board families (catalog labels) whose packs cannot play in VPinball today, and why, in one line. Only confirmed families belong here (the 'In VPinball' items of docs/families/*.md are read from PinMAME's snd_alt.cpp, not from VPinball's PinMAME plugin or libaltsound). build_site.py copies it into catalog.json: vpx_not_playable (label -> reason) and vpx_playable: false on each entry of these families.",
+  "reasons": {
+    "sam": {
+      "en": "AltSound does not receive this board's sound commands today: SAM games play their calls in their own code.",
+      "fr": "AltSound ne reçoit pas aujourd'hui les commandes son de cette carte : les jeux SAM jouent leurs appels dans leur propre code."
+    },
+    "p2k": {
+      "en": "AltSound does not receive this board's sound commands today: Pinball 2000's requests go from the PC to the board outside PinMAME's sound command path.",
+      "fr": "AltSound ne reçoit pas aujourd'hui les commandes son de cette carte : les requêtes du Pinball 2000 vont du PC à la carte hors du chemin des commandes son de PinMAME."
+    }
+  },
+  "families": {
+    "NONE (Stern SAM)": "sam",
+    "DCSP2K": "p2k"
+  }
+}
