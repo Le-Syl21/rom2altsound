@@ -26,13 +26,13 @@ How each family is driven (hardware, commands, stop, volume, loops, what is miss
   silence (something keeps playing between commands) or are all the same;
 - ❌ no sound from any of the 40 commands (or only identical clicks);
 - — nothing to drive (no sound board in PinMAME's driver);
-- ❔ not tried: no ROM of the family in the full set (none left).
+- ❔ not tried: no ROM of the family in the full set, or not run yet.
 
 PinMAME 3.7 (the submodule) knows 2971 sets, 10 of them shared system ROM sets (`gts80s`,
 `allied`...: no game, see [how it works](how-it-works.md#rom-verification)). Of the other
 2961, 1940 (379 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
-sets built outside the full set, see its row), 443 in a ⚠️ one, 315 in a ❌ one, 263 have
-no sound board. "Sets" counts every set (clones
+sets built outside the full set, see its row), 443 in a ⚠️ one, 315 in a ❌ one, 6 in a ❔
+one (S11S, not run yet), 257 have no sound board. "Sets" counts every set (clones
 and revisions included), "games" the sets without a parent, "sound ROM ids" the distinct
 sound ROM sets (see [how it works](how-it-works.md#sound-rom-id)): a revision that kept its
 sound ROMs shares its id, so one pack serves all of them. "Sets in the full set": the sets
@@ -128,7 +128,8 @@ are the system zips; 2796 of the 2961 sets are there).
 | TECNOPLAY | TECNOPLAY | 2 | 2 | 1 | 1987-1988 | Tecnoplay | 2 | xforce | ❌ | 0 of 40; the game streams sound bytes all the time (76978 bytes in the boot): to look at |
 | PLAYZ | PLAYZ | 1 | 1 | 1 | 1981-1981 | Playmatic | 1 | zira | ❌ | first run: 0 of 40; the game sent no sound byte at boot |
 | S3WCS | WMSS67 | 1 | 1 | 1 | 1978-1978 | Williams | 1 | wldcp_l1 | ❌ | first run (the full set's zip is complete): 0 of 40; boot FF FF 7F, as phnix_l1 |
-| NONE (other) | - | 257 | 172 | 17 | 1974-2025 | Bally, LTD | 218 | - | — | no sound board in PinMAME's sound board interface (sndbrd.c): sound on the CPU board, chimes, or a sound CPU the driver runs by itself (LTD, Bally -17, Recel, Sleic, Juegos Populares...); rom2altsound has nothing to send commands to |
+| S11S | WMSS11 | 6 | 5 | 4 | 1985-1987 | Williams | 6 | - | ❔ | Williams' shuffle alleys (alcat_l7, tts_l2...): GEN_S11, the System 11 CPU board's own sound (wmssnd.c `s11sIntf`, WMSS11, the same board type as S11XS). Classed NONE until `drivers.rs` read GEN_S11 as 0x8000000 instead of gen.h's 0x80000000; not run yet |
+| NONE (other) | - | 251 | 167 | 13 | 1974-2025 | Bally, LTD | 212 | - | — | no sound board in PinMAME's sound board interface (sndbrd.c): sound on the CPU board, chimes, or a sound CPU the driver runs by itself (LTD, Bally -17, Recel, Sleic, Juegos Populares...); rom2altsound has nothing to send commands to |
 | ZAC1311 | - | 6 | 3 | 0 | 1978-1978 | Zaccaria | 6 | futurwld | — | no sound board interface: PinMAME has no manual command handler for it, nothing to drive |
 
 ## Notes

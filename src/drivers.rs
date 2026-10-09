@@ -135,7 +135,7 @@ mod generation {
     pub const S9: u64 = 0x800;
     pub const DE: u64 = 0x1000;
     pub const S3C: u64 = 0x80000;
-    pub const S11: u64 = 0x8000000;
+    pub const S11: u64 = 0x8000_0000;
 }
 
 fn board(name: &str) -> u32 {
@@ -483,6 +483,58 @@ mod tests {
         assert_eq!(l.0, 7);
         assert!(l.1.init_crashed && l.1.has_data);
         assert_eq!(l.1.family(), "SNDBRD_WPCS");
+    }
+
+    /// Every GEN_* value the board choice uses is the one of the submodule's gen.h.
+    #[test]
+    fn generations_match_gen_h() {
+        use generation as g;
+        let h = include_str!("../vendor/pinmame/src/wpc/gen.h");
+        let value = |name: &str| -> u64 {
+            let line = h
+                .lines()
+                .find(|l| l.split_whitespace().nth(1) == Some(name))
+                .unwrap_or_else(|| panic!("{name} not in gen.h"));
+            let hex = line
+                .split("U64(0x")
+                .nth(1)
+                .unwrap()
+                .split(')')
+                .next()
+                .unwrap();
+            u64::from_str_radix(hex, 16).unwrap()
+        };
+        for (name, v) in [
+            ("GEN_WPCALPHA_1", g::WPCALPHA_1),
+            ("GEN_WPCALPHA_2", g::WPCALPHA_2),
+            ("GEN_WPCDMD", g::WPCDMD),
+            ("GEN_WPCFLIPTRON", g::WPCFLIPTRON),
+            ("GEN_WPCDCS", g::WPCDCS),
+            ("GEN_WPCSECURITY", g::WPCSECURITY),
+            ("GEN_WPC95DCS", g::WPC95DCS),
+            ("GEN_WPC95", g::WPC95),
+            ("GEN_S11X", g::S11X),
+            ("GEN_S11B2", g::S11B2),
+            ("GEN_S11C", g::S11C),
+            ("GEN_S9", g::S9),
+            ("GEN_DE", g::DE),
+            ("GEN_S3C", g::S3C),
+            ("GEN_S11", g::S11),
+        ] {
+            assert_eq!(value(name), v, "{name}");
+        }
+    }
+
+    #[test]
+    fn s11_shuffle_alleys_have_the_cpu_board_sound() {
+        // Williams' shuffle alleys (alcat_l7, tts_l2...): GEN_S11, the sound on the CPU board.
+        let b = Board {
+            hw_board: 0,
+            generation: 0x8000_0000,
+            core_init: Some("s11".into()),
+            init_crashed: false,
+        };
+        assert_eq!(b.family(), "SNDBRD_S11S");
     }
 
     #[test]
