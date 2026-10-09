@@ -17,7 +17,7 @@
 //! from `dcsrom::track_run`); the file is then its intro and one loop body.
 
 use std::collections::{BTreeMap, VecDeque};
-use std::ffi::c_int;
+use std::ffi::{c_int, c_uint};
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -146,6 +146,15 @@ fn ac_couples_dac(family: &str) -> bool {
 ///   program has no background sound; eballdlx $FC90).
 /// - BY32 (-32/-50, no sound CPU): `0F` (low nibble F) only drops the strobe, which mutes
 ///   the tone at once (by35snd.c `by32_ctrl_w`). Not measured: no ROM at hand.
+/// - ZAC1370 (Zaccaria Sounds & Speech and successors): `FF`, command 00 once inverted,
+///   framed with its strobe (`zac_strobed`), which the 13136 games send at boot.
+/// - TAITO: `00`, the games' idle value (taito.c `taito_silenceSavedSndCmd`). The board
+///   raises CB1 for any byte but 00 (taitos.c `taitos_data_w`), and the program arms CB1's
+///   rising edge (CRB 07, shock); the Sintetizador programs of 1979-82 never drop CB1
+///   themselves (no CA2 write on shock: one read of the command at power-on, none after),
+///   so without a 00 between two commands the second one makes no edge and is never read.
+///   00 also lowers it after a board reset, which leaves the PIA as it was. It silences
+///   few sounds by itself (the reset that follows a failed stop does).
 const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("WMSS11", &[0x00]),
     ("WMSS11C", &[0x20]),
@@ -158,9 +167,14 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("BYSNT", &[0x05]),
     ("BY32", &[0x0F]),
     ("ZAC1370", &[0xFF]),
+    ("TAITO", &[0x00]),
+    ("SPINB", &[SPINB_STOP]),
     // game.rom `DCSQuietAllTracks`: 55AE, then the mask of the six channels in the high byte.
     ("DCSP2K", &[0x55, 0xAE, 0x3F, 0x00]),
 ];
+/// Spinball / Inder: `8F` ends the music (bushido's music program: `& 3F` = `0F`, at `00B7`,
+/// and `xF` with bit 7 interrupts a playing music, `0142`). The effects end by themselves.
+const SPINB_STOP: u8 = 0x8F;
 /// Boards that take this long after a reset before they take commands again, silently: the
 /// wait for quiet after a reset is at least this.
 /// - BYTCS: the Turbo Cheap Squeak's ROM and RAM self-test.
@@ -362,6 +376,9 @@ enum Send {
     /// Pinball 2000: the first `n` 16-bit words, written to the DCS2 board's host port in
     /// one frame, as the game's PC writes a request (`shim_p2k_word`).
     Words([u16; 4], u8),
+    /// `n` times the pair (`a`, `b`) through the manual command, a few timeslices apart,
+    /// in one frame (`shim_mancmd_pairs`): Spinball's step volume.
+    Pairs(c_int, u8, u8, u16),
     /// Scenario (`--only 0x000C+2.5+0x0390`): wait this many seconds (in milliseconds)
     /// before the next send, keeping the recording open.
     Wait(u32),
@@ -1239,6 +1256,14 @@ pub struct Extractor {
     /// Waits for quiet that ran out in a row, with no command played in between (see
     /// `MAX_STOP_FAILURES`).
     stop_failures: u32,
+    /// The loudest sample of the boot, and the emulated seconds it had sound above the
+    /// silence threshold: whether the game's own commands played anything.
+    boot_peak: i32,
+    /// Diagnostic (`R2A_TRACE=<audio cpu>:<start>-<end>`, hex addresses): the hook is in, and
+    /// what was sent when (emulated seconds), for `trace.txt`.
+    trace: Option<bool>,
+    trace_sends: Vec<(f64, String)>,
+    boot_loud_frames: u64,
     /// Per-channel idle (DC) level, see `track_idle_level`.
     idle: Vec<i32>,
     phase: Phase,
@@ -1277,6 +1302,8 @@ pub struct Extractor {
     volume_sent: Option<String>,
     /// Our own volume (`VolumeInit::Dcs` or `Reference`) went out once.
     own_volume_sent: bool,
+    /// Spinball: the step volume was set (`spinb_level`) since the last board reset.
+    spinb_level_set: std::cell::Cell<bool>,
     volume_replays: u32,
     /// How the command list was made, per board.
     commands_from: Vec<String>,
@@ -1366,6 +1393,10 @@ impl Extractor {
             dirty: false,
             board_resets: 0,
             stop_failures: 0,
+            boot_peak: 0,
+            trace: None,
+            trace_sends: Vec::new(),
+            boot_loud_frames: 0,
             boot_log: Vec::new(),
             boot_pairs: Default::default(),
             last_novel: 0,
@@ -1377,6 +1408,7 @@ impl Extractor {
             data_east: false,
             volume_sent: None,
             own_volume_sent: false,
+            spinb_level_set: std::cell::Cell::new(false),
             volume_replays: 0,
             commands_from: Vec::new(),
             sweep: Vec::new(),
@@ -1694,6 +1726,9 @@ impl Extractor {
 
     /// One emulated frame of mixed audio (interleaved, `channels` per frame).
     pub fn on_audio(&mut self, buf: &[i16]) {
+        if self.trace.is_none() {
+            self.trace = Some(trace_hook());
+        }
         let ch = self.channels.max(1);
         let frames = (buf.len() / ch) as u64;
         self.take_p2k_words();
@@ -1704,6 +1739,11 @@ impl Extractor {
                 .zip(&self.idle)
                 .any(|(&s, &dc)| (s as i32 - dc).abs() > SILENCE as i32);
             self.silent_run = if loud { 0 } else { self.silent_run + 1 };
+            if matches!(self.phase, Phase::Boot) {
+                let peak = frame.iter().map(|&s| (s as i32).abs()).max().unwrap_or(0);
+                self.boot_peak = self.boot_peak.max(peak);
+                self.boot_loud_frames += u64::from(loud);
+            }
             if let Phase::Record(rec) = &mut self.phase {
                 rec.samples.extend_from_slice(frame);
                 rec.frames += 1;
@@ -1804,6 +1844,10 @@ impl Extractor {
             return;
         }
         if let Some(s) = self.sender.pop_front() {
+            if self.trace == Some(true) {
+                self.trace_sends
+                    .push((self.t_secs(self.t), format!("{s:?}")));
+            }
             let board = match s {
                 Send::Wait(_) => unreachable!(),
                 Send::Byte(board, byte) if self.families[(board & 1) as usize] == "BY56" => {
@@ -1820,6 +1864,18 @@ impl Extractor {
                 }
                 Send::Burst(board, bytes, n) => {
                     unsafe { ffi::shim_data_burst(board, bytes.as_ptr(), c_int::from(n)) };
+                    Some(board)
+                }
+                Send::Pairs(board, a, b, n) => {
+                    unsafe {
+                        ffi::shim_mancmd_pairs(
+                            board,
+                            c_int::from(a),
+                            c_int::from(b),
+                            c_int::from(n),
+                            SPINB_SLICES,
+                        )
+                    };
                     Some(board)
                 }
                 Send::Words(words, n) => {
@@ -1846,6 +1902,7 @@ impl Extractor {
     /// boards by pulsing the reset line of the audio CPUs (once for all of them).
     fn reset_boards(&mut self) {
         self.board_resets += 1;
+        self.spinb_level_set.set(false);
         let mut cpu_reset = false;
         for b in self.board_list() {
             let family = board_typestr(b).unwrap_or_default();
@@ -2103,6 +2160,9 @@ impl Extractor {
         for b in self.board_list() {
             if let Some(bytes) = self.our_master(b) {
                 v.extend(board_sends(self.mask, b, &bytes));
+            }
+            if self.families[b as usize] == "SPINB" && !self.spinb_level_set.replace(true) {
+                v.extend(spinb_level(self.mask, b));
             }
         }
         v
@@ -2691,8 +2751,12 @@ impl Extractor {
         }
         let boot = self.boot_report();
         eprintln!(
-            "boot: {:.1} s emulated (ended by {ended_by}), game sent {} sound byte(s), boards {:?}",
-            boot.secs, boot.bytes, self.boards
+            "boot: {:.1} s emulated (ended by {ended_by}), game sent {} sound byte(s), boards {:?}; sound for {:.1} s of it, peak {}",
+            boot.secs,
+            boot.bytes,
+            self.boards,
+            self.t_secs(self.boot_loud_frames),
+            self.boot_peak
         );
         for l in &boot.log {
             eprintln!(
@@ -4591,6 +4655,9 @@ impl Extractor {
     }
 
     pub fn write_manifest(&self) {
+        if self.trace == Some(true) {
+            self.write_trace();
+        }
         let stop: Vec<String> = self
             .stop
             .iter()
@@ -4606,6 +4673,7 @@ impl Extractor {
                         .collect::<Vec<_>>()
                         .join(" ")
                 ),
+                Send::Pairs(b, x, y, n) => format!("manCmd({b},{x:02X} {y:02X}) x{n}"),
                 Send::Reset => "board reset".into(),
                 Send::Wait(ms) => format!("wait {ms} ms"),
             })
@@ -4708,19 +4776,81 @@ fn dump_state(dir: &std::path::Path, rec: &Recording, p: &seqstate::Probe, ch: u
     let _ = write_wav(&wav, &rec.samples, ch.max(1) as u16, rate);
 }
 
+/// Diagnostic: hooks the range `R2A_TRACE` names (`<n>:<start>-<end>`, the n-th audio CPU,
+/// hex addresses), see shim.c `shim_trace_hook`.
+fn trace_hook() -> bool {
+    let Ok(spec) = std::env::var("R2A_TRACE") else {
+        return false;
+    };
+    let parse = || -> Option<(c_int, c_uint, c_uint)> {
+        let (n, range) = spec.split_once(':')?;
+        let (a, b) = range.split_once('-')?;
+        Some((
+            n.parse().ok()?,
+            c_uint::from_str_radix(a, 16).ok()?,
+            c_uint::from_str_radix(b, 16).ok()?,
+        ))
+    };
+    let Some((n, a, b)) = parse() else {
+        eprintln!("R2A_TRACE: expected <audio cpu>:<start>-<end> (hex), got {spec}");
+        return false;
+    };
+    let got = unsafe { ffi::shim_trace_hook(n, a, b) };
+    eprintln!("R2A_TRACE: audio cpu {n}, {a:04X}-{b:04X}: hooked mask {got}");
+    got != 0
+}
+
+impl Extractor {
+    /// Diagnostic: `trace.txt` in the output folder, the traced accesses and the game's and
+    /// our own sends, in time order.
+    fn write_trace(&self) {
+        let mut lines: Vec<(f64, String)> = Vec::new();
+        let mut lost: c_uint = 0;
+        let n = unsafe { ffi::shim_trace_count(&mut lost) };
+        for i in 0..n {
+            let (mut at, mut pc, mut addr, mut data, mut w) = (0.0, 0, 0, 0, 0);
+            unsafe { ffi::shim_trace_get(i, &mut at, &mut pc, &mut addr, &mut data, &mut w) };
+            let rw = if w != 0 { "W" } else { "R" };
+            lines.push((at, format!("pc {pc:04X} {rw} {addr:04X} {data:02X}")));
+        }
+        for e in &self.boot_log {
+            lines.push((
+                self.t_secs(e.0),
+                format!("game -> board {} {:02X}", e.1, e.2),
+            ));
+        }
+        for (t, s) in &self.trace_sends {
+            lines.push((*t, format!("send {s}")));
+        }
+        lines.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut out = format!("# {n} accesses ({lost} lost)\n");
+        for (t, l) in lines {
+            out.push_str(&format!("{t:10.6} {l}\n"));
+        }
+        let path = self.opts.out_dir.join("trace.txt");
+        if let Err(e) = std::fs::write(&path, out) {
+            eprintln!("cannot write {}: {e}", path.display());
+        }
+    }
+}
+
 fn board_mask() -> u8 {
     unsafe { (ffi::sndbrd_exists(0) != 0) as u8 | (((ffi::sndbrd_exists(1) != 0) as u8) << 1) }
 }
 
 /// The board's type string, PinMAME's own, except for the Sounds Plus -56 (`SNDBRD_BY56`),
-/// which PinMAME also names "BY51" but which takes its commands as two nibbles.
+/// which PinMAME also names "BY51" but which takes its commands as two nibbles, and for
+/// Inder's machines, which PinMAME runs as a "SPINB" board with a command handler of their
+/// own (shim.c `shim_spinb_own`): "INDER".
 fn board_typestr(board: c_int) -> Option<String> {
     let t = ffi::cstr(unsafe { ffi::sndbrd_typestr(board) })?;
     let by56 = t == "BY51" && unsafe { ffi::shim_board_type(board) } & 0xFF == BY56_SUBTYPE;
     let p2k = t == "DCS" && unsafe { ffi::shim_board_type(board) } == ffi::SNDBRD_DCSP2K;
+    let inder = t == "SPINB" && unsafe { ffi::shim_spinb_own(board) } == 0;
     Some(match () {
         _ if by56 => "BY56".into(),
         _ if p2k => "DCSP2K".into(),
+        _ if inder => "INDER".into(),
         _ => t,
     })
 }
@@ -4826,6 +4956,7 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
     match board_typestr(board).as_deref() {
         Some("DCSP2K") => return p2k_sends(bytes),
         Some("ZAC1370") => return addressed(mask, board, &zac_strobed(bytes)),
+        Some("SPINB") => return addressed(mask, board, &spinb_released(bytes)),
         _ => {}
     }
     let double = unsafe { ffi::shim_board_flags(board) } & ffi::SNDBRD_DOUBLECMD != 0;
@@ -4865,6 +4996,52 @@ fn zac_strobed(bytes: &[u8]) -> Vec<u8> {
             }
         })
         .collect()
+}
+
+/// Spinball / Inder (`SPINB`): both sound Z80s poll the command latch (`sndcmd_r`, no
+/// strobe, no interrupt) and take a byte only while its bit 7 is set (bushido: the effects
+/// program at `006C`, the music's at `0093`); the latch keeps the byte until the game
+/// writes the next one, and a byte left in it with bit 7 set plays nothing (measured on
+/// bushido: `81` alone is silent, `81 00` plays). Each byte with bit 7 set is followed by
+/// `00`, which releases the latch.
+fn spinb_released(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .iter()
+        .flat_map(|&b| {
+            if b & 0x80 != 0 {
+                vec![b, 0x00]
+            } else {
+                vec![b]
+            }
+        })
+        .collect()
+}
+
+/// Spinball's MSM6585 boards (jolypark, vrnwrld): the music program steps the board's
+/// volume (spinb.c `digvol_w`, 0 to 142, PinMAME starts it at 122) one step up on `C3` and
+/// one down on `C4` (each taken once until the latch's bit 7 drops: `spinb_released`),
+/// unless `DF` locked it (`DE` unlocks); its reset adds 8 steps. The games' boot steps it
+/// down to 0 (127 `C4` on jolypark), so every sound came out 30 to 40 dB down. The tool
+/// unlocks it, steps it down to 0 and back up to PinMAME's power-on 122, once booted and
+/// after every board reset. Bushido and Mach 2 have no step volume (their programs take
+/// none of these bytes, and stay at 122).
+const SPINB_UP: u8 = 0xC3;
+const SPINB_DOWN: u8 = 0xC4;
+const SPINB_UNLOCK: u8 = 0xDE;
+const SPINB_LOCK: u8 = 0xDF;
+const SPINB_STEPS: u16 = 142;
+const SPINB_LEVEL: u16 = 122;
+/// Timeslices after each byte of a step (a timeslice is 1/50 of a frame,
+/// `MDRV_INTERLEAVE(50)`): the program takes a command through a routine (jolypark `02B6`)
+/// and a delay loop (`01D2`) before it polls the latch again. Measured on jolypark with
+/// `R2A_TRACE` on `A000`: with 4, only 24 of 142 steps reached `digvol_w`; with 30, all.
+const SPINB_SLICES: c_int = 30;
+fn spinb_level(mask: u8, board: c_int) -> Vec<Send> {
+    let t = target(mask, board);
+    let mut v = board_sends(mask, board, &[SPINB_UNLOCK]);
+    v.push(Send::Pairs(t, SPINB_DOWN, 0x00, SPINB_STEPS));
+    v.push(Send::Pairs(t, SPINB_UP, 0x00, SPINB_LEVEL));
+    v
 }
 
 /// One range of a sweep while it is built: what it is, and its commands.
@@ -4948,6 +5125,19 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                 )],
                 format!(
                     "board {b} (ZAC1370): bytes FE down to 80, each strobed with bit 7 (the board reads the command inverted: 01..7F; FF, command 00, is the stop)"
+                ),
+            ),
+            // Bit 7 is the "command" flag both sound CPUs wait for (`spinb_released`).
+            "SPINB" => (
+                vec![(
+                    "81..FF (bit 7 set, each followed by 00; 8F = stop the music; C3/C4/DE/DF = the step volume)".to_string(),
+                    (0x81..=0xFFu8)
+                        .filter(|c| ![SPINB_STOP, SPINB_UP, SPINB_DOWN, SPINB_UNLOCK, SPINB_LOCK].contains(c))
+                        .map(|c| vec![c])
+                        .collect(),
+                )],
+                format!(
+                    "board {b} (SPINB): bytes 81..FF but 8F (stop), C3/C4/DE/DF (the step volume): the latch's bit 7 is the command flag; each is followed by 00"
                 ),
             ),
             "BYSNT" => (

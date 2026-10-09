@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Spinball boards** (SNDBRD_SPINB on bushido, mach2, jolypark, vrnwrld: 7 sets, 0
+  sounds before): both sound CPUs poll the command latch and take a byte only while its
+  bit 7 is set, so the sweep is `81`..`FF`, each command followed by `00`, and `8F`
+  (music stop) is the stop. On Jolly Park and Verne's World the game's boot steps the
+  board's volume down to 0; the tool steps it back to PinMAME's power-on level once booted.
+  Survey runs: bushido 31 of 40, mach2, jolypark and vrnwrld 40 of 40, all from silence.
+  Inder's machines, which PinMAME runs on the same interface with a handler of their own,
+  are now reported as `INDER` and keep the common method.
+- **Taito Sintetizador boards** (TAITO_SINTETIZADOR, TAITO_SINTETIZADORPP: 26 sets, 0
+  sounds before): the stop is now `00`, the games' idle value. The board's strobe (CB1)
+  only falls on a `00`, and these programs never lower it themselves, so a command sent
+  after any other byte made no edge and was never read. Survey runs: shock 35 of 40,
+  football 36, snake 35, mrblack 36, all from silence; the Sintevox boards keep their
+  counts with fewer board resets.
+- **Diagnostics**: the boot line says how long the board played during the boot, and
+  `R2A_TRACE=<audio cpu>:<start>-<end>` writes every access the sound CPU makes in that
+  range (time, PC, value) to `trace.txt`, next to the game's and the tool's sends.
 - **Zaccaria Sounds & Speech boards** (ZAC1370, ZAC13136, ZAC11178, ZAC11178_13181,
   ZAC13181x3: 108 sets, 0 sounds before): bit 7 of the byte is the board's strobe, so
   each command now goes out framed as the games send it (low bits, then with bit 7, then

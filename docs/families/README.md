@@ -83,8 +83,8 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_GPMSU3`](game-plan.md#sndbrd_gpmsu3) | ❌ | 6 | 3 | Andromeda; Lady Sharpshooter; Cyclopes |
 | [`SNDBRD_TAITO_SINTEVOX`](taito.md#sndbrd_taito_sintevox) | ✅ | 10 | 5 | Titan; Cavaleiro Negro; Lady Luck |
 | [`SNDBRD_TAITO_SINTEVOXPP`](taito.md#sndbrd_taito_sintevoxpp) | ✅ | 2 | 2 | Gork; Fire Action Deluxe |
-| [`SNDBRD_TAITO_SINTETIZADOR`](taito.md#sndbrd_taito_sintetizador) | ❌ | 18 | 14 | Shock; Oba-Oba; Gemini 2000 |
-| [`SNDBRD_TAITO_SINTETIZADORPP`](taito.md#sndbrd_taito_sintetizadorpp) | ❌ | 8 | 5 | Snake Machine; Mr. Black; Space Shuttle |
+| [`SNDBRD_TAITO_SINTETIZADOR`](taito.md#sndbrd_taito_sintetizador) | ✅ | 18 | 14 | Shock; Oba-Oba; Gemini 2000 |
+| [`SNDBRD_TAITO_SINTETIZADORPP`](taito.md#sndbrd_taito_sintetizadorpp) | ✅ | 8 | 5 | Snake Machine; Mr. Black; Space Shuttle |
 | [`SNDBRD_PLAY4`](playmatic.md#sndbrd_play4) | ✅ | 16 | 13 | Mad Race; Meg-Aaton; Raid, The |
 | [`SNDBRD_PLAY1`](playmatic.md#sndbrd_play1) | ✅ | 7 | 7 | Space Gambler; Big Town; Last Lap |
 | [`SNDBRD_PLAY2`](playmatic.md#sndbrd_play2) | ✅ | 6 | 5 | Antar; Storm; Evil Fight |
@@ -106,7 +106,7 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_TABART`](other-makers.md#sndbrd_tabart) | ⚠️ | 1 | 1 | L'Hexagone |
 | [`SNDBRD_TABART2`](other-makers.md#sndbrd_tabart2) | ⚠️ | 1 | 1 | Sahara Love |
 | [`SNDBRD_TABART3`](other-makers.md#sndbrd_tabart3) | ⚠️ | 1 | 1 | Grand 8, Le |
-| [`SNDBRD_SPINB`](other-makers.md#sndbrd_spinb) | ❌ | 27 | 16 | Bushido; Brave Team; Canasta '86' |
+| [`SNDBRD_SPINB`](other-makers.md#sndbrd_spinb) | ⚠️ | 27 | 16 | Bushido; Brave Team; Canasta '86' |
 | [`SNDBRD_JOCTRONIC`](other-makers.md#sndbrd_joctronic) | ❌ | 3 | 3 | Punky Willy; Walkyria; Pin Ball |
 | [`SNDBRD_TECNOPLAY`](other-makers.md#sndbrd_tecnoplay) | ❌ | 2 | 2 | X Force; Space Team |
 | [`NONE (other)`](no-sound-board.md#sndbrd_none_other) | — | 257 | 172 | Mata Hari; Golden Game; Michigan |

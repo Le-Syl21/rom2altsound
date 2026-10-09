@@ -30,33 +30,71 @@ interface, and none of them is named anywhere in rom2altsound's code: all go thr
 ## <a name="sndbrd_spinb"></a>SNDBRD_SPINB
 
 Spinball / Inder sound board (two Z80, two MSM5205 or MSM6585) · PinMAME interface `SPINB`
-(`src/wpc/spinb.c`) · status ❌ · 27 sets, 16 games, 14 sound ROM ids, 1985-1996, Inder
+(`src/wpc/spinb.c`) · status ⚠️ · 27 sets, 16 games, 14 sound ROM ids, 1985-1996, Inder
 (Spain), Spinball (Spain) · e.g. Bushido (`bushido`), Mach 2, Jolly Park, Verne's World
+
+Two hardware lines share the interface: Spinball's (`spinbgames.c`: bushido, mach2,
+jolypark, vrnwrld, 7 sets), whose manual command is the interface's own
+`spinb_sndCmd_w`, and Inder's (`indergames.c`, `bowlgames.c`: 20 sets, brvteam to
+metalman), whose machine inits replace it (`sndbrd_setManCmd`: `snd_w`, `snd2_w`, in
+`src/wpc/inder.c`). rom2altsound tells them apart at run time (shim.c `shim_spinb_own`)
+and names the second `"INDER"` (`board_typestr`).
+
+### Spinball (`"SPINB"`)
 
 - **Hardware**: two Z80 sound CPUs at 5 MHz, one for the effects and one for the music
   (`spinbsnd1_readmem`, `spinbsnd2_readmem`, RAM `2000`-`3FFF` each, `MRA_RAM`), each
   feeding its own ADPCM chip from its sample ROMs: MSM5205 on Bushido and Mach 2
   (`SPINB_msm5205Int`), MSM6585 on Jolly Park and Verne's World (`SPINB_msm6585Int`); an
   8051 runs the DMD. A step volume (`digvol_w`, written by the music CPU at `A000`, 0 to
-  142 steps, applied to both ADPCM chips; `SPINBlocals.volume` starts at 0 in
-  `MACHINE_INIT(spinb)`).
+  142 steps, applied to both ADPCM chips; `SPINBlocals.volume` starts at 122).
 - **Commands**: the game's Z80 writes the command byte to a latch at `6C20` or `CC20`
   (`soundbd_w`, in the game CPU's memory map): **not through `sndbrd_data_w`**, so nothing
-  is logged ("the game sent no sound byte at boot", [board support](../board-support.md)).
-  Both sound CPUs read that latch at `8000` (`sndcmd_r`); there is no interrupt or strobe
-  in the handler. The manual handler `spinb_sndCmd_w` calls the same `soundbd_w`.
-- **Sound list**: raw sweep `01`..`FF`.
-- **Stop, boot and resets**: board reset (both sound Z80s).
-- **Volume**: the board's step volume, driven by its own program; not read by the tool.
+  is logged at boot. Both sound CPUs poll that latch at `8000` (`sndcmd_r`; no interrupt,
+  no strobe) and take a byte **only while its bit 7 is set** (read in the programs:
+  bushido's effects loop at `006C`, the music's at `0093`, `AND 80`); the latch keeps the
+  byte until the next write. The effects program plays `cmd & 7F`, the music program
+  `cmd & 3F` (`0C` starts a music, `0F` stops it; `8F` and, inside a music, any `xF`
+  interrupt it).
+- **What rom2altsound sends** (`spinb_released`, in `board_sends`): every byte with bit 7
+  set, followed by `00`, which releases the latch. A byte left in the latch with bit 7 set
+  plays nothing (bushido: `81` alone silent, `81 00` plays): the program takes it, plays,
+  and takes it again. Before (0.2.3), the sweep `01`..`FF` sent single bytes: `01`..`7F`
+  reach neither program, the 0 of 40 of the survey.
+- **Sound list**: `81`..`FF` without `8F` (the stop) and the step volume's `C3`, `C4`,
+  `DE`, `DF` (none of which the effects programs take).
+- **Stop**: `8F 00` (`BUILTIN_STOPS`, `SPINB_STOP`), the music stop; the effects end by
+  themselves. No board reset in the survey runs.
+- **Volume** (`spinb_level`): on the MSM6585 boards the music program steps the volume,
+  `C3` one step up, `C4` one down (once per release of bit 7), `DF` locks it and `DE`
+  unlocks it, and its reset adds 8 steps. The games' boot steps it down to 0 (traced on
+  jolypark: 127 steps down from 2.95 s), which left every sound 30 to 40 dB down
+  (jolypark -64 to -41 LUFS). Once booted, and after a board reset, the tool sends `DE`,
+  142 steps down and 122 up: PinMAME's power-on level, the one Bushido and Mach 2 (no
+  step volume) play at. The steps go out within a few frames (`Send::Pairs`, shim.c
+  `shim_mancmd_pairs`, 30 timeslices after each byte: with 4, only 24 of 142 steps
+  reached `digvol_w`). The level the game itself sets later (its volume setting) is not
+  known.
 - **Loops**: audio, sequencer state (both Z80s' RAM).
-- **Measured**: `bushido`, 0 of 40 ([board support](../board-support.md)).
-- **Limits and what is missing**: why no command plays is not determined from the code.
-  The sound CPUs poll a latch with no strobe, so the program presumably reacts to a
-  change of its value, and the game's own sequence is not visible (not logged); a hook
-  on `soundbd_w` (as the shim does for the DCS2 port) would show it. The survey's note: to
-  look at.
+- **Measured** (survey settings, [board support](../board-support.md)): bushido 31 of 40,
+  mach2 40 of 40, jolypark 40 of 40 (-32 to -8 LUFS), vrnwrld 40 of 40, all from
+  silence, no board reset.
 - **In VPinball**: **the pack cannot play**: the game writes its latch directly, never
   through `sndbrd_data_w`, so AltSound receives nothing.
+
+### Inder (`"INDER"`)
+
+- **Commands**: `snd_w` stores the byte in a latch the sound CPU reads, `snd2_w` also
+  pulses its NMI (`inder.c`); not looked at further.
+- **What rom2altsound sends**: the common method (one byte per command, `01`..`FF`, board
+  reset as the stop).
+- **Measured** (survey settings): lapbylap 30 of 40 (2 not from silence); corsario and
+  atleta 40 of 40 but 39 not from silence, all to the 5 s cap and at two levels (a sound
+  that plays on under every command); brvteam: "no sound board on this machine" (its
+  SN76489 is not started as a board).
+- **Limits and what is missing**: the stop and the command path of each Inder board
+  (`inder.c`).
+- **In VPinball**: not tested.
 
 ## <a name="sndbrd_nuova"></a>SNDBRD_NUOVA
 

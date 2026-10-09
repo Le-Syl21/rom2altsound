@@ -61,16 +61,18 @@ are the system zips; 2796 of the 2961 sets are there).
 | BY45 | BY45 | 23 | 10 | 12 | 1983-2021 | Bally, Bally / Oliver | 23 | xsandos | ✅ | 39 of 40 (README: Cheap Squeak) |
 | BY61B | BYSNT | 20 | 6 | 6 | 1981-2011 | Bally / Oliver, Bally | 20 | centaur | ✅ | 30 of 40 |
 | ZAC11178 | ZAC1370 | 18 | 4 | 9 | 1985-1986 | Zaccaria | 18 | clown | ✅ | fixed as ZAC1370 (0 of 40 before): clown 40 of 40, poolcham 40 of 40, all from silence, no board reset |
+| TAITO_SINTETIZADOR | TAITO | 18 | 14 | 15 | 1979-1982 | Taito | 18 | shock | ✅ | fixed (0 of 40 before): the stop is now 00, the games' idle value. The program arms CB1's rising edge and never lowers it itself (one read of the command at power-on on shock, none after: traced with `R2A_TRACE`), so a command that follows a non-zero byte made no edge. shock 35 of 40, football 36 of 40, obaoba 37 of 40, all from silence; many sounds run to the 5 s cap and 00 silences few of them (the board reset that follows does) |
 | PLAY4 | PLAY4 | 16 | 13 | 13 | 1984-1987 | Playmatic, JocMatic | 16 | madrace | ✅ | 30 of 40 |
 | BYTCS | BYTCS | 12 | 5 | 5 | 1986-1987 | Bally | 11 | blackblt | ✅ | 40 of 40 (38 files, 2 blips; README: Turbo Cheap Squeak) |
 | S9S | WMSS11 | 12 | 7 | 7 | 1983-1985 | Williams | 12 | sorcr_l2 | ✅ | 40 of 40 |
 | ZAC11178_13181 | ZAC1370 | 12 | 2 | 6 | 1986-1987 | Zaccaria | 12 | spooky | ✅ | fixed as ZAC1370 (0 of 40 before): spooky 38 of 40, zankor 39 of 40, all from silence; the game's own framing `3F BF 3F` (bit 6 clear: the Z80 board's NMI) |
 | ALVGS1 | OKI | 10 | 3 | 5 | 1992-1993 | Alvin G | 10 | agsoccer | ✅ | 33 of 40 (OKI) |
 | ALVGS2 | BSMT | 10 | 5 | 6 | 1993-1994 | Alvin G | 9 | wrldtour | ✅ | 24 of 40 (BSMT2000, its own program) |
-| TAITO_SINTEVOX | TAITO | 10 | 5 | 7 | 1981-1982 | Taito | 10 | titan | ✅ | 38 of 40 |
+| TAITO_SINTEVOX | TAITO | 10 | 5 | 7 | 1981-1982 | Taito | 10 | titan | ✅ | 38 of 40 (titan, with the stop 00 since the Sintetizador fix: the same 38, 11 board resets instead of 45) |
 | BY56 | BY51 | 8 | 1 | 4 | 1980-2008 | Bally, Bally / Oliver | 8 | xenon | ✅ | 30 of 40 (README) |
 | ZAC1125 | ZAC1125 | 8 | 4 | 0 | 1979-1980 | Zaccaria | 8 | firemntn | ✅ | first run: 38 of 40, all from silence (no sound ROM: the board's tones) |
 | ZAC13181x3 | ZAC1370 | 8 | 2 | 2 | 1987-1987 | Zaccaria | 8 | strsphnx | ✅ | fixed as ZAC1370 (0 of 40 before): strsphnx 21 of 40 (20 files, 1 blip), nstrphnx the same, all from silence; the first 40 commands (FE..D7) all go to the third Z80 |
+| TAITO_SINTETIZADORPP | TAITO | 8 | 5 | 5 | 1982-1985 | Taito | 8 | snake | ✅ | fixed as shock (0 of 40 before): snake 35 of 40, mrblack 36 of 40, polar 25 of 40, all from silence |
 | PLAY1 | PLAY1 | 7 | 7 | 0 | 1978-1979 | Playmatic, Sonic (Spain) | 7 | spcgambl | ✅ | first run: 39 of 40; 15 of them not from silence (a tone held between commands) |
 | NUOVA | NUOVA | 6 | 6 | 6 | 1986-1988 | Nuova Bell Games | 6 | f1gp | ✅ | first run: 15 of 40, all from silence |
 | PLAY2 | PLAY2 | 6 | 5 | 0 | 1979-1980 | Playmatic, Sonic (Spain) | 6 | antar | ✅ | 40 of 40 (tones) |
@@ -82,7 +84,7 @@ are the system zips; 2796 of the 2961 sets are there).
 | S11BS+S11JS | WMSS11+WMSS11J | 3 | 1 | 1 | 1989-1989 | Williams | 3 | jokrz_l6 | ✅ | 40 of 40 (38 files, 2 blips) on both boards |
 | BARNI | BARNI | 2 | 2 | 2 | 1985-1985 | Barni | 2 | redbaron | ✅ | first run: 26 of 40, all from silence |
 | PLAY3 | PLAY3 | 2 | 2 | 2 | 1982-1982 | Playmatic | 2 | cerberus | ✅ | 19 of 40 |
-| TAITO_SINTEVOXPP | TAITO | 2 | 2 | 2 | 1982-1982 | Taito | 2 | gork | ✅ | 37 of 40 |
+| TAITO_SINTEVOXPP | TAITO | 2 | 2 | 2 | 1982-1982 | Taito | 2 | gork | ✅ | 37 of 40 (gork; with the stop 00: the same 37, 28 board resets instead of 47) |
 | BY61B2 | BYSNT | 1 | 1 | 1 | 1982-1982 | Bally | 1 | mysteria | ✅ | first run: 18 of 40, all from silence |
 | BY61N | BYSNT | 1 | 1 | 1 | 1985-1985 | Bell Games | 1 | cosflash | ✅ | first run: 26 of 40, all from silence |
 | JVH2 | JVH | 1 | 1 | 1 | 1988-1988 | Jac Van Ham (Royal) | 1 | formula1 | ✅ | first run: 27 of 40, all from silence |
@@ -91,6 +93,7 @@ are the system zips; 2796 of the 2961 sets are there).
 | S67S | WMSS67 | 105 | 38 | 28 | 1978-2022 | Williams, Williams / Oliver | 104 | bk_l4 | ⚠️ | 3 of 40. The board's lines are active low with 1F as the idle value, and it starts a sound on the change from idle (wmssnd.c s67s_cmd_w): the game sends 7F, the command (2C), 7F again. A sweep of single bytes only starts the commands that follow an idle-looking value. To do: send the idle value before each command (and invert the sweep) |
 | DE1S | DE | 38 | 15 | 14 | 1987-2025 | Data East, Leon | 36 | tmac_a24, bttf_a28, simp_a27 | ⚠️ | partial: tmac_a24 38 of 40, all from silence, but on bttf_a28 (40 of 40) and simp_a27 (37 of 40) the files run to the 5 s cap and 34 to 38 do not start from silence: on these later games the board keeps playing after the stop and the reset (simp_a27 ends with "still not silent after 3 waits"). To look at: the stop command of the later DE sound programs |
 | GTS80S | GTS80 | 37 | 19 | 20 | 1979-2008 | Gottlieb, Oliver | 37 | spidermn, buckrgrs | ⚠️ | first run, doubtful: spidermn 40 of 40 but 37 do not start from silence and 38 run to the 5 s cap (a sound left playing); buckrgrs 30 of 40, all at the same -13.8 LUFS. The game streams bytes at boot (4956 on spidermn): command protocol to look at (gts80s.c) |
+| SPINB | SPINB | 27 | 16 | 14 | 1985-1996 | Inder (Spain), Spinball (Spain) | 26 | bushido, corsario | ⚠️ | Spinball's own boards fixed (bushido, mach2, jolypark, vrnwrld: 7 sets; 0 of 40 before): both sound CPUs poll the latch and take a byte only while its bit 7 is set, so each command is `8x`..`FF` followed by `00`, stop `8F`; the MSM6585 boards' step volume, which the games' boot steps down to 0, is set back to 122. bushido 31 of 40, mach2 40, jolypark 40, vrnwrld 40, all from silence. Inder's machines (20 sets, their own command handler, `INDER` in the logs) unchanged: lapbylap 30 of 40, corsario and atleta 40 of 40 but 39 not from silence (a sound playing on), brvteam no board |
 | GTS80SS_VOTRAX | GTS80SS | 24 | 9 | 13 | 1981-2008 | Gottlieb, Flipprojets | 24 | blckhole | ⚠️ | 5 of 40 (Votrax speech board): most commands silent; to look at the board's command bits |
 | GTS80SS | GTS80SS | 17 | 8 | 8 | 1982-2023 | Gottlieb, Flipprojets | 17 | hh | ⚠️ | first run: 5 of 40, as blckhole (same board) |
 | ST100B | ST100 | 16 | 7 | 0 | 1979-2022 | Stern, Stern / Quench | 16 | trident | ⚠️ | 40 of 40 but 38 do not start from silence: the tones sustain, no stop known |
@@ -112,12 +115,9 @@ are the system zips; 2796 of the 2961 sets are there).
 | TABART2 | TABART | 1 | 1 | 1 | 1984-1984 | Christian Tabart (France) | 1 | sahalove | ⚠️ | first run, doubtful: 40 of 40 but 39 not from silence and all alike (-17.0 LUFS): one tone that never stops |
 | TABART3 | TABART | 1 | 1 | 1 | 1985-1985 | Christian Tabart (France) | 1 | grand8 | ⚠️ | first run: as sahalove |
 | ST300 | ST300 | 76 | 17 | 0 | 1979-2026 | Stern, Stern / Idleman | 67 | meteor | ❌ | not a command board: no sound ROM, the game programs the MC6840 timers itself (boot: register/value pairs 01 00 06 07 04 05); rom2altsound's command sweep does not apply |
-| SPINB | SPINB | 27 | 16 | 14 | 1985-1996 | Inder (Spain), Spinball (Spain) | 26 | bushido | ❌ | 0 of 40: the game sent no sound byte at boot; two MSM5205 boards fed by their own CPUs, to look at |
 | ST300V | ST300 | 21 | 6 | 7 | 1980-2024 | Stern, Stern / Idleman | 20 | flight2k | ❌ | as ST300, plus the S14001A speech chip |
-| TAITO_SINTETIZADOR | TAITO | 18 | 14 | 15 | 1979-1982 | Taito | 18 | shock | ❌ | 0 of 40; the game sends each command twice, with and without bit 7 (98 18): one byte per command does not start a sound |
 | CAPCOMS | TMS320AV120 | 17 | 6 | 11 | 1995-2000 | Capcom, Illinois Pinball | 17 | bsv103 | ❌ | 40 identical 0.2 s clicks (the same peak, after 121 board resets), no sound: the game sent no sound byte at boot; the Capcom board takes its commands some other way (capcoms.c); pmv112 gave 0 of 40 |
 | ATARI1 | ATARI1 | 12 | 5 | 3 | 1976-2024 | Atari | 12 | atarians | ❌ | first run (the full set's zip is complete): 0 of 40; the game streams 00 bytes (14498 in the boot): discrete sound driven by lines, not by command numbers |
-| TAITO_SINTETIZADORPP | TAITO | 8 | 5 | 5 | 1982-1985 | Taito | 8 | snake | ❌ | 0 of 40, as shock |
 | GPMSU3 | GPSM3 | 6 | 3 | 2 | 1985-1985 | Game Plan | 6 | andromed | ❌ | 0 of 40; the game sends nibbles at boot (0F 0C 00 0F): command protocol to look at |
 | BY45BP | BY45 | 4 | 2 | 2 | 1982-2006 | Bally, Bally / Oliver | 4 | babypac | ❌ | 0 of 40. Baby Pac-Man's Cheap Squeak sits behind the video board: the game sent 00/0F at boot, our commands never start a sound. To look at: which CPU feeds the board |
 | ATARI2 | ATARI2 | 3 | 3 | 1 | 1979-1979 | Atari | 3 | superman | ❌ | 0 of 40: discrete sound (no sound ROM), the game sent no sound byte at boot; the board is driven by lines, not by command numbers |

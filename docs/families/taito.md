@@ -27,10 +27,20 @@ Shared by the four:
   `DAC_DC_offset_correction_data_16_w` (`pia0a_w`): PinMAME already AC-couples this DAC
   (10 Hz high-pass), so the files carry no held DC level although rom2altsound does not
   switch it itself (`ac_couples_dac` is only WPCS and System 11).
+- **The edge**: the programs arm CB1's rising edge (shock writes CRB `07` at reset,
+  `7808`-`7816`) and read port B in the interrupt. The CB1 input only falls on a `00`
+  byte, or when the program pulses CA2 (`pia0ca2_w`, "reset sound command"). The
+  Sintetizador programs never pulse it: traced on shock (`R2A_TRACE=0:8400-8403`, see
+  [common](common.md)), the program read the command once at power-on (`11`), and none
+  of the game's next bytes (`91 11 91 11`, all non-zero) made an edge. A command sent
+  after a non-zero byte is never read.
 - **rom2altsound**: no sounds.dat section for any Taito game, so the raw sweep `01`..`FF`
-  (`sweep`, default range), one byte per `sndbrd_manCmd` every 4 frames. `"TAITO"` is not
-  in `BUILTIN_STOPS`: **the stop is a board reset** (`shim_reset_audio_cpus`, the 6802's
-  reset line), then 4 s of silence. No volume command is known
+  (`sweep`, default range), one byte per `sndbrd_manCmd` every 4 frames. **The stop is
+  `00`** (`BUILTIN_STOPS`), the games' idle value: it lowers CB1, so the next command
+  makes its edge (a board reset leaves the PIA as it was, CB1 included). `00` silences
+  few sounds by itself: when the board is still playing after 10 s, the tool resets it
+  (`shim_reset_audio_cpus`, the 6802's reset line), then waits 4 s of silence. Until
+  0.2.3 the stop was that reset alone, and CB1 stayed high from the game's last byte. No volume command is known
   (`volume::none_reason`: "no known volume command for this board family"): recorded at
   the board's level, not scaled. Loops: audio and sequencer state. Pack columns: the
   defaults.
@@ -42,33 +52,35 @@ Shared by the four:
 ## <a name="sndbrd_taito_sintetizador"></a>SNDBRD_TAITO_SINTETIZADOR
 
 Taito Sintetizador (6802 + DAC) · PinMAME interface `TAITO` (`src/wpc/taitos.c`) ·
-status ❌ · 18 sets, 14 games, 15 sound ROM ids, 1979-1982, Taito · e.g. Shock (`shock`),
+status ✅ · 18 sets, 14 games, 15 sound ROM ids, 1979-1982, Taito · e.g. Shock (`shock`),
 Football (`football`), Oba-Oba (`obaoba`), Gemini 2000 (`gemini`)
 
 - **Hardware**: 6802, one DAC on the PIA's port A (`TAITO_dacInt`, volume 25). Some games
   run the `taitos_sintetizador_nmi` machine (a timed NMI at about 7.5 Hz).
-- **Commands**: as above. The survey's boot log of `shock` shows each command written
-  twice, with and without bit 7 (`98 18`) ([board support](../board-support.md)), which
-  matches the "bit 7 is an enable" comment of `taito.c`. Both bytes are non-zero, so CB1
-  stays high and only the port B level changes between them.
+- **Commands**: as above. The boot log of `shock` shows the game writing `98 18` (warm
+  boot) or `11 91` (cold boot) every 3 s, with and without bit 7, which matches the "bit 7
+  is an enable" comment of `taito.c`. Both bytes are non-zero, so CB1 stays high and the
+  program reads neither (the boot plays no sound). One byte after a `00` is a command.
 - **Sound list**: raw sweep `01`..`FF`, one byte per command.
-- **Stop, boot and resets**: board reset after every sound (no stop known).
+- **Stop, boot and resets**: `00`, then a board reset when the board still plays.
 - **Volume**: the board's only level; DAC DC-corrected by PinMAME.
 - **Loops**: audio, sequencer state (6802 RAM).
 - **DUCK / STOP / CHANNEL**: defaults.
-- **Measured**: `shock`, 0 of 40 ([board support](../board-support.md)).
-- **Limits and what is missing**: a single byte per command starts no sound on these
-  programs. The cheapest fix identified in the survey: send each command as the game
-  does, the byte with bit 7 set, then without (`98 18` for `18`); a change in
-  `command_sends` for the `"TAITO"` interface. Whether the later Sintetizador programs
-  (1980-82) need it too is not known: only `shock` was tried.
-- **In VPinball**: AltSound would see the two bytes the game writes per sound; which one
-  libaltsound keys the sound on is not determined. Not tested in VPinball.
+- **Measured** (survey settings, [board support](../board-support.md)): shock 35 of 40,
+  football 36 of 40, obaoba 37 of 40, all from silence (0 of 40 before the stop `00`).
+  Many sounds run to the 5 s cap (football: 31 of 36): long or held sounds, which `00`
+  does not stop; the board reset after it does.
+- **Limits and what is missing**: what the bit-7 byte does (`98` before `18`) is not
+  known; a sound with bit 7 set is swept as its own command. No full run.
+- **In VPinball**: AltSound sees every changed byte the game writes, bit-7 bytes
+  included; libaltsound has no preprocessing for this generation and pairs the bytes
+  two by two into 16-bit ids by default (`AltSoundProcessCommand`), so the one-byte ids
+  of the pack would not match as written. Not tested in VPinball.
 
 ## <a name="sndbrd_taito_sintetizadorpp"></a>SNDBRD_TAITO_SINTETIZADORPP
 
 Taito Sintetizador with the "piggy pack" daughter board (6802 + DAC + 2 AY-3-8910) ·
-PinMAME interface `TAITO` (`src/wpc/taitos.c`) · status ❌ · 8 sets, 5 games, 5 sound ROM
+PinMAME interface `TAITO` (`src/wpc/taitos.c`) · status ✅ · 8 sets, 5 games, 5 sound ROM
 ids, 1982-1985, Taito · e.g. Snake Machine (`snake`), Mr. Black (`mrblack`), Space Shuttle
 (`sshuttle`), Polar Explorer (`polar`)
 
@@ -76,9 +88,9 @@ ids, 1982-1985, Taito · e.g. Snake Machine (`snake`), Mr. Black (`mrblack`), Sp
   (`MACHINE_DRIVER_START(taitos_sintetizadorpp)`, `taitospp_readmem`/`writemem`, which
   keep the RAM at `0000`-`007F`); `_nmi` variant with a timed NMI.
 - **Commands, list, stop, volume, loops, columns**: as the Sintetizador.
-- **Measured**: `snake`, 0 of 40, "as shock" ([board support](../board-support.md)).
-- **Limits and what is missing**: the same as the Sintetizador (the doubled command with
-  and without bit 7, per the survey's note).
+- **Measured**: snake 35 of 40, mrblack 36 of 40, polar 25 of 40, all from silence (0 of
+  40 before the stop `00`, [board support](../board-support.md)).
+- **Limits and what is missing**: as the Sintetizador.
 - **In VPinball**: as the Sintetizador. Not tested in VPinball.
 
 ## <a name="sndbrd_taito_sintevox"></a>SNDBRD_TAITO_SINTEVOX
@@ -95,10 +107,11 @@ e.g. Titan (`titan`), Hawkman (`hawkman`), Fire Action (`fireact`), Cavaleiro Ne
   the CPU's A register instead (comment in `pia0b_w`).
 - **Commands, list, stop, volume, loops, columns**: as above; one byte per command works on
   these programs.
-- **Measured**: `titan`, 38 of 40 ([board support](../board-support.md)). No full run is
-  recorded.
-- **Limits**: only the quick survey; loops, the full sweep and the stop (a reset after
-  every sound) are not checked on a full run.
+- **Measured**: `titan`, 38 of 40 ([board support](../board-support.md)), the same with
+  the stop `00` (11 board resets instead of 45: these programs lower CB1 themselves, so
+  they took commands without it). No full run is recorded.
+- **Limits**: only the quick survey; loops and the full sweep are not checked on a full
+  run.
 - **In VPinball**: not tested.
 
 ## <a name="sndbrd_taito_sintevoxpp"></a>SNDBRD_TAITO_SINTEVOXPP
@@ -110,6 +123,7 @@ ids, 1982, Taito · e.g. Gork (`gork`), Fire Action Deluxe (`fireactd`)
 - **Hardware**: `MACHINE_DRIVER_START(taitos_sintevoxpp)`: the piggy pack board (two
   AY-3-8910) and the SC-01A.
 - **Commands, list, stop, volume, loops, columns**: as above.
-- **Measured**: `gork`, 37 of 40 ([board support](../board-support.md)).
+- **Measured**: `gork`, 37 of 40 ([board support](../board-support.md)), the same with the
+  stop `00` (28 board resets instead of 47).
 - **Limits**: only the quick survey.
 - **In VPinball**: not tested.

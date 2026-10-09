@@ -110,7 +110,7 @@ Per command (`Extractor::step`, `Phase::Record`):
   (`QUIET_MAX_SECS`). The stop comes from, in this order: `--stop`; an entry named
   "sound off" or "reset sound" in a sounds.dat section named after the interface
   (`family_entries`: only `dcs:` and `wpcs:` exist); the table `BUILTIN_STOPS` (System 11,
-  BSMT, the Bally boards, Pinball 2000). **A family with none of these has no stop
+  BSMT, the Bally boards, Pinball 2000, Zaccaria's `ZAC1370`, Taito). **A family with none of these has no stop
   command: its stop is a board reset**, after every sound.
 - **Board reset** (`Extractor::reset_boards`): DCS, Pinball 2000 and WPCS through their
   control port (`sndbrd_ctrl_w`, as the game resets them); every other board by pulsing
@@ -214,3 +214,15 @@ the factory boot, then the first 40 commands of the list, each recorded for at m
 without loop search. "n of 40" is how many of them gave a sound; "not from silence"
 means a file that does not start from a silent board (something was still playing when
 the command went out). It says whether a family works, not how well.
+
+## Diagnostics
+
+- **Boot sound**: the boot line of the log says how long the board played during the boot
+  and its peak (`boot: ... sound for 0.1 s of it, peak 4471`): whether the game's own
+  commands played anything.
+- **`R2A_TRACE=<n>:<start>-<end>`** (environment, hex addresses): every read and write the
+  n-th audio CPU (8-bit bus) makes in that range, with the emulated time and its PC, is
+  written to `trace.txt` in the ROM's output folder, between the bytes the game sent at
+  boot and the tool's own sends (shim.c `shim_trace_hook`). Pointed at the board's PIA or
+  command latch, it shows whether and when the program reads a command. The range must lie
+  in one entry of the CPU's read and write maps (the hook sits in front of its handler).

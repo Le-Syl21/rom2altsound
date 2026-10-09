@@ -133,6 +133,18 @@ unsafe extern "C" {
     pub fn shim_nibble_hook(board: c_int) -> c_int;
     pub fn shim_nibble_cmd(board: c_int, data: c_int);
     pub fn shim_nibble_reads() -> c_int;
+    pub fn shim_spinb_own(board: c_int) -> c_int;
+    pub fn shim_mancmd_pairs(board: c_int, a: c_int, b: c_int, n: c_int, slices: c_int);
+    pub fn shim_trace_hook(n: c_int, start: c_uint, end: c_uint) -> c_int;
+    pub fn shim_trace_get(
+        i: c_uint,
+        at: *mut f64,
+        pc: *mut c_uint,
+        addr: *mut c_uint,
+        data: *mut c_uint,
+        write: *mut c_int,
+    ) -> c_int;
+    pub fn shim_trace_count(lost: *mut c_uint) -> c_uint;
     pub fn shim_data_burst(board: c_int, bytes: *const u8, n: c_int) -> c_int;
     pub fn shim_p2k_hook() -> c_int;
     pub fn shim_p2k_take(

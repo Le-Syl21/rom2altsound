@@ -717,3 +717,119 @@ int shim_p2k_take_reply(void) {
   dcs_p2k_data_r();
   return 1;
 }
+
+// ---------------------------------------------------------------------------------------
+// Diagnostic trace (R2A_TRACE): every read and write an audio CPU makes in one address
+// range (its PIA, its command latch...), with the emulated time and the CPU's PC, for
+// finding out how a board takes its commands: what the program reads after the game's own
+// command, and when. The hooks sit in front of the CPU's own handlers for that range, which
+// still do the work (as the hooks above). 8-bit data buses only.
+
+#define SHIM_TRACE_LOG 65536
+static mem_read_handler shim_tr_r_orig;
+static mem_write_handler shim_tr_w_orig;
+static offs_t shim_tr_start, shim_tr_r_base, shim_tr_w_base;
+static int shim_tr_cpu = -1;
+static volatile unsigned shim_tr_n, shim_tr_lost;
+static struct { double at; unsigned short pc, addr; unsigned char data, write; } shim_tr_log[SHIM_TRACE_LOG];
+
+static void shim_tr_push(offs_t addr, data8_t data, int write) {
+  if (shim_tr_n >= SHIM_TRACE_LOG) { shim_tr_lost++; return; }
+  shim_tr_log[shim_tr_n].at = timer_get_time();
+  shim_tr_log[shim_tr_n].pc = (unsigned short)activecpu_get_previouspc();
+  shim_tr_log[shim_tr_n].addr = (unsigned short)addr;
+  shim_tr_log[shim_tr_n].data = data;
+  shim_tr_log[shim_tr_n].write = (unsigned char)write;
+  shim_tr_n++;
+}
+static READ_HANDLER(shim_tr_r) {
+  data8_t v = shim_tr_r_orig(offset + shim_tr_start - shim_tr_r_base);
+  shim_tr_push(shim_tr_start + offset, v, 0);
+  return v;
+}
+static WRITE_HANDLER(shim_tr_w) {
+  shim_tr_push(shim_tr_start + offset, data, 1);
+  shim_tr_w_orig(offset + shim_tr_start - shim_tr_w_base, data);
+}
+
+// Hooks the `n`-th audio CPU's (CPU_AUDIO_CPU, 8-bit bus) reads and writes in [start, end],
+// which must lie within one entry of its read map and one of its write map (each side is
+// only hooked if it has a handler there, not a plain RAM/ROM bank). Call it from the
+// emulation thread between two frames. Returns a bit mask: 1 reads hooked, 2 writes.
+int shim_trace_hook(int n, unsigned start, unsigned end) {
+  int cpu = shim_audio_cpu(n), got = 0;
+  const struct Memory_ReadAddress *r;
+  const struct Memory_WriteAddress *w;
+  if (cpu < 0 || shim_tr_cpu >= 0)
+    return 0;
+  r = (const struct Memory_ReadAddress *)Machine->drv->cpu[cpu].memory_read;
+  w = (const struct Memory_WriteAddress *)Machine->drv->cpu[cpu].memory_write;
+  for (; r && !IS_MEMPORT_END(r); r++)
+    if (!IS_MEMPORT_MARKER(r) && r->start <= start && end <= r->end
+        && (size_t)r->handler > STATIC_COUNT) {
+      shim_tr_r_orig = r->handler;
+      shim_tr_r_base = r->start;
+      got |= 1;
+      break;
+    }
+  for (; w && !IS_MEMPORT_END(w); w++)
+    if (!IS_MEMPORT_MARKER(w) && w->start <= start && end <= w->end
+        && (size_t)w->handler > STATIC_COUNT) {
+      shim_tr_w_orig = w->handler;
+      shim_tr_w_base = w->start;
+      got |= 2;
+      break;
+    }
+  shim_tr_start = start;
+  shim_tr_n = shim_tr_lost = 0;
+  if (got & 1)
+    install_mem_read_handler(cpu, start, end, shim_tr_r);
+  if (got & 2)
+    install_mem_write_handler(cpu, start, end, shim_tr_w);
+  if (got)
+    shim_tr_cpu = cpu;
+  return got;
+}
+
+// The i-th traced access: emulated time, PC, address, data, 1 for a write. 0 out of range.
+int shim_trace_get(unsigned i, double *at, unsigned *pc, unsigned *addr, unsigned *data, int *write) {
+  if (i >= shim_tr_n)
+    return 0;
+  *at = shim_tr_log[i].at;
+  *pc = shim_tr_log[i].pc;
+  *addr = shim_tr_log[i].addr;
+  *data = shim_tr_log[i].data;
+  *write = shim_tr_log[i].write;
+  return 1;
+}
+
+unsigned shim_trace_count(unsigned *lost) {
+  *lost = shim_tr_lost;
+  return shim_tr_n;
+}
+
+// ---------------------------------------------------------------------------------------
+// The SPINB interface serves two hardware lines: Spinball's (spinb.c, whose manual command
+// is spinb_sndCmd_w) and Inder's (inder.c), whose machine inits put their own handler in
+// the interface (`sndbrd_setManCmd`: snd_w or snd2_w), which takes its commands otherwise.
+// 1 when the running machine's SPINB board is Spinball's own.
+extern WRITE_HANDLER(spinb_sndCmd_w);
+int shim_spinb_own(int board) {
+  const struct sndbrdIntf *b = board_intf(board);
+  return b && b->manCmd_w == spinb_sndCmd_w;
+}
+
+// Sends `n` times the pair (`a`, `b`) through the board's manual command, with `slices`
+// timeslices of emulation after each byte, all within the current frame: a board whose
+// program polls its latch and takes a command once per change of the latch's flag (Spinball's
+// step volume, one step per `C3 00`) gets a long run of commands in a few frames instead of
+// two frames per command.
+void shim_mancmd_pairs(int board, int a, int b, int n, int slices) {
+  int i, j;
+  for (i = 0; i < n; i++) {
+    sndbrd_manCmd(board, a);
+    for (j = 0; j < slices; j++) run_one_timeslice();
+    sndbrd_manCmd(board, b);
+    for (j = 0; j < slices; j++) run_one_timeslice();
+  }
+}
