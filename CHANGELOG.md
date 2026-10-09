@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Williams System 3 to 7** (S67S, S7S_ND, S3S, S3DFS, S3WCS: 113 sets, 0 to 3 of 40
+  before): the board starts a sound on the change from its idle value, so every command
+  now goes out between two idle bytes (`FF cmd FF`), as the games send it, and the sweep
+  is only the bits the board reads (`00`..`1E`, Thunderball `00`..`7E`). Survey runs:
+  Black Knight, Gorgar, Jungle Lord, Firepower 30 of 31, Thunderball 34 of 40, Phoenix 15
+  numbered sounds, all from silence; Disco Fever and World Cup give few distinct sounds.
 - **Capcom boards** (SNDBRD_CAPCOMS, 17 sets, 0 sounds before): a command is a serial
   message, `DA 04 07 0F nnnn` (play sample `nnnn`), and `DA 02 03 01` stops; the sweep
   is the sample number `0000`..`03FF`, after sounds.dat's commands where it has some.

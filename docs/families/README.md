@@ -30,11 +30,11 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_S11CS`](williams-system11.md#sndbrd_s11cs) | ✅ | 50 | 10 | Diner; Rollergames; Dr. Dude |
 | [`SNDBRD_S9S`](williams-system11.md#sndbrd_s9s) | ✅ | 12 | 7 | Sorcerer; Pennant Fever Baseball; Space Shuttle |
 | [`SNDBRD_S11BS+SNDBRD_S11JS`](williams-system11.md#sndbrd_s11bs_s11js) | ✅ | 3 | 1 | Jokerz |
-| [`SNDBRD_S67S`](williams-system3-7.md#sndbrd_s67s) | ⚠️ | 105 | 38 | Black Knight; Firepower; Alien Poker |
+| [`SNDBRD_S67S`](williams-system3-7.md#sndbrd_s67s) | ✅ | 105 | 38 | Black Knight; Firepower; Alien Poker |
 | [`SNDBRD_S3DFS`](williams-system3-7.md#sndbrd_s3dfs) | ⚠️ | 1 | 1 | Disco Fever |
-| [`SNDBRD_S3S`](williams-system3-7.md#sndbrd_s3s) | ❌ | 3 | 3 | Phoenix; Contact; Pokerino |
-| [`SNDBRD_S7S_ND`](williams-system3-7.md#sndbrd_s7s_nd) | ❌ | 3 | 1 | Thunderball |
-| [`SNDBRD_S3WCS`](williams-system3-7.md#sndbrd_s3wcs) | ❌ | 1 | 1 | World Cup |
+| [`SNDBRD_S3S`](williams-system3-7.md#sndbrd_s3s) | ✅ | 3 | 3 | Phoenix; Contact; Pokerino |
+| [`SNDBRD_S7S_ND`](williams-system3-7.md#sndbrd_s7s_nd) | ✅ | 3 | 1 | Thunderball |
+| [`SNDBRD_S3WCS`](williams-system3-7.md#sndbrd_s3wcs) | ⚠️ | 1 | 1 | World Cup |
 | [`SNDBRD_DE2S`](data-east-sega-stern.md#sndbrd_de2s) | ✅ | 307 | 48 | Jurassic Park; Playboy; Batman Forever |
 | [`SNDBRD_DE3S`](data-east-sega-stern.md#sndbrd_de3s) | ⚠️ | 156 | 7 | Lord of the Rings, The; Grand Prix; Ripley's Believe It or Not! |
 | [`SNDBRD_DE1S`](data-east-sega-stern.md#sndbrd_de1s) | ⚠️ | 38 | 15 | Time Machine; Teenage Mutant Ninja Turtles; Back to the Future |

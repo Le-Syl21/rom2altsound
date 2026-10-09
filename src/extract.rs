@@ -4989,6 +4989,10 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
         Some("DCSP2K") => return p2k_sends(bytes),
         Some("ZAC1370") => return addressed(mask, board, &zac_strobed(bytes)),
         Some("SPINB") => return addressed(mask, board, &spinb_released(bytes)),
+        Some("WMSS67") => {
+            let sub = unsafe { ffi::shim_board_type(board) } & 0xFF;
+            return addressed(mask, board, &s67s_framed(sub, bytes));
+        }
         _ => {}
     }
     let double = unsafe { ffi::shim_board_flags(board) } & ffi::SNDBRD_DOUBLECMD != 0;
@@ -5028,6 +5032,40 @@ fn zac_strobed(bytes: &[u8]) -> Vec<u8> {
             }
         })
         .collect()
+}
+
+/// Williams System 3 to 7 (`WMSS67`): the board starts a sound on the change from idle to a
+/// command (wmssnd.c `s67s_cmd_w`: CB1 is "command != idle", an edge input of the PIA whose
+/// interrupt the program takes); a command written while the last one is still on the
+/// lines makes no edge. `FF` is idle on every sub-type (the low five bits `1F`, bits 5-7
+/// the board's DIP switches, on System 4-7; the seven bits `7F` on Thunderball's
+/// `SNDBRD_S7S_ND`; the System 3 boards' `BF` mask). Each command goes out as the games
+/// send it, between two idle bytes (bk_l4: `7F 2C 7F`; PinMAME's sounds.dat for Firepower:
+/// `00 1F`); an idle byte (one the board reads as idle, `s67s_idle`) is sent as is.
+fn s67s_framed(sub: c_int, bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .iter()
+        .flat_map(|&b| {
+            if s67s_idle(sub, b) {
+                vec![b]
+            } else {
+                vec![S67S_IDLE, b, S67S_IDLE]
+            }
+        })
+        .collect()
+}
+const S67S_IDLE: u8 = 0xFF;
+/// Whether the `WMSS67` board of sub-type `sub` reads byte `b` as idle (`s67s_cmd_w`, the
+/// bits that reach the program: five on System 4-7, seven on `S7S_ND`, bits 0-4 and, on
+/// the World Cup and Disco Fever boards, 6 on System 3).
+fn s67s_idle(sub: c_int, b: u8) -> bool {
+    if sub & 1 != 0 {
+        b & 0x7F == 0x7F
+    } else if sub & 4 != 0 {
+        b & 0x5F == 0x5F
+    } else {
+        b & 0x1F == 0x1F
+    }
 }
 
 /// Spinball / Inder (`SPINB`): both sound Z80s poll the command latch (`sndcmd_r`, no
@@ -5170,6 +5208,25 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                 )],
                 format!("board {b} (ST300, VS-1000 speech): bytes 40..7F, the S14001A's 64 words"),
             ),
+            // Williams System 3 to 7: only the bits the board reads (`s67s_cmd_w`), each
+            // command once, framed by the idle byte (`s67s_framed`).
+            "WMSS67" => {
+                let sub = unsafe { ffi::shim_board_type(b) } & 0xFF;
+                let (range, list): (&str, Vec<Vec<u8>>) = if sub & 1 != 0 {
+                    ("00..7E (seven command bits, 7F = idle)", singles(0x00..=0x7E))
+                } else if sub & 4 != 0 {
+                    (
+                        "00..1F, 40..5E (bits 0-4 and 6; 5F = idle)",
+                        singles(0x00..=0x1F).into_iter().chain(singles(0x40..=0x5E)).collect(),
+                    )
+                } else {
+                    ("00..1E (five command bits, 1F = idle)", singles(0x00..=0x1E))
+                };
+                (
+                    vec![(format!("{range}, each between two idle bytes FF"), list)],
+                    format!("board {b} (WMSS67): bytes {range}, each sent between two idle bytes FF"),
+                )
+            }
             // Capcom: one command is a serial message, `DA 04 07 vv nnnn` (sounds.dat's Kingpin
             // and Big Bang Bar sections: `DA` command, `07` once / `06` looped, `vv` taken as
             // the volume there but which changes nothing measured, `nnnn` the sample): the
