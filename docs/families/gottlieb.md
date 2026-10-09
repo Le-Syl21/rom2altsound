@@ -29,7 +29,7 @@ sends a full byte, inverted.
 ## <a name="sndbrd_gts80s"></a>SNDBRD_GTS80S
 
 System 80/80A Sound Board (and the System 1 sound board) · PinMAME interface `GTS80`
-(`src/wpc/gts80s.c`) · ⚠️ · 37 sets, 19 games, 20 sound ROM ids, 1979-2008, Gottlieb,
+(`src/wpc/gts80s.c`) · ✅ · 37 sets, 19 games, 20 sound ROM ids, 1979-2008, Gottlieb,
 Oliver · e.g. The Amazing Spider-Man (`spidermn`), Buck Rogers (`buckrgrs`), The
 Incredible Hulk (`hulk`), Totem (`totem`)
 
@@ -42,16 +42,12 @@ Incredible Hulk (`hulk`), Totem (`totem`)
   it keeps the low 4 bits and puts `dips | 0x20 | (data & 0x0F)` on the RIOT's port B,
   which the sound program reads; no interrupt is raised (only the PiggyPack board,
   `SNDBRD_GTS80SP`, pulses the IRQ). On System 1 games (`coreDips < 32`) all 8 bits go
-  to port B as they are. rom2altsound sends one byte through `sndbrd_manCmd`
-  (`src/extract.rs`, `board_sends`), and the latch keeps that value until the next byte:
-  unlike the game, the tool never returns the lines to `00`.
-- **Sound list**: raw sweep `01`..`FF` (`sweep`, default range). On System 80/80A only
-  the low nibble reaches the board, so the 255 commands are 15 distinct inputs, each
-  played 17 times (the twin test merges nothing unless `--merge-twins`, see
-  [common](common.md#the-packs-columns)).
-- **Stop, boot and resets**: no stop command: a board reset after every sound. The reset
-  restarts the 6502 but does not change the RIOT's input latch, which still holds the
-  last command.
+  to port B as they are. **rom2altsound** sends each command followed by `00`, as the
+  game does (`gts80_released`, in `board_sends`); until 0.2.3 it left the command on the
+  latch, and the program played it again and again.
+- **Sound list** (`sweep`, `"GTS80"`): `01`..`0F` on System 80/80A (the four lines the
+  board reads); the whole byte, `01`..`FF`, on System 1 games (`GEN_GTS1`).
+- **Stop, boot and resets**: `00` (`BUILTIN_STOPS`), the lines back to idle.
 - **Volume**: no master volume command known (`volume::decode`): recorded at the board's
   own level, `reference_volume: "none: recorded at the game's own volume"`. No AC
   coupling.
@@ -59,16 +55,12 @@ Incredible Hulk (`hulk`), Totem (`totem`)
   `0000`-`01FF` and `1000`-`10FF` in `GTS80S_readmem`). Not measured: the survey runs
   without loop search.
 - **DUCK / STOP / CHANNEL**: defaults.
-- **Measured** ([board support](../board-support.md)): spidermn 40 of 40, but 37 do not
-  start from silence and 38 run to the 5 s cap; buckrgrs 30 of 40, all at the same
-  -13.8 LUFS.
-- **Limits and what is missing**: doubtful. The likely cause, from the code above: the
-  tool leaves a command on the latch, where the game always returns it to `00`, and the
-  reset used as the stop restarts a program that finds that command still there. Not
-  verified. Cheapest fix ([board support](../board-support.md#cheapest-fixes), item 7):
-  send the idle value `00` after each command (as the game does) and use `00` as the
-  stop instead of a reset; sweep `01`..`0F` (plus the lamp bit `10`..`1F` if the ids
-  should match the game's) on System 80/80A, and the full byte on System 1.
+- **Measured** (survey settings, [board support](../board-support.md)): spidermn 15 of 15,
+  all from silence, 4 to the 5 s cap (40 of 40 before, 37 over the last sound);
+  buckrgrs (System 1) 30 of 40, all from silence, but at two levels (-13.8 LUFS before as
+  now: the System 1 board's tones).
+- **Limits and what is missing**: the ids are the four command bits; the game's own bytes
+  carry the lamp bit `10` (`01`..`1F`).
 - **In VPinball**: PinMAME's AltSound preprocessing for `GEN_GTS80A` (equal to
   `GEN_GTS80`, `src/wpc/altsound/snd_alt.cpp`, `preprocess_commands`) drops the `00`
   bytes and takes every other byte as an id: the game's ids are `01`..`1F` (with the
@@ -89,12 +81,13 @@ Gottlieb, Flipprojets · e.g. Alien Star (`alienstr`), El Dorado City of Gold
   (`IRQEnabled`, set by `gts80s_riot6530_0b_w`). So each command starts on its own,
   without the board having to see the lines return to idle. rom2altsound sends one byte
   per command.
-- **Sound list**: raw sweep `01`..`FF`; 15 distinct inputs (low nibble), as on GTS80S.
-- **Stop, boot and resets**: a board reset after every sound (no stop command).
+- **Sound list**: `01`..`0F`, each followed by `00`, as on GTS80S.
+- **Stop, boot and resets**: `00`, as on GTS80S.
 - **Volume**: as GTS80S: the board's own level, not scaled.
 - **Loops**: audio and sequencer-state (same memory map as GTS80S). Not measured.
 - **DUCK / STOP / CHANNEL**: defaults.
-- **Measured** ([board support](../board-support.md)): alienstr 38 of 40.
+- **Measured** ([board support](../board-support.md)): alienstr 15 of 15, all from silence
+  (38 of 40 before, from the sweep `01`..`28`).
 - **Limits and what is missing**: only 15 distinct commands exist; the other swept
   bytes repeat them. Loops, ducking and the full sweep are not verified.
 - **In VPinball**: as GTS80S (`GEN_GTS80A` preprocessing). Not tested in VPinball.
@@ -102,7 +95,7 @@ Gottlieb, Flipprojets · e.g. Alien Star (`alienstr`), El Dorado City of Gold
 ## <a name="sndbrd_gts80ss"></a>SNDBRD_GTS80SS
 
 System 80/80A Sound & Speech Board, without the Votrax chip · PinMAME interface
-`GTS80SS` (`src/wpc/gts80s.c`, sub-type 0) · ⚠️ · 17 sets, 8 games, 8 sound ROM ids,
+`GTS80SS` (`src/wpc/gts80s.c`, sub-type 0) · ✅ · 17 sets, 8 games, 8 sound ROM ids,
 1982-2023, Gottlieb, Flipprojets · e.g. Haunted House (`hh`), Krull (`krull`), Spirit
 (`spirit`), Amazon Hunt (`amazonh`)
 
@@ -120,26 +113,27 @@ System 80/80A Sound & Speech Board, without the Votrax chip · PinMAME interface
   board sees no new command. Only a command that follows one whose low nibble is 0
   (`10`, `20`, `30`...) makes an edge, which fits the 5 of 40 of the survey (not
   verified command by command).
-- **Sound list**: raw sweep `01`..`FF`; 6 bits reach the board.
-- **Stop, boot and resets**: a board reset after every sound (no stop command); the reset
-  does not change the RIOT's port A input, so PA7 stays high.
+- **Sound list** (`sweep`, `"GTS80SS"`): `01`..`3F`, the six bits that reach the board,
+  each followed by `00` (`gts80_released`), which drops PA7 so that the next command
+  makes its edge.
+- **Stop, boot and resets**: `00` (`BUILTIN_STOPS`). Until 0.2.3 a board reset, which did
+  not change the RIOT's port A input: PA7 stayed high and the next commands made no edge.
 - **Volume**: no master volume known: the board's own level.
 - **Loops**: audio; sequencer-state does not apply as the code stands: `GTS80SS_readmem`
   reads the RIOT RAM through a handler (`GTS80SS_riot6532_3_ram_r`), not `MRA_RAM`, so
   `shim_cpu_ram_ranges` finds no plain RAM and only the registers are in the state.
 - **DUCK / STOP / CHANNEL**: defaults.
-- **Measured** ([board support](../board-support.md)): hh 5 of 40.
-- **Limits and what is missing**: the strobe. Cheapest fix: send `00` (PA7 low) before
-  every command, or after it as the stop, so that each command makes the PA7 edge the
-  game makes. The game's commands are 5 bits (`01`..`1F`); a sweep of `01`..`3F` covers
-  every input the board reads.
+- **Measured** (survey settings, [board support](../board-support.md)): hh 38 of 40, all
+  from silence (5 of 40 before).
+- **Limits and what is missing**: the commands with a zero low nibble (`10`, `20`, `30`)
+  raise no strobe; they are swept but are not commands of their own.
 - **In VPinball**: `GEN_GTS80A` preprocessing (`00` dropped, every other byte an id), so
   the game's ids are its 5-bit commands. Not tested in VPinball.
 
 ## <a name="sndbrd_gts80ss_votrax"></a>SNDBRD_GTS80SS_VOTRAX
 
 System 80/80A Sound & Speech Board with the SC-01-A Votrax · PinMAME interface `GTS80SS`
-(`src/wpc/gts80s.c`, sub-type 1) · ⚠️ · 24 sets, 9 games, 13 sound ROM ids, 1981-2008,
+(`src/wpc/gts80s.c`, sub-type 1) · ✅ · 24 sets, 9 games, 13 sound ROM ids, 1981-2008,
 Gottlieb, Flipprojets · e.g. Black Hole (`blckhole`), Mars - God of War (`mars`),
 Volcano (`vlcno_ax`), Devil's Dare (`dvlsdre`)
 
@@ -150,21 +144,23 @@ Volcano (`vlcno_ax`), Devil's Dare (`dvlsdre`)
   (`GTS80SS_riot3b_r`).
 - **Commands**, **sound list**, **stop**, **volume**, **loops**, **columns**: as
   [SNDBRD_GTS80SS](#sndbrd_gts80ss): the same `gts80ss_data_w`, the same PA7 strobe.
-- **Measured** ([board support](../board-support.md)): blckhole 5 of 40.
-- **Limits and what is missing**: the PA7 strobe (see GTS80SS); the same fix.
+- **Measured** ([board support](../board-support.md)): blckhole 38 of 40, all from
+  silence (5 of 40 before the `00` after each command).
+- **Limits and what is missing**: as GTS80SS.
 - **In VPinball**: as GTS80SS. Not tested in VPinball.
 
 ## <a name="sndbrd_gts80ss_votrax_old"></a>SNDBRD_GTS80SS_VOTRAX_OLD
 
 System 80 Sound & Speech Board with the older SC-01 Votrax · PinMAME interface `GTS80SS`
-(`src/wpc/gts80s.c`, sub-type 2) · ⚠️ · 1 set, 0 games (a clone), 1 sound ROM id, 1981,
+(`src/wpc/gts80s.c`, sub-type 2) · ✅ · 1 set, 0 games (a clone), 1 sound ROM id, 1981,
 Gottlieb · e.g. Mars - God of War prototype (`marsp`)
 
 - **Hardware**: as GTS80SS_VOTRAX with the older SC-01 (`MACHINE_DRIVER_START(gts80s_ss_old)`,
   `GTS80SS_votrax_sc01_interface`).
 - **Everything else**: as [SNDBRD_GTS80SS](#sndbrd_gts80ss).
-- **Measured** ([board support](../board-support.md)): marsp 3 of 40.
-- **Limits and what is missing**: the PA7 strobe, as GTS80SS.
+- **Measured** ([board support](../board-support.md)): marsp 31 of 40 (29 files, 2
+  blips), all from silence, 11 clipped (3 of 40 before).
+- **Limits and what is missing**: as GTS80SS; the clipping is the old Votrax's level.
 - **In VPinball**: as GTS80SS. Not tested in VPinball.
 
 ## <a name="sndbrd_gts80b"></a>SNDBRD_GTS80B

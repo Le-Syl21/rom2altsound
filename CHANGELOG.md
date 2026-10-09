@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Gottlieb System 80 sound and speech boards** (GTS80S, GTS80SP, GTS80SS and its Votrax
+  variants: 105 sets): each command is followed by `00`, as the games send it (the board
+  replayed a command left on its lines, and the speech board's strobe made no edge for
+  the next one), `00` is the stop, and the sweep is the lines the boards read. Survey runs:
+  spidermn 15 of 15, hh 38 of 40, blckhole 38 of 40 (5 before), marsp 31 of 40, all from
+  silence.
 - **Whitestar II (AT91, DE3S: 156 sets) and the Data East alphanumeric board (DE1S, 38
   sets)**: a real stop, `00`, which the games send; on DE1S followed by the board reset.
   The files no longer start over the last sound: lotr 39 of 40, elvis, sopranos, nascar,

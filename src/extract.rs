@@ -166,6 +166,8 @@ fn ac_couples_dac(family: &str) -> bool {
 ///   files started over the last sound. `00` alone silences them, but on tmac_a24 nothing
 ///   played after its commands `0A`..`0D` (10 of 40, 38 with the reset): the reset puts the
 ///   program back as the stop leaves the chips silent.
+/// - GTS80, GTS80SS (Gottlieb System 80 sound, sound and speech): `00`, what the games
+///   send after every command (see `gts80_released`).
 /// - TAITO: `00`, the games' idle value (taito.c `taito_silenceSavedSndCmd`). The board
 ///   raises CB1 for any byte but 00 (taitos.c `taitos_data_w`), and the program arms CB1's
 ///   rising edge (CRB 07, shock); the Sintetizador programs of 1979-82 never drop CB1
@@ -187,6 +189,8 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("ZAC1370", &[0xFF]),
     ("TAITO", &[0x00]),
     ("AT91", &[0x00]),
+    ("GTS80", &[0x00]),
+    ("GTS80SS", &[0x00]),
     ("DE", &[0x00]),
     ("SPINB", &[SPINB_STOP]),
     ("ST100", &[0x00]),
@@ -223,6 +227,8 @@ const REBOOT_SECS: &[(&str, f64)] = &[("BYTCS", 7.0), ("BY51", 8.0), ("BY56", 8.
 /// files started and ended on held levels up to 6553 LSB (a click in AltSound, which
 /// starts and stops a file from 0), where the board's output is AC-coupled.
 const DC_BLOCKED: &[&str] = &["BYSNT"];
+/// Gottlieb System 1 (gen.h `GEN_GTS1`): its sound board takes the whole byte.
+const GEN_GTS1: u64 = 0x1_0000_0000;
 /// `SNDBRD_BY45BP` is `SNDBRD_TYPE(..., 1)`: the Cheap Squeak behind Baby Pac-Man's video board.
 const BY45BP_SUBTYPE: c_int = 1;
 /// `SNDBRD_ST300V` is `SNDBRD_TYPE(31, 1)`: the ST300 interface with the speech board.
@@ -5029,6 +5035,7 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
         Some("ZAC1370") => return addressed(mask, board, &zac_strobed(bytes)),
         Some("SPINB") => return addressed(mask, board, &spinb_released(bytes)),
         Some("GPSM") => return addressed(mask, board, &gpsm_framed(bytes)),
+        Some("GTS80" | "GTS80SS") => return addressed(mask, board, &gts80_released(bytes)),
         // Zira: the COP420 reads three lines and acts on a change from idle.
         Some("PLAYZ") => {
             let framed: Vec<u8> = bytes
@@ -5157,6 +5164,20 @@ fn gpsm3_framed(bytes: &[u8]) -> Vec<u8> {
     bytes
         .iter()
         .flat_map(|&b| vec![0x0F, b & 0x0F, b >> 4, 0x0F])
+        .collect()
+}
+
+/// Gottlieb System 80 boards (`GTS80`, the sound board; `GTS80SS`, the sound and speech
+/// board): the game puts a command on the lines, then `00` (spidermn's boot: a stream of
+/// commands, each followed by `00`). The sound board's program polls the lines and plays
+/// again while a command stays there (spidermn: 38 of 40 files ran to the 5 s cap, 37 over
+/// the last sound); the speech board's strobe is bit 7 of its RIOT port, set for a command
+/// with a low nibble (gts80s.c `gts80ss_data_w`), whose edge a second command right after
+/// the first does not make. Each command is followed by `00`.
+fn gts80_released(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .iter()
+        .flat_map(|&b| if b == 0 { vec![b] } else { vec![b, 0x00] })
         .collect()
 }
 
@@ -5330,6 +5351,16 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                     (1..=7u8).map(|v| vec![v << 4]).collect(),
                 )],
                 format!("board {b} (PLAYZ): bytes 10, 20 .. 70 (bits 4-6), each between two idle 00"),
+            ),
+            // Gottlieb System 80: the sound board reads the low four lines (System 1 games:
+            // the whole byte, gts80s.c `gts80s_data_w`), the speech board six.
+            "GTS80" if unsafe { ffi::shim_game_gen() } & GEN_GTS1 == 0 => (
+                vec![("01..0F (the four lines the board reads)".to_string(), singles(0x01..=0x0F))],
+                format!("board {b} (GTS80): bytes 01..0F (four lines), each followed by 00"),
+            ),
+            "GTS80SS" => (
+                vec![("01..3F (the six lines the board reads)".to_string(), singles(0x01..=0x3F))],
+                format!("board {b} (GTS80SS): bytes 01..3F (six lines), each followed by 00"),
             ),
             // Game Plan SSU boards: four lines, `F` is no tone (the stop).
             "GPS1" | "GPS2" | "GPS4" => (

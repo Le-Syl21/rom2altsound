@@ -63,10 +63,10 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_GTS80B`](gottlieb.md#sndbrd_gts80b) | ✅ | 148 | 32 | Bad Girls; Monte Carlo; Spring Break |
 | [`SNDBRD_GTS3`](gottlieb.md#sndbrd_gts3) | ✅ | 51 | 23 | Cue Ball Wizard; Super Mario Bros.; Stargate |
 | [`SNDBRD_GTS80SP`](gottlieb.md#sndbrd_gts80sp) | ✅ | 26 | 11 | Alien Star; Chicago Cubs Triple Play; Tag-Team Pinball |
-| [`SNDBRD_GTS80S`](gottlieb.md#sndbrd_gts80s) | ⚠️ | 37 | 19 | Amazing Spider-Man, The; James Bond; Volcano |
-| [`SNDBRD_GTS80SS_VOTRAX`](gottlieb.md#sndbrd_gts80ss_votrax) | ⚠️ | 24 | 9 | Black Hole; Mars - God of War; Caveman |
-| [`SNDBRD_GTS80SS`](gottlieb.md#sndbrd_gts80ss) | ⚠️ | 17 | 8 | Haunted House; Spirit; Royal Flush Deluxe |
-| [`SNDBRD_GTS80SS_VOTRAX_OLD`](gottlieb.md#sndbrd_gts80ss_votrax_old) | ⚠️ | 1 | 0 | Mars - God of War |
+| [`SNDBRD_GTS80S`](gottlieb.md#sndbrd_gts80s) | ✅ | 37 | 19 | Amazing Spider-Man, The; James Bond; Volcano |
+| [`SNDBRD_GTS80SS_VOTRAX`](gottlieb.md#sndbrd_gts80ss_votrax) | ✅ | 24 | 9 | Black Hole; Mars - God of War; Caveman |
+| [`SNDBRD_GTS80SS`](gottlieb.md#sndbrd_gts80ss) | ✅ | 17 | 8 | Haunted House; Spirit; Royal Flush Deluxe |
+| [`SNDBRD_GTS80SS_VOTRAX_OLD`](gottlieb.md#sndbrd_gts80ss_votrax_old) | ✅ | 1 | 0 | Mars - God of War |
 | [`SNDBRD_ZAC1125`](zaccaria.md#sndbrd_zac1125) | ✅ | 8 | 4 | Fire Mountain; Shooting the Rapids; Hot Wheels |
 | [`SNDBRD_ZAC1346`](zaccaria.md#sndbrd_zac1346) | ⚠️ | 6 | 3 | Locomotion; Space Shuttle; Earth, Wind & Fire |
 | [`SNDBRD_ZAC13136`](zaccaria.md#sndbrd_zac13136) | ✅ | 45 | 5 | Time Machine; Farfalla; Devil Riders |
