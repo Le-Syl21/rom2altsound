@@ -28,7 +28,7 @@
       notFound: "No entry for this link.",
       bySupport: "PinMAME sets by rom2altsound support", dash: "—",
       boards: { "NONE (Stern SAM)": "Stern SAM", "NONE (other)": "No sound board" },
-      noVpx: "not in VPX", hideNoVpx: "Hide what VPinball cannot play yet", dVpx: "In VPinball",
+      noVpx: "AltSound pack not played in VPX", hideNoVpx: "Hide boards whose AltSound pack VPinball cannot play yet", dVpx: "AltSound pack in VPinball",
     },
     fr: {
       loading: "Chargement du catalogue…",
@@ -53,7 +53,7 @@
       notFound: "Aucune entrée pour ce lien.",
       bySupport: "Jeux de ROM PinMAME par prise en charge", dash: "—",
       boards: { "NONE (Stern SAM)": "Stern SAM", "NONE (other)": "Aucune carte son" },
-      noVpx: "pas dans VPX", hideNoVpx: "Masquer ce que VPinball ne joue pas encore", dVpx: "Dans VPinball",
+      noVpx: "pack AltSound non joué dans VPX", hideNoVpx: "Masquer les cartes dont VPinball ne joue pas encore le pack AltSound", dVpx: "Pack AltSound dans VPinball",
     },
   }[lang];
   var SUPPORT_ORDER = ["works", "partial", "none", "no-board", "untested"];

@@ -68,9 +68,9 @@ names for the entry's sets (the names themselves are not reproduced here).</p>
 init starts it, with a link to the family's notes.</li>
 <li><strong>rom2altsound</strong>: the result of the <a href="{BLOB}docs/board-support.md">board survey</a>
 for the family: <em>Works</em> (sounds come out, distinct, each from silence), <em>Partial</em>,
-<em>No sound yet</em>, <em>No sound board</em>. A second badge, <em>not in VPX</em>, marks the families
-whose packs VPinball cannot play today because its AltSound does not receive their sound commands;
-its tooltip says why.</li>
+<em>No sound yet</em>, <em>No sound board</em>. A second badge, <em>AltSound pack not played in VPX</em>, marks the families
+whose AltSound packs VPinball cannot use today because AltSound does not receive their sound commands:
+the game itself still plays with its own sound; its tooltip says why.</li>
 <li><strong>Sets</strong>: how many of the entry's PinMAME sets were complete in the reference ROM set the
 catalog was built from (2804 VPinMAME zips), out of all.</li>
 <li><strong>Sounds</strong>: read from the ROMs without running them, where the layout is known: the populated
@@ -137,9 +137,10 @@ nomme pour les jeux de ROM de l'entrée (les noms eux-mêmes ne sont pas reprodu
 l'initialisation de la machine la démarre, avec un lien vers les notes de la famille.</li>
 <li><strong>rom2altsound</strong> : le résultat du <a href="{BLOB}docs/board-support.md">relevé des cartes</a>
 pour la famille : <em>Fonctionne</em> (les sons sortent, distincts, chacun depuis le silence),
-<em>Partiel</em>, <em>Pas encore de son</em>, <em>Pas de carte son</em>. Un second badge, <em>pas dans
-VPX</em>, marque les familles dont VPinball ne peut pas jouer les packs aujourd'hui, faute de recevoir
-leurs commandes son dans son AltSound ; son infobulle dit pourquoi.</li>
+<em>Partiel</em>, <em>Pas encore de son</em>, <em>Pas de carte son</em>. Un second badge, <em>pack AltSound
+non joué dans VPX</em>, marque les familles dont VPinball ne peut pas utiliser les packs AltSound
+aujourd'hui, faute de recevoir leurs commandes son dans AltSound : le jeu lui-même a toujours son propre
+son ; son infobulle dit pourquoi.</li>
 <li><strong>Jeux de ROM</strong> : combien des jeux de ROM PinMAME de l'entrée étaient complets dans la
 collection de référence d'où le catalogue est tiré (2804 zips VPinMAME), sur le total.</li>
 <li><strong>Sons</strong> : lu dans les ROM sans les faire tourner, là où leur organisation est connue : les
