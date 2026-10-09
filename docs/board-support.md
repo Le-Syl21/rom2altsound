@@ -30,9 +30,10 @@ How each family is driven (hardware, commands, stop, volume, loops, what is miss
 
 PinMAME 3.7 (the submodule) knows 2971 sets, 10 of them shared system ROM sets (`gts80s`,
 `allied`...: no game, see [how it works](how-it-works.md#rom-verification)). Of the other
-2961, 1939 (378 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
-sets built outside the full set, see its row), 444 in a ⚠️ one, 315 in a ❌ one, 6 in a ❔
-one (S11S, not run yet), 257 have no sound board. "Sets" counts every set (clones
+2961, 2530 (554 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
+sets built outside the full set, see its row), 76 in a ⚠️ one, 98 in a ❌ one, 257 have
+no sound board (October 2026, after the protocol fixes listed below; before them: 1939
+✅, 444 ⚠️, 315 ❌, 6 not run). "Sets" counts every set (clones
 and revisions included), "games" the sets without a parent, "sound ROM ids" the distinct
 sound ROM sets (see [how it works](how-it-works.md#sound-rom-id)): a revision that kept its
 sound ROMs shares its id, so one pack serves all of them. "Sets in the full set": the sets
@@ -88,6 +89,7 @@ are the system zips; 2796 of the 2961 sets are there).
 | PLAY2 | PLAY2 | 6 | 5 | 0 | 1979-1980 | Playmatic, Sonic (Spain) | 6 | antar | ✅ | 40 of 40 (tones) |
 | ZSU | ZSU | 6 | 6 | 6 | 1987-1988 | Playmatic, Maibesa | 6 | sklflite | ✅ | first run: 24 of 40, all from silence |
 | GPMSU3 | GPSM3 | 6 | 3 | 2 | 1985-1985 | Game Plan | 6 | andromed | ✅ | fixed (0 of 40 before): a command is a byte sent as two nibbles, low then high, then the idle F, which runs it (read in andromed's sound program): andromed 39 of 40, cyclopes 39 of 40, all from silence |
+| S11S | WMSS11 | 6 | 5 | 4 | 1985-1987 | Williams | 6 | alcat_l7 | ✅ | first run: alcat_l7 32 of 40, gmine_l2 40 of 40 (27 files, 13 blips), tdawg_l1 40 of 40 (23 files, 17 blips), shfin_l1 40 of 40 (30 files, 10 blips), all from silence (WMSS11, stop 00, as S9S); tts_l1 and tts_l2 0 of 255: their sound ROMs are not dumped (NO_DUMP in bowlgames.c) |
 | HANKIN | HNK | 5 | 5 | 5 | 1978-1981 | Hankin | 5 | fjholden | ✅ | 38 of 40 |
 | MRGAME | MRGAME | 5 | 4 | 4 | 1988-1990 | Mr. Game (Italy) | 5 | dakar | ✅ | 26 of 40 |
 | GRAND | GRAND | 4 | 1 | 1 | 1986-2021 | Grand Products Inc., Grand Products Inc. / Quench | 4 | bullseye | ✅ | 39 of 40 |
@@ -128,7 +130,6 @@ are the system zips; 2796 of the 2961 sets are there).
 | JOCTRONIC | JOCTRONIC | 3 | 3 | 3 | 1986-1986 | Joctronic | 3 | punkywil | ❌ | 0 of 40, and the boot plays nothing either: the sound program queues every command on its NMI (that part works) but its main loop waits on an IRQ counter, and the IRQ comes from the main CPU's CTC channel 0, which does not reach the sound CPU in PinMAME (read in punkywil's sound program); not fixable without inventing that interrupt |
 | ASTRO | ASTRO | 2 | 1 | 0 | ? | Stern | 2 | sam_iii | ❌ | first run: 0 of 40; the game toggles 00/01 (20 bytes at boot): a line, not a command |
 | TECNOPLAY | TECNOPLAY | 2 | 2 | 1 | 1987-1988 | Tecnoplay | 2 | xforce | ❌ | 0 of 40: the game writes only 00 to the board in attract (76923 bytes, its display clocking), and commands followed by 00 (which releases the TMS7000's IRQ3) play nothing either; the TMS7000 program not read (no disassembler at hand) |
-| S11S | WMSS11 | 6 | 5 | 4 | 1985-1987 | Williams | 6 | - | ❔ | Williams' shuffle alleys (alcat_l7, tts_l2...): GEN_S11, the System 11 CPU board's own sound (wmssnd.c `s11sIntf`, WMSS11, the same board type as S11XS). Classed NONE until `drivers.rs` read GEN_S11 as 0x8000000 instead of gen.h's 0x80000000; not run yet |
 | NONE (other) | - | 251 | 167 | 13 | 1974-2025 | Bally, LTD | 212 | - | — | no sound board in PinMAME's sound board interface (sndbrd.c): sound on the CPU board, chimes, or a sound CPU the driver runs by itself (LTD, Bally -17, Recel, Sleic, Juegos Populares...); rom2altsound has nothing to send commands to |
 | ZAC1311 | - | 6 | 3 | 0 | 1978-1978 | Zaccaria | 6 | futurwld | — | no sound board interface: PinMAME has no manual command handler for it, nothing to drive |
 

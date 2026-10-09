@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Williams shuffle alleys** (SNDBRD_S11S), first run: Alley Cats 32 of 40, Gold Mine,
+  Top Dawg and Shuffle Inn 40 of 40, all from silence; Tic-Tac-Strike has no sound (its
+  sound ROMs are not dumped).
 - **Gottlieb System 80 sound and speech boards** (GTS80S, GTS80SP, GTS80SS and its Votrax
   variants: 105 sets): each command is followed by `00`, as the games send it (the board
   replayed a command left on its lines, and the speech board's strobe made no edge for

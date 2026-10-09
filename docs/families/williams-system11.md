@@ -105,19 +105,23 @@ Rat Race (`ratrc_l1`, a System 7 machine with the System 9 board, `MACHINE_INIT(
 ## <a name="sndbrd_s11s"></a>SNDBRD_S11S
 
 The System 11 CPU board's own sound, alone (`GEN_S11`: no separate board) · interface
-`WMSS11` (`wmssnd_s11s`: the System 9 board with ROM banking, `s11s_bankSelect`) · not in
-[board support](../board-support.md) · 6 sets in PinMAME 3.7, all Williams shuffle
-alleys of 1985-1986 (`bowlgames.c`: Alley Cats `alcat_l7`, Tic-Tac-Strike `tts_l1`,
-`tts_l2`, Gold Mine `gmine_l2`, Top Dawg `tdawg_l1`, Shuffle Inn `shfin_l1`).
+`WMSS11` (`wmssnd_s11s`: the System 9 board with ROM banking, `s11s_bankSelect`) · ✅ · 6
+sets in PinMAME 3.7, all Williams shuffle alleys of 1985-1986 (`bowlgames.c`: Alley Cats
+`alcat_l7`, Tic-Tac-Strike `tts_l1`, `tts_l2`, Gold Mine `gmine_l2`, Top Dawg `tdawg_l1`,
+Shuffle Inn `shfin_l1`).
 
 PinMAME starts `SNDBRD_S11S` for them (`MACHINE_INIT(s11)`, case `GEN_S11`; their
-machine `s9_mS11S` imports `s11_s11S`). rom2altsound's own table puts them under
-`SNDBRD_NONE`: `src/drivers.rs` defines `generation::S11` as `0x8000000`, where
-`gen.h` has `GEN_S11 = 0x0000080000000` (`0x80000000`), so `Board::sound_boards` never
-matches them and falls back on `hw.soundBoard` (unset). They are therefore counted in
-"NONE (other)" of the survey and were not tried. At extraction the board is read from the
-running machine (`board_typestr`), so they would be driven as `SNDBRD_S9S` is: `WMSS11`,
-stop `00`, AC-coupled DAC, sweep `01`..`FF`. Not tried.
+machine `s9_mS11S` imports `s11_s11S`). Until `drivers.rs` read `GEN_S11` as gen.h's
+`0x80000000`, rom2altsound's own table put them under `SNDBRD_NONE`. At extraction the
+board is read from the running machine (`board_typestr`), so they are driven as
+`SNDBRD_S9S` is: `WMSS11`, stop `00`, AC-coupled DAC, sweep `01`..`FF`.
+
+- **Measured** (survey settings, [board support](../board-support.md)): alcat_l7 32 of 40,
+  gmine_l2 40 of 40 (27 files, 13 blips), tdawg_l1 40 of 40 (23 files, 17 blips),
+  shfin_l1 40 of 40 (30 files, 10 blips), all from silence.
+- **Tic-Tac-Strike** (`tts_l1`, `tts_l2`): 0 of 255 (the full sweep), no sound at boot
+  either: PinMAME lists both sound ROMs (`tts_u21.256`, `tts_u22.256`) as `NO_DUMP`, so
+  the board has no program to run.
 
 ## <a name="sndbrd_s11xs_s11cs"></a>SNDBRD_S11XS+SNDBRD_S11CS
 

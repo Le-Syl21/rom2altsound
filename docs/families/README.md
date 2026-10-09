@@ -30,6 +30,7 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_S11CS`](williams-system11.md#sndbrd_s11cs) | ✅ | 50 | 10 | Diner; Rollergames; Dr. Dude |
 | [`SNDBRD_S9S`](williams-system11.md#sndbrd_s9s) | ✅ | 12 | 7 | Sorcerer; Pennant Fever Baseball; Space Shuttle |
 | [`SNDBRD_S11BS+SNDBRD_S11JS`](williams-system11.md#sndbrd_s11bs_s11js) | ✅ | 3 | 1 | Jokerz |
+| [`SNDBRD_S11S`](williams-system11.md#sndbrd_s11s) | ✅ | 6 | 5 | Alley Cats; Gold Mine; Top Dawg |
 | [`SNDBRD_S67S`](williams-system3-7.md#sndbrd_s67s) | ✅ | 105 | 38 | Black Knight; Firepower; Alien Poker |
 | [`SNDBRD_S3DFS`](williams-system3-7.md#sndbrd_s3dfs) | ⚠️ | 1 | 1 | Disco Fever |
 | [`SNDBRD_S3S`](williams-system3-7.md#sndbrd_s3s) | ✅ | 3 | 3 | Phoenix; Contact; Pokerino |
@@ -111,9 +112,6 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_TECNOPLAY`](other-makers.md#sndbrd_tecnoplay) | ❌ | 2 | 2 | X Force; Space Team |
 | [`NONE (other)`](no-sound-board.md#sndbrd_none_other) | — | 257 | 172 | Mata Hari; Golden Game; Michigan |
 
-One more section has no row in the survey: [`SNDBRD_S11S`](williams-system11.md#sndbrd_s11s),
-the board of the Williams shuffle alleys on `GEN_S11`, which `src/drivers.rs` currently
-classes as `SNDBRD_NONE` (its `GEN_S11` constant is `0x8000000`, `gen.h` has `0x80000000`).
 
 ## <a name="sndbrd_none"></a>SNDBRD_NONE
 
