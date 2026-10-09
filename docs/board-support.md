@@ -78,9 +78,11 @@ are the system zips; 2796 of the 2961 sets are there).
 | ZAC13181x3 | ZAC1370 | 8 | 2 | 2 | 1987-1987 | Zaccaria | 8 | strsphnx | ✅ | fixed as ZAC1370 (0 of 40 before): strsphnx 21 of 40 (20 files, 1 blip), nstrphnx the same, all from silence; the first 40 commands (FE..D7) all go to the third Z80 |
 | TAITO_SINTETIZADORPP | TAITO | 8 | 5 | 5 | 1982-1985 | Taito | 8 | snake | ✅ | fixed as shock (0 of 40 before): snake 35 of 40, mrblack 36 of 40, polar 25 of 40, all from silence |
 | PLAY1 | PLAY1 | 7 | 7 | 0 | 1978-1979 | Playmatic, Sonic (Spain) | 7 | spcgambl | ✅ | first run: 39 of 40; 15 of them not from silence (a tone held between commands) |
+| GPMSU1 | GPSM | 7 | 7 | 7 | 1980-1985 | Game Plan | 7 | lizard | ✅ | each nibble now goes out between two idle 0F, as the game sends it, sweep 00..0E: lizard 11 of 15, attila 15 of 15, all from silence (before: 40 of 40, 37 over one tone at -14.9 LUFS) |
 | NUOVA | NUOVA | 6 | 6 | 6 | 1986-1988 | Nuova Bell Games | 6 | f1gp | ✅ | first run: 15 of 40, all from silence |
 | PLAY2 | PLAY2 | 6 | 5 | 0 | 1979-1980 | Playmatic, Sonic (Spain) | 6 | antar | ✅ | 40 of 40 (tones) |
 | ZSU | ZSU | 6 | 6 | 6 | 1987-1988 | Playmatic, Maibesa | 6 | sklflite | ✅ | first run: 24 of 40, all from silence |
+| GPMSU3 | GPSM3 | 6 | 3 | 2 | 1985-1985 | Game Plan | 6 | andromed | ✅ | fixed (0 of 40 before): a command is a byte sent as two nibbles, low then high, then the idle F, which runs it (read in andromed's sound program): andromed 39 of 40, cyclopes 39 of 40, all from silence |
 | HANKIN | HNK | 5 | 5 | 5 | 1978-1981 | Hankin | 5 | fjholden | ✅ | 38 of 40 |
 | MRGAME | MRGAME | 5 | 4 | 4 | 1988-1990 | Mr. Game (Italy) | 5 | dakar | ✅ | 26 of 40 |
 | GRAND | GRAND | 4 | 1 | 1 | 1986-2021 | Grand Products Inc., Grand Products Inc. / Quench | 4 | bullseye | ✅ | 39 of 40 |
@@ -88,6 +90,7 @@ are the system zips; 2796 of the 2961 sets are there).
 | S11BS+S11JS | WMSS11+WMSS11J | 3 | 1 | 1 | 1989-1989 | Williams | 3 | jokrz_l6 | ✅ | 40 of 40 (38 files, 2 blips) on both boards |
 | S3S | WMSS67 | 3 | 3 | 3 | 1978-1978 | Williams | 3 | phnix_l1 | ✅ | fixed as S67S (0 of 40 before): phnix_l1 15 of 31, the program's 15 numbered sounds (10..1E; 00..0F only set a flag, read in its code), all from silence; the flag-then-command sounds not swept |
 | S7S_ND | WMSS67 | 3 | 1 | 1 | 1982-1982 | Williams | 3 | thund_p1 | ✅ | fixed as S67S (0 of 40 before): the seven bits, 00..7E, idle 7F: thund_p1 34 of 40, all from silence |
+| GPSSU1 | GPS1 | 3 | 3 | 0 | 1979-1979 | Game Plan | 3 | startrip | ✅ | stop 0F (no tone), sweep 00..0E: startrip 4 of 15, the board's four tones, all from silence (before: 5 not from silence) |
 | BARNI | BARNI | 2 | 2 | 2 | 1985-1985 | Barni | 2 | redbaron | ✅ | first run: 26 of 40, all from silence |
 | PLAY3 | PLAY3 | 2 | 2 | 2 | 1982-1982 | Playmatic | 2 | cerberus | ✅ | 19 of 40 |
 | TAITO_SINTEVOXPP | TAITO | 2 | 2 | 2 | 1982-1982 | Taito | 2 | gork | ✅ | 37 of 40 (gork; with the stop 00: the same 37, 28 board resets instead of 47) |
@@ -95,6 +98,9 @@ are the system zips; 2796 of the 2961 sets are there).
 | BY61N | BYSNT | 1 | 1 | 1 | 1985-1985 | Bell Games | 1 | cosflash | ✅ | first run: 26 of 40, all from silence |
 | JVH2 | JVH | 1 | 1 | 1 | 1988-1988 | Jac Van Ham (Royal) | 1 | formula1 | ✅ | first run: 27 of 40, all from silence |
 | TECHNO | TECHNO | 1 | 1 | 1 | 1987-1987 | Tecnoplay | 1 | scram_tp | ✅ | 37 of 40 |
+| GPSSU2 | GPS2 | 1 | 1 | 0 | 1979-1979 | Game Plan | 1 | sshooter | ✅ | stop 0F, sweep 00..0E: sshooter 15 of 15, all from silence (24 not from silence before) |
+| GPSSU3 | GPS2 | 1 | 1 | 0 | 1979-1979 | Game Plan | 1 | coneyis | ✅ | as sshooter: coneyis 15 of 15, all from silence |
+| GPSSU4 | GPS4 | 1 | 1 | 0 | 1982-1982 | Game Plan | 1 | suprnova | ✅ | stop 00 (wave and tone off), sweep 00..0E: suprnova 10 of 15, all from silence (6 not from silence before) |
 | DE3S | AT91 | 156 | 7 | 30 | 2003-2008 | Stern | 156 | lotr, elvis | ⚠️ | first run: the sounds come out, distinct and named from sounds.dat (lotr 39 of 40, speech and effects; elvis 40 of 40, songs and effects), but the stop does not silence the AT91 board within 10 s and a board reset does not either: 24 (lotr) and 31 (elvis) files start over what was playing. To fix: how the AT91 board is stopped (the FE xx FD / FD protocol) before rom2altsound can sweep it cleanly |
 | DE1S | DE | 38 | 15 | 14 | 1987-2025 | Data East, Leon | 36 | tmac_a24, bttf_a28, simp_a27 | ⚠️ | partial: tmac_a24 38 of 40, all from silence, but on bttf_a28 (40 of 40) and simp_a27 (37 of 40) the files run to the 5 s cap and 34 to 38 do not start from silence: on these later games the board keeps playing after the stop and the reset (simp_a27 ends with "still not silent after 3 waits"). To look at: the stop command of the later DE sound programs |
 | GTS80S | GTS80 | 37 | 19 | 20 | 1979-2008 | Gottlieb, Oliver | 37 | spidermn, buckrgrs | ⚠️ | first run, doubtful: spidermn 40 of 40 but 37 do not start from silence and 38 run to the 5 s cap (a sound left playing); buckrgrs 30 of 40, all at the same -13.8 LUFS. The game streams bytes at boot (4956 on spidermn): command protocol to look at (gts80s.c) |
@@ -103,14 +109,9 @@ are the system zips; 2796 of the 2961 sets are there).
 | ST300V | ST300 | 21 | 6 | 7 | 1980-2024 | Stern, Stern / Idleman | 20 | flight2k | ⚠️ | speech only: the sweep is now 40..7F, the S14001A's 64 words (the manual command is the speech path): flight2k 37 of 40, freefall 40 of 40, all from silence, 0.2 to 0.4 s each, some clipped (0 of 40 before). The effects are the game's own timer programming (as ST300), not extracted |
 | GTS80SS | GTS80SS | 17 | 8 | 8 | 1982-2023 | Gottlieb, Flipprojets | 17 | hh | ⚠️ | first run: 5 of 40, as blckhole (same board) |
 | BYSD | BYSD | 10 | 6 | 6 | 1986-1988 | Bally | 10 | specforc | ⚠️ | 12 of 40 (Sounds Deluxe): sounds come out, but 28 of the first 40 commands are silent; to check on a full sweep whether the board takes a two-byte command |
-| GPMSU1 | GPSM | 7 | 7 | 7 | 1980-1985 | Game Plan | 7 | lizard | ⚠️ | 40 of 40 but doubtful: 37 do not start from silence and all are at -14.9 LUFS (one tone that never stops) |
 | ZAC1346 | ZAC1346 | 6 | 3 | 3 | 1980-1981 | Zaccaria | 6 | locomotn | ⚠️ | first run, doubtful: 40 of 40 but 39 not from silence and 40 run to the 5 s cap (7 distinct levels): no stop known |
-| GPSSU1 | GPS1 | 3 | 3 | 0 | 1979-1979 | Game Plan | 3 | startrip | ⚠️ | first run, doubtful: 17 of 40 (11 files, 6 blips), 4 distinct levels, 5 not from silence (a tone left on, as the other Game Plan boards) |
 | JVH | JVH | 3 | 3 | 2 | 1986-1987 | Jac Van Ham (Royal) | 3 | icemania | ⚠️ | 1 of 40 (a 0.2 s file): to look at |
 | BY51N | BY51 | 2 | 1 | 1 | 1984-2018 | Bell Games, Bell Games / Quench | 2 | suprbowl | ⚠️ | first run: 6 of 32 (the BY51 board of Bell Games' conversion; spaceinv gives 32 of 32 on BY51) |
-| GPSSU2 | GPS2 | 1 | 1 | 0 | 1979-1979 | Game Plan | 1 | sshooter | ⚠️ | 38 of 40, 24 of them not from silence: a tone left on between commands (no stop known) |
-| GPSSU3 | GPS2 | 1 | 1 | 0 | 1979-1979 | Game Plan | 1 | coneyis | ⚠️ | same board program as sshooter, same result |
-| GPSSU4 | GPS4 | 1 | 1 | 0 | 1982-1982 | Game Plan | 1 | suprnova | ⚠️ | 29 of 40 (26 files, 3 blips), 6 of them not from silence: a tone left on between commands, as the other Game Plan boards (no stop sent) |
 | GTS80SS_VOTRAX_OLD | GTS80SS | 1 | 0 | 1 | 1981-1981 | Gottlieb | 1 | marsp | ⚠️ | first run: 3 of 40, as blckhole (the Votrax board) |
 | ROMSTAR | TMS320AV120 | 1 | 1 | 1 | 1994-1994 | Romstar | 1 | ghv101 | ⚠️ | 40 of 40 but doubtful: every file runs to the 5 s cap and none starts from silence (something keeps playing under every command) |
 | ROWAMET | ROWAMET | 1 | 1 | 1 | ? | Rowamet | 1 | heavymtl | ⚠️ | first run: 5 of 40 |
@@ -121,7 +122,6 @@ are the system zips; 2796 of the 2961 sets are there).
 | S3WCS | WMSS67 | 1 | 1 | 1 | 1978-1978 | Williams | 1 | wldcp_l1 | ⚠️ | with the S67S idle framing (0 of 40 before): 16 of 40, all from silence, but all alike (one 2.6 s sound); the control bit (s67s_ctrl_w) is never set |
 | ST300 | ST300 | 76 | 17 | 0 | 1979-2026 | Stern, Stern / Idleman | 67 | meteor | ❌ | not a command board: no sound ROM, the game programs the MC6840 timers itself (boot: register/value pairs 01 00 06 07 04 05); rom2altsound's command sweep does not apply |
 | ATARI1 | ATARI1 | 12 | 5 | 3 | 1976-2024 | Atari | 12 | atarians | ❌ | first run (the full set's zip is complete): 0 of 40; the game streams 00 bytes (14498 in the boot): discrete sound driven by lines, not by command numbers |
-| GPMSU3 | GPSM3 | 6 | 3 | 2 | 1985-1985 | Game Plan | 6 | andromed | ❌ | 0 of 40; the game sends nibbles at boot (0F 0C 00 0F): command protocol to look at |
 | BY45BP | BY45 | 4 | 2 | 2 | 1982-2006 | Bally, Bally / Oliver | 4 | babypac | ❌ | 0 of 40. Baby Pac-Man's Cheap Squeak sits behind the video board: the game sent 00/0F at boot, our commands never start a sound. To look at: which CPU feeds the board |
 | ATARI2 | ATARI2 | 3 | 3 | 1 | 1979-1979 | Atari | 3 | superman | ❌ | 0 of 40: discrete sound (no sound ROM), the game sent no sound byte at boot; the board is driven by lines, not by command numbers |
 | JOCTRONIC | JOCTRONIC | 3 | 3 | 3 | 1986-1986 | Joctronic | 3 | punkywil | ❌ | first run: 0 of 40; the game sent one byte (01) at boot: to look at |

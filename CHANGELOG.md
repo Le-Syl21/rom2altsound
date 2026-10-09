@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Game Plan boards** (GPMSU1, GPMSU3, GPSSU1..4: 20 sets): the sweep is only the
+  nibbles the boards read; the MSU-3 takes a byte as two nibbles then the idle `F` (read
+  in its program), the MSU-1 one nibble between idle ones, and the SSU tone boards stop on
+  `0F` (SSU-4: `00`). Survey runs: andromed 39 of 40 (0 before), cyclopes 39, attila 15
+  of 15, sshooter 15 of 15, all from silence (the tones used to play on).
 - **Williams System 3 to 7** (S67S, S7S_ND, S3S, S3DFS, S3WCS: 113 sets, 0 to 3 of 40
   before): the board starts a sound on the change from its idle value, so every command
   now goes out between two idle bytes (`FF cmd FF`), as the games send it, and the sweep

@@ -153,6 +153,10 @@ fn ac_couples_dac(family: &str) -> bool {
 ///   (trident, dracula: every file from silence, 38 of 40 over a held tone before).
 /// - CAPCOMS: `DA 02 03 01`, sounds.dat's "Stop sound?" of Big Bang Bar (pmv112: silent at
 ///   once, no board reset).
+/// - GPS1, GPS2 (Game Plan SSU-1/-2/-3, SN76477 tones, no CPU): `0F`, a nibble with no
+///   tone voltage (gpsnd.c `gpss1_data_w`, `gpss2_data_w`), which turns the tone chip off;
+///   the effects are one-shots. GPS4 (SSU-4): `00`, which also stops its wave ("stop
+///   wave", `gpss4_data_w`) and mutes the effects chip. A board reset does nothing there.
 /// - TAITO: `00`, the games' idle value (taito.c `taito_silenceSavedSndCmd`). The board
 ///   raises CB1 for any byte but 00 (taitos.c `taitos_data_w`), and the program arms CB1's
 ///   rising edge (CRB 07, shock); the Sintetizador programs of 1979-82 never drop CB1
@@ -175,6 +179,9 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("TAITO", &[0x00]),
     ("SPINB", &[SPINB_STOP]),
     ("ST100", &[0x00]),
+    ("GPS1", &[0x0F]),
+    ("GPS2", &[0x0F]),
+    ("GPS4", &[0x00]),
     ("CAPCOMS", &[0xDA, 0x02, 0x03, 0x01]),
     // game.rom `DCSQuietAllTracks`: 55AE, then the mask of the six channels in the high byte.
     ("DCSP2K", &[0x55, 0xAE, 0x3F, 0x00]),
@@ -4989,6 +4996,8 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
         Some("DCSP2K") => return p2k_sends(bytes),
         Some("ZAC1370") => return addressed(mask, board, &zac_strobed(bytes)),
         Some("SPINB") => return addressed(mask, board, &spinb_released(bytes)),
+        Some("GPSM") => return addressed(mask, board, &gpsm_framed(bytes)),
+        Some("GPSM3") => return addressed(mask, board, &gpsm3_framed(bytes)),
         Some("WMSS67") => {
             let sub = unsafe { ffi::shim_board_type(board) } & 0xFF;
             return addressed(mask, board, &s67s_framed(sub, bytes));
@@ -5066,6 +5075,37 @@ fn s67s_idle(sub: c_int, b: u8) -> bool {
     } else {
         b & 0x1F == 0x1F
     }
+}
+
+/// Game Plan MSU-1 (`GPSM`): the board sees four lines (gpsnd.c `gpsm_data_w`: `F0 |
+/// nibble` on its PIA's port B, read on an 828 Hz interrupt), `F` is idle, and the game
+/// sends one nibble between idle ones (lizard's boot: `0F`, then `08` among a stream of
+/// `0F`). Each nibble goes out between two `0F`; a lone nibble left on the lines played
+/// on under the next commands (one tone at -14.9 LUFS under 37 of 40 files before).
+fn gpsm_framed(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .iter()
+        .flat_map(|&b| {
+            if b & 0x0F == 0x0F {
+                vec![b]
+            } else {
+                vec![0x0F, b & 0x0F, 0x0F]
+            }
+        })
+        .collect()
+}
+
+/// Game Plan MSU-3 (`GPSM3`): the same four lines, but a command is a byte sent as two
+/// nibbles, low first, then the idle `F`, which runs it (andromed's sound program,
+/// interrupt handler at `FAE8`: on every change of the lines it shifts the new nibble into
+/// a byte, `$01 = nibble << 4 | $01 >> 4`, and acts on `$01` when the lines go back to
+/// `F`; the game's boot sends `0F 0C 00 0F`, command `0C`). A byte whose two nibbles are
+/// equal cannot be sent this way (the second makes no change); neither nibble can be `F`.
+fn gpsm3_framed(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .iter()
+        .flat_map(|&b| vec![0x0F, b & 0x0F, b >> 4, 0x0F])
+        .collect()
 }
 
 /// Spinball / Inder (`SPINB`): both sound Z80s poll the command latch (`sndcmd_r`, no
@@ -5207,6 +5247,33 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                     singles(0x40..=0x7F),
                 )],
                 format!("board {b} (ST300, VS-1000 speech): bytes 40..7F, the S14001A's 64 words"),
+            ),
+            // Game Plan MSU-1: the 15 nibbles (`gpsm_framed`); MSU-3: the bytes made of two
+            // different nibbles, neither `F` (`gpsm3_framed`).
+            // Game Plan SSU boards: four lines, `F` is no tone (the stop).
+            "GPS1" | "GPS2" | "GPS4" => (
+                vec![("00..0E (the board reads four lines)".to_string(), singles(0x00..=0x0E))],
+                format!("board {b} ({typestr}): nibbles 00..0E (four lines)"),
+            ),
+            "GPSM" => (
+                vec![(
+                    "00..0E (one nibble between two idle 0F)".to_string(),
+                    singles(0x00..=0x0E),
+                )],
+                format!("board {b} (GPSM): nibbles 00..0E, each between two idle 0F"),
+            ),
+            "GPSM3" => (
+                vec![(
+                    "00..EE, two different nibbles, neither F (sent low, high, then the idle F)"
+                        .to_string(),
+                    (0x00..=0xEEu8)
+                        .filter(|c| c & 0x0F != 0x0F && c >> 4 != 0x0F && c & 0x0F != c >> 4)
+                        .map(|c| vec![c])
+                        .collect(),
+                )],
+                format!(
+                    "board {b} (GPSM3): bytes 00..EE made of two different nibbles, neither F, sent as low nibble, high nibble, F"
+                ),
             ),
             // Williams System 3 to 7: only the bits the board reads (`s67s_cmd_w`), each
             // command once, framed by the idle byte (`s67s_framed`).

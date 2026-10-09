@@ -75,12 +75,12 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_ZAC11178_13181`](zaccaria.md#sndbrd_zac11178_13181) | ✅ | 12 | 2 | Spooky; Zankor |
 | [`SNDBRD_ZAC13181x3`](zaccaria.md#sndbrd_zac13181x3) | ✅ | 8 | 2 | Star's Phoenix; New Star's Phoenix |
 | [`SNDBRD_ZAC1311`](zaccaria.md#sndbrd_zac1311) | — | 6 | 3 | Future World; Winter Sports; House of Diamonds |
-| [`SNDBRD_GPMSU1`](game-plan.md#sndbrd_gpmsu1) | ⚠️ | 7 | 7 | Lizard; Global Warfare; Mike Bossy |
-| [`SNDBRD_GPSSU1`](game-plan.md#sndbrd_gpssu1) | ⚠️ | 3 | 3 | Star Trip; Family Fun!; Vegas |
-| [`SNDBRD_GPSSU2`](game-plan.md#sndbrd_gpssu2) | ⚠️ | 1 | 1 | Sharpshooter |
-| [`SNDBRD_GPSSU3`](game-plan.md#sndbrd_gpssu3) | ⚠️ | 1 | 1 | Coney Island! |
-| [`SNDBRD_GPSSU4`](game-plan.md#sndbrd_gpssu4) | ⚠️ | 1 | 1 | Super Nova |
-| [`SNDBRD_GPMSU3`](game-plan.md#sndbrd_gpmsu3) | ❌ | 6 | 3 | Andromeda; Lady Sharpshooter; Cyclopes |
+| [`SNDBRD_GPMSU1`](game-plan.md#sndbrd_gpmsu1) | ✅ | 7 | 7 | Lizard; Global Warfare; Mike Bossy |
+| [`SNDBRD_GPSSU1`](game-plan.md#sndbrd_gpssu1) | ✅ | 3 | 3 | Star Trip; Family Fun!; Vegas |
+| [`SNDBRD_GPSSU2`](game-plan.md#sndbrd_gpssu2) | ✅ | 1 | 1 | Sharpshooter |
+| [`SNDBRD_GPSSU3`](game-plan.md#sndbrd_gpssu3) | ✅ | 1 | 1 | Coney Island! |
+| [`SNDBRD_GPSSU4`](game-plan.md#sndbrd_gpssu4) | ✅ | 1 | 1 | Super Nova |
+| [`SNDBRD_GPMSU3`](game-plan.md#sndbrd_gpmsu3) | ✅ | 6 | 3 | Andromeda; Lady Sharpshooter; Cyclopes |
 | [`SNDBRD_TAITO_SINTEVOX`](taito.md#sndbrd_taito_sintevox) | ✅ | 10 | 5 | Titan; Cavaleiro Negro; Lady Luck |
 | [`SNDBRD_TAITO_SINTEVOXPP`](taito.md#sndbrd_taito_sintevoxpp) | ✅ | 2 | 2 | Gork; Fire Action Deluxe |
 | [`SNDBRD_TAITO_SINTETIZADOR`](taito.md#sndbrd_taito_sintetizador) | ✅ | 18 | 14 | Shock; Oba-Oba; Gemini 2000 |
