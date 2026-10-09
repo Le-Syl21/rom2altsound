@@ -866,7 +866,8 @@ cuts the sound before it.
   start and end within 50 LSB of 0 (raw: 84 of 85 started or ended more than 256 LSB away).
 - **-32 / -50** (BY32): no sound CPU; `by32_manCmd_w` plays a tone from the 32-byte PROM.
   Sweep `00`..`1F`; `xF` plays nothing, and `0F` mutes the tone at once (the strobe drop
-  in `by32_ctrl_w`), hence the stop. Not tried: no ROM at hand.
+  in `by32_ctrl_w`), hence the stop. Measured on lostwrld (quick survey): 15 tones from the
+  32 commands.
 
 What PinMAME hands AltSound on these machines is not these commands: `sndbrd_data_w`
 logs every write of the shared lines (by35.c `pia1b_w`, solenoids included), 4 bits at a
@@ -1684,10 +1685,12 @@ Two rounds before:
   `WPC_SND_DATA`). Tested on tz_94h (Twilight Zone): 307 commands from sounds.dat, 302
   written, 5 silent, no blip, no clipped file, no board reset. That byte also comes back
   through libpinmame's sound-command callback while the extractor's state is held; the
-  callback skips it (a blocking lock there hung the extraction). None of its 45 music
-  tracks repeats exactly within 240 s (YM2151 + DAC): they are cut at
-  `--max-secs`. Its master volume is not set by the tool: the files are at the game's
-  factory level (`79 0C F3`), and the master volume check has no other level to replay at.
+  callback skips it (a blocking lock there hung the extraction). The audio of its 45 music
+  tracks never repeats sample-exactly (YM2151 + DAC), so their loops come from the sound
+  CPU's state: 26 loop within 240 s, 31 with `--loop-max-secs 600`, the others are cut at
+  `--max-secs` ([Loops](#loops)). The tool sends the reference master volume `79 0C F3`
+  (level 12), which is also the game's own factory volume, so the factory offset is 0 dB;
+  the master volume check has no WPCS case, so no file is flagged `ignores_master_volume`.
 - **Several commands can map to one sound** (whirl_l3 `0x0001` = `0x0004`). They are marked
   as twins (above) but kept, and the loudness totals count every copy.
 - **The factory volume is the boot (attract mode) volume.** Nothing is played, so whether a

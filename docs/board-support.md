@@ -30,8 +30,8 @@ How each family is driven (hardware, commands, stop, volume, loops, what is miss
 
 PinMAME 3.7 (the submodule) knows 2971 sets, 10 of them shared system ROM sets (`gts80s`,
 `allied`...: no game, see [how it works](how-it-works.md#rom-verification)). Of the other
-2961, 1940 (379 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
-sets built outside the full set, see its row), 443 in a ⚠️ one, 315 in a ❌ one, 6 in a ❔
+2961, 1939 (378 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
+sets built outside the full set, see its row), 444 in a ⚠️ one, 315 in a ❌ one, 6 in a ❔
 one (S11S, not run yet), 257 have no sound board. "Sets" counts every set (clones
 and revisions included), "games" the sets without a parent, "sound ROM ids" the distinct
 sound ROM sets (see [how it works](how-it-works.md#sound-rom-id)): a revision that kept its
@@ -53,7 +53,7 @@ are the system zips; 2796 of the 2961 sets are there).
 | GTS3 | GTS80B | 51 | 23 | 23 | 1989-2023 | Gottlieb, Gottlieb / Vifico | 47 | cueball | ✅ | 40 of 40 (Gottlieb System 3, GTS80B board code) |
 | S11CS | WMSS11C | 50 | 10 | 15 | 1988-2026 | Bally, Williams | 47 | diner_l4 | ✅ | first run of the separate board alone: 30 of 40, all from silence (the same board as the second one of whirl_l3) |
 | BY51 | BY51 | 41 | 14 | 14 | 1979-2019 | Bally / Oliver, Bally | 40 | spaceinv | ✅ | 32 of 32 |
-| BY32 | BY32 | 39 | 12 | 2 | 1978-2022 | Bally / Oliver, Bally | 39 | kiss | ✅ | 15 tones from the 32 commands (no sound processor) |
+| BY32 | BY32 | 39 | 12 | 2 | 1978-2022 | Bally / Oliver, Bally | 39 | kiss | ✅ | no sound processor; 15 tones from the 32 commands on lostwrld (the first survey; kiss's count not recorded) |
 | BY61 | BYSNT | 34 | 10 | 12 | 1981-2019 | Bally, Bally / Oliver | 34 | flashgdn | ✅ | 26 of 40 (README: eballdlx) |
 | GTS80SP | GTS80 | 26 | 11 | 11 | 1983-2022 | Gottlieb, Flipprojets | 26 | alienstr | ✅ | 38 of 40 |
 | BY45 | BY45 | 23 | 10 | 12 | 1983-2021 | Bally, Bally / Oliver | 23 | xsandos | ✅ | 39 of 40 (README: Cheap Squeak) |
@@ -80,7 +80,6 @@ are the system zips; 2796 of the 2961 sets are there).
 | TAITO_SINTEVOXPP | TAITO | 2 | 2 | 2 | 1982-1982 | Taito | 2 | gork | ✅ | 37 of 40 |
 | BY61B2 | BYSNT | 1 | 1 | 1 | 1982-1982 | Bally | 1 | mysteria | ✅ | first run: 18 of 40, all from silence |
 | BY61N | BYSNT | 1 | 1 | 1 | 1985-1985 | Bell Games | 1 | cosflash | ✅ | first run: 26 of 40, all from silence |
-| GPSSU4 | GPS4 | 1 | 1 | 0 | 1982-1982 | Game Plan | 1 | suprnova | ✅ | 29 of 40 (26 files, 3 blips; 6 not from silence) |
 | JVH2 | JVH | 1 | 1 | 1 | 1988-1988 | Jac Van Ham (Royal) | 1 | formula1 | ✅ | first run: 27 of 40, all from silence |
 | TECHNO | TECHNO | 1 | 1 | 1 | 1987-1987 | Tecnoplay | 1 | scram_tp | ✅ | 37 of 40 |
 | DE3S | AT91 | 156 | 7 | 30 | 2003-2008 | Stern | 156 | lotr, elvis | ⚠️ | first run: the sounds come out, distinct and named from sounds.dat (lotr 39 of 40, speech and effects; elvis 40 of 40, songs and effects), but the stop does not silence the AT91 board within 10 s and a board reset does not either: 24 (lotr) and 31 (elvis) files start over what was playing. To fix: how the AT91 board is stopped (the FE xx FD / FD protocol) before rom2altsound can sweep it cleanly |
@@ -99,6 +98,7 @@ are the system zips; 2796 of the 2961 sets are there).
 | BY51N | BY51 | 2 | 1 | 1 | 1984-2018 | Bell Games, Bell Games / Quench | 2 | suprbowl | ⚠️ | first run: 6 of 32 (the BY51 board of Bell Games' conversion; spaceinv gives 32 of 32 on BY51) |
 | GPSSU2 | GPS2 | 1 | 1 | 0 | 1979-1979 | Game Plan | 1 | sshooter | ⚠️ | 38 of 40, 24 of them not from silence: a tone left on between commands (no stop known) |
 | GPSSU3 | GPS2 | 1 | 1 | 0 | 1979-1979 | Game Plan | 1 | coneyis | ⚠️ | same board program as sshooter, same result |
+| GPSSU4 | GPS4 | 1 | 1 | 0 | 1982-1982 | Game Plan | 1 | suprnova | ⚠️ | 29 of 40 (26 files, 3 blips), 6 of them not from silence: a tone left on between commands, as the other Game Plan boards (no stop sent) |
 | GTS80SS_VOTRAX_OLD | GTS80SS | 1 | 0 | 1 | 1981-1981 | Gottlieb | 1 | marsp | ⚠️ | first run: 3 of 40, as blckhole (the Votrax board) |
 | ROMSTAR | TMS320AV120 | 1 | 1 | 1 | 1994-1994 | Romstar | 1 | ghv101 | ⚠️ | 40 of 40 but doubtful: every file runs to the 5 s cap and none starts from silence (something keeps playing under every command) |
 | ROWAMET | ROWAMET | 1 | 1 | 1 | ? | Rowamet | 1 | heavymtl | ⚠️ | first run: 5 of 40 |
@@ -177,8 +177,8 @@ By sets gained for the work, from the boot logs above (nothing here is done yet)
    families.
 5. **Taito's doubled commands** (TAITO_SINTETIZADOR, TAITO_SINTETIZADORPP: 26 sets): the
    games send each command twice, with and without bit 7 (98 18); the sweep sends one.
-6. **A stop for the tone boards** (ST100, ST100B, GPMSU1, GPSSU1..3, ZAC1346, TABART,
-   TABART2, TABART3: 47 sets): the files come out, but a tone sustains between commands;
+6. **A stop for the tone boards** (ST100, ST100B, GPMSU1, GPSSU1..4, ZAC1346, TABART,
+   TABART2, TABART3: 48 sets): the files come out, but a tone sustains between commands;
    the idle byte of each board to send as the stop.
 7. **The Gottlieb System 80 boards** (GTS80S, GTS80SS, GTS80SS_VOTRAX, _OLD: 79 sets): the
    command bits of the board (gts80s.c), as the game streams them at boot.

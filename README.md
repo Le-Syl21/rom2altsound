@@ -228,7 +228,7 @@ What rom2altsound gets out of each sound board family:
 | Bally -32 / -50 (1978-1980) ¹² | ✅ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
 Every sound board family of PinMAME, with its number of games and a quick survey of
-one ROM per family of the full VPinMAME set (23 more families give sounds): [board
+one ROM per family of the full VPinMAME set (22 more families give sounds): [board
 support](docs/board-support.md).
 How rom2altsound drives each family, step by step: [sound board families](docs/families/README.md).
 
@@ -773,7 +773,7 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 | Bally -32 / -50 (1978-1980) ¹² | ✅ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
 
 Toutes les familles de cartes son de PinMAME, avec leur nombre de jeux et un survol rapide
-d'une ROM par famille du jeu complet de ROM VPinMAME (23 autres familles donnent des sons) :
+d'une ROM par famille du jeu complet de ROM VPinMAME (22 autres familles donnent des sons) :
 [cartes prises en charge](docs/board-support.md) (en anglais).
 Comment rom2altsound pilote chaque famille, pas à pas : [familles de cartes son](docs/families/README.md) (en anglais).
 

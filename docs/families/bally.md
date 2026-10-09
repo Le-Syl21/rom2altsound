@@ -66,8 +66,9 @@ sets, 12 games, 2 sound ROM ids, 1978-2022, Bally (and conversions) · e.g. Kiss
   (`volume::full_scale`).
 - **Loops**: audio method only (no audio CPU, no state to read).
 - **DUCK / STOP / CHANNEL**: defaults.
-- **Measured**: kiss, 15 tones from the 32 commands (board-support); README note 15 and
-  CHANGELOG name Lost World for the same count.
+- **Measured**: lostwrld (Lost World), 15 tones from the 32 commands (the first survey;
+  README note 15, CHANGELOG); the full-set survey tested kiss, whose count is not recorded
+  (board-support).
 - **Limits**: half of the PROM's tones are not played (above); one tone per command, no
   sound program.
 

@@ -88,7 +88,7 @@ Game Plan SSU-3 · PinMAME interface `GPS2` (`src/wpc/gpsnd.c`, sub-type 1) · �
 
 ## <a name="sndbrd_gpssu4"></a>SNDBRD_GPSSU4
 
-Game Plan SSU-4 (SN76477, no CPU) · PinMAME interface `GPS4` (`src/wpc/gpsnd.c`) · ✅ ·
+Game Plan SSU-4 (SN76477, no CPU) · PinMAME interface `GPS4` (`src/wpc/gpsnd.c`) · ⚠️ ·
 1 set, 1 game, no sound ROM, 1982, Game Plan · e.g. Super Nova (`suprnova`)
 
 - **Hardware**: SN76477 chips (`gpSS4_sn76477Int`) and a capacitor ramp simulated with
@@ -102,7 +102,7 @@ Game Plan SSU-4 (SN76477, no CPU) · PinMAME interface `GPS4` (`src/wpc/gpsnd.c`
 - **Loops**: audio only.
 - **DUCK / STOP / CHANNEL**: defaults.
 - **Measured** ([board support](../board-support.md)): suprnova 29 of 40 (26 files,
-  3 blips; 6 not from silence).
+  3 blips), 6 of them not from silence: partial, as GPSSU1..3.
 - **Limits and what is missing**: the 6 files not from silence come from the same
   missing stop; `0F` (and `00` for the wave) as the stop would be the fix. Not tried.
 - **In VPinball**: as GPSSU2. Not tested in VPinball.

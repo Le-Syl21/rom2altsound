@@ -4062,7 +4062,7 @@ impl Extractor {
                 self.opts.parent.as_deref().unwrap_or(&self.opts.rom),
                 entries.len()
             )];
-            // A sounds.dat section is not always complete (afm_113b leaves out 15 populated
+            // A sounds.dat section is not always complete (afm_113b leaves out 14 populated
             // tracks, among them 0013, a 120 s loop): on DCS, add the catalog's other tracks.
             if let Some(dcs) = self
                 .board_list()
