@@ -166,6 +166,11 @@ fn ac_couples_dac(family: &str) -> bool {
 ///   files started over the last sound. `00` alone silences them, but on tmac_a24 nothing
 ///   played after its commands `0A`..`0D` (10 of 40, 38 with the reset): the reset puts the
 ///   program back as the stop leaves the chips silent.
+/// - INDER (Inder's machines on the SPINB interface): `00`. lapbylap: no board reset over
+///   its first 20 commands instead of one after each, the same sounds, all from silence.
+///   Corsario's and Atleta's programs (polled latch, as Spinball's) play their background
+///   music (command `0C`) whenever the latch's bit 7 is clear, under every effect; `00`
+///   does not change that (see the family's notes).
 /// - BYSD (Bally Sounds Deluxe): `00`, which the games send at boot: specforc's first 40
 ///   commands give the same 12 files with 1 board reset instead of 97.
 /// - ZAC1346 (Zaccaria 1346/1146): `00`, the idle value (T1 cleared; on Locomotion it also
@@ -196,6 +201,7 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("GTS80", &[0x00]),
     ("ZAC1346", &[0x00]),
     ("BYSD", &[0x00]),
+    ("INDER", &[0x00]),
     ("GTS80SS", &[0x00]),
     ("DE", &[0x00]),
     ("SPINB", &[SPINB_STOP]),
@@ -239,6 +245,10 @@ const REBOOT_SECS: &[(&str, f64)] = &[
 /// files started and ended on held levels up to 6553 LSB (a click in AltSound, which
 /// starts and stops a file from 0), where the board's output is AC-coupled.
 const DC_BLOCKED: &[&str] = &["BYSNT"];
+/// Jac Van Ham: the idle lines (jvh.c `jvh_data_w`: `3F ^ 3F` is 0, which it puts on the
+/// VIA as `FF`). icemania: `01` alone 1 of 40; each command followed by `3F` (or `00`), every
+/// one tried plays, from silence.
+const JVH_IDLE: u8 = 0x3F;
 /// Gottlieb System 1 (gen.h `GEN_GTS1`): its sound board takes the whole byte.
 const GEN_GTS1: u64 = 0x1_0000_0000;
 /// `SNDBRD_BY45BP` is `SNDBRD_TYPE(..., 1)`: the Cheap Squeak behind Baby Pac-Man's video board.
@@ -5071,6 +5081,22 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
         Some("ZAC1370") => return addressed(mask, board, &zac_strobed(bytes)),
         Some("SPINB") => return addressed(mask, board, &spinb_released(bytes)),
         Some("GPSM") => return addressed(mask, board, &gpsm_framed(bytes)),
+        // Jac Van Ham (not Formula 1's sub-type): the board reads a level on its VIA, and
+        // the program acts on a change of it (`jvh_data_w`); each command is followed by
+        // `3F`, which the handler turns into "no line", `FF`.
+        Some("JVH") if unsafe { ffi::shim_board_type(board) } & 0xFF == 0 => {
+            let framed: Vec<u8> = bytes
+                .iter()
+                .flat_map(|&b| {
+                    if b & 0x3F == JVH_IDLE {
+                        vec![b]
+                    } else {
+                        vec![b, JVH_IDLE]
+                    }
+                })
+                .collect();
+            return addressed(mask, board, &framed);
+        }
         // Zaccaria 1346: the game also follows every command with `00` (locomotn's boot:
         // `07 00 05 00 0A 00`...), which puts the MCU's T1 back to idle (zacsnd.c
         // `sp1346_data_w`).
@@ -5428,6 +5454,11 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                     singles(0x01..=0x0F).into_iter().chain(singles(0x40..=0x4F)).collect(),
                 )],
                 format!("board {b} (TABART): lines 01..0F and 40..4F, each followed by 00"),
+            ),
+            // Jac Van Ham: six lines, `3F` is idle (`board_sends`).
+            "JVH" if unsafe { ffi::shim_board_type(b) } & 0xFF == 0 => (
+                vec![("01..3E (six lines; each followed by the idle 3F)".to_string(), singles(0x01..=0x3E))],
+                format!("board {b} (JVH): bytes 01..3E (six lines), each followed by the idle 3F"),
             ),
             // Game Plan SSU boards: four lines, `F` is no tone (the stop).
             "GPS1" | "GPS2" | "GPS4" => (

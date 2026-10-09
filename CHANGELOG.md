@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Jac Van Ham** (JVH): each command is followed by the idle `3F`: Ice Mania 17 of 40 (1
+  before), Escape 40 of 40, all from silence.
+- **Inder** (SPINB machines with Inder's own handler): stop `00`; Lap By Lap 28 of 40 from
+  silence with no board reset. The MSM5205 machines still play their background music
+  under every command (documented).
 - **Bell Games' -51N** (BY51N, Super Bowl): commands are two nibbles, as on the -56
   (read in its sound program), sent through the same hook: 26 of 40, all from silence,
   distinct (6 of 32 before).

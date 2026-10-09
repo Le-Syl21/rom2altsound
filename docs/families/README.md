@@ -102,7 +102,7 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_BARNI`](other-makers.md#sndbrd_barni) | ✅ | 2 | 2 | Red Baron; Champion |
 | [`SNDBRD_JVH2`](other-makers.md#sndbrd_jvh2) | ✅ | 1 | 1 | Formula 1 |
 | [`SNDBRD_TECHNO`](other-makers.md#sndbrd_techno) | ✅ | 1 | 1 | Scramble |
-| [`SNDBRD_JVH`](other-makers.md#sndbrd_jvh) | ⚠️ | 3 | 3 | Ice Mania; Escape; Movie Masters |
+| [`SNDBRD_JVH`](other-makers.md#sndbrd_jvh) | ✅ | 3 | 3 | Ice Mania; Escape; Movie Masters |
 | [`SNDBRD_ROWAMET`](other-makers.md#sndbrd_rowamet) | ⚠️ | 1 | 1 | Heavy Metal |
 | [`SNDBRD_TABART`](other-makers.md#sndbrd_tabart) | ⚠️ | 1 | 1 | L'Hexagone |
 | [`SNDBRD_TABART2`](other-makers.md#sndbrd_tabart2) | ✅ | 1 | 1 | Sahara Love |

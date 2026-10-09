@@ -84,16 +84,27 @@ and names the second `"INDER"` (`board_typestr`).
 
 ### Inder (`"INDER"`)
 
-- **Commands**: `snd_w` stores the byte in a latch the sound CPU reads, `snd2_w` also
-  pulses its NMI (`inder.c`); not looked at further.
-- **What rom2altsound sends**: the common method (one byte per command, `01`..`FF`, board
-  reset as the stop).
-- **Measured** (survey settings): lapbylap 30 of 40 (2 not from silence); corsario and
-  atleta 40 of 40 but 39 not from silence, all to the 5 s cap and at two levels (a sound
-  that plays on under every command); brvteam: "no sound board on this machine" (its
+- **Commands**: `snd2_w` stores the byte in a latch and pulses the sound CPU's NMI (the
+  INDER2 machine: Lap By Lap...), `snd_w` only stores it (`inder.c`); on the MSM5205
+  machines (INDERS1: Moon Light, Pin Clown, Corsario, Mundial, Atleta...) the Z80 polls
+  the latch at `8000`, as Spinball's programs do (their successors): read in corsario's
+  sound program (`a-corsar.bin`, poll at `009D`), a byte with bit 7 set is a command
+  (`cmd & 3F`, `8F` stops), and **while bit 7 is clear the program plays command `0C`,
+  its background music** (`00A8` → `0268`).
+- **What rom2altsound sends**: the common method (one byte per command, `01`..`FF`), stop
+  `00` (`BUILTIN_STOPS`, since the version after 0.2.3).
+- **Measured** (survey settings): lapbylap 28 of 40, all from silence, no board reset (30
+  of 40, 2 not from silence, 40 resets with the reset as the stop). moonlght, pinclown,
+  corsario, atleta: 40 of 40 but all at one level, none from silence: the background
+  music, under every command. canasta and brvteam: "no sound board on this machine" (their
   SN76489 is not started as a board).
-- **Limits and what is missing**: the stop and the command path of each Inder board
-  (`inder.c`).
+- **Limits and what is missing**, tried on corsario: `8F` as the stop silences the
+  background, and an effect sent as `8x 00` then plays from silence, but the `00` that
+  releases the latch starts the background again under it; with `8F` as the release
+  (`8x 8F`) the effect is cut at once, and a byte left with bit 7 set replays from its
+  start (a stutter, -58 LUFS). The background is the game's own state between commands;
+  separating it from the effects needs a release value that neither restarts nor
+  interrupts, not found.
 - **In VPinball**: not tested.
 
 ## <a name="sndbrd_nuova"></a>SNDBRD_NUOVA
@@ -147,7 +158,7 @@ Cup '90 (`wcup90`)
 ## <a name="sndbrd_jvh"></a>SNDBRD_JVH
 
 Jac Van Ham sound board (6802 + AY-3-8912) · PinMAME interface `JVH` (`src/wpc/jvh.c`) ·
-status ⚠️ · 3 sets, 3 games, 2 sound ROM ids, 1986-1987, Jac Van Ham (Royal) · e.g. Ice
+status ✅ · 3 sets, 3 games, 2 sound ROM ids, 1986-1987, Jac Van Ham (Royal) · e.g. Ice
 Mania (`icemania`), Escape (`escape`), Movie Masters (`movmastr`)
 
 - **Hardware**: a TMS9980 game CPU; a 6802 at 1 MHz (`snd_readmem`, RAM `0000`-`007F`,
@@ -157,16 +168,15 @@ Mania (`icemania`), Escape (`escape`), Movie Masters (`movmastr`)
   `jvh_data_w`: only bits 0-5 are kept, inverted, put on the VIA's port A as a level, with
   no interrupt; a command that would read `00` is replaced by `FF` ("avoid passing in 0x00
   as a command because it stops all sound forever").
-- **Sound list**: raw sweep `01`..`FF`: only 6 bits reach the board, so 63 distinct
-  commands, each repeated 4 times (twins).
+- **What rom2altsound sends** (`board_sends`, `"JVH"` sub-type 0): each command, then
+  `3F`, which the handler turns into "no line" (`FF` on the port): the program acts on a
+  change of the level. Before (0.2.3), one byte per command, the level left on.
+- **Sound list**: `01`..`3E`, the six lines (`sweep`).
 - **Loops**: audio, sequencer state (6802 RAM).
-- **Measured**: `icemania`, 1 of 40 (a 0.2 s file) ([board support](../board-support.md)).
-- **Limits and what is missing**: the board reads a level, not a strobed byte, and the
-  program's way of noticing a new command (polling the port for a change, presumably) is
-  not determined from the code; the stop being a reset, every command is the first value
-  the program sees after its boot. The survey's note: to look at. Next step: the boot log's
-  bytes, which show what the game leaves on the port between sounds (the idle value to
-  send before each command).
+- **Measured** (survey settings, [board support](../board-support.md)): `icemania` 17 of
+  40, `escape` 40 of 40, all from silence (icemania 1 of 40 before). The game's boot sends
+  no byte, so the idle value was found by trying: `3F` and `00` after a command both work.
+- **Limits and what is missing**: no stop command known (a board reset after each sound).
 - **In VPinball**: the game writes its 6-bit command through `sndbrd_0_data_w`; not
   tested in VPinball.
 
