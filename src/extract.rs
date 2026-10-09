@@ -212,6 +212,8 @@ const REBOOT_SECS: &[(&str, f64)] = &[("BYTCS", 7.0), ("BY51", 8.0), ("BY56", 8.
 /// files started and ended on held levels up to 6553 LSB (a click in AltSound, which
 /// starts and stops a file from 0), where the board's output is AC-coupled.
 const DC_BLOCKED: &[&str] = &["BYSNT"];
+/// `SNDBRD_BY45BP` is `SNDBRD_TYPE(..., 1)`: the Cheap Squeak behind Baby Pac-Man's video board.
+const BY45BP_SUBTYPE: c_int = 1;
 /// `SNDBRD_ST300V` is `SNDBRD_TYPE(31, 1)`: the ST300 interface with the speech board.
 const ST300V_SUBTYPE: c_int = 1;
 /// `SNDBRD_BY56` is `SNDBRD_TYPE(5, 1)`: the BY51 interface, variant 1 (wpc/sndbrd.h).
@@ -395,6 +397,8 @@ enum Send {
     /// sends a multi-byte command (`shim_data_burst`): WPCS boards whose program drops the
     /// prefix of a command when its next byte comes a frame later (see `board_sends`).
     Burst(c_int, [u8; 4], u8),
+    /// `sndbrd_ctrl_w(board, value)`: the game's control line (Baby Pac-Man's strobe).
+    Ctrl(c_int, c_int),
     /// Reset every sound board (control-port reset or audio CPU reset line).
     Reset,
     /// Pinball 2000: the first `n` 16-bit words, written to the DCS2 board's host port in
@@ -1886,6 +1890,10 @@ impl Extractor {
                     unsafe { ffi::sndbrd_data_w(board, byte) };
                     Some(board)
                 }
+                Send::Ctrl(board, v) => {
+                    unsafe { ffi::sndbrd_ctrl_w(board, v) };
+                    Some(board)
+                }
                 Send::Burst(board, bytes, n) => {
                     unsafe { ffi::shim_data_burst(board, bytes.as_ptr(), c_int::from(n)) };
                     Some(board)
@@ -2860,6 +2868,11 @@ impl Extractor {
         }
         let mut ac_coupled = false;
         for b in self.board_list() {
+            if self.families[b as usize] == "BY45"
+                && unsafe { ffi::shim_board_type(b) } & 0xFF == BY45BP_SUBTYPE
+            {
+                unsafe { ffi::shim_by45_p21(0) };
+            }
             if self.families[b as usize] == "BY56" {
                 let hooked = unsafe { ffi::shim_nibble_hook(b) } != 0;
                 if !hooked {
@@ -4710,6 +4723,7 @@ impl Extractor {
                         .join(" ")
                 ),
                 Send::Pairs(b, x, y, n) => format!("manCmd({b},{x:02X} {y:02X}) x{n}"),
+                Send::Ctrl(b, v) => format!("ctrl_w({b},{v:02X})"),
                 Send::Reset => "board reset".into(),
                 Send::Wait(ms) => format!("wait {ms} ms"),
             })
@@ -5006,6 +5020,12 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
     }
     let double = unsafe { ffi::shim_board_flags(board) } & ffi::SNDBRD_DOUBLECMD != 0;
     let t = target(mask, board);
+    if board_typestr(board).as_deref() == Some("BY45")
+        && unsafe { ffi::shim_board_type(board) } & 0xFF == BY45BP_SUBTYPE
+    {
+        // Baby Pac-Man's Cheap Squeak (`by45bp_sends`).
+        return bytes.iter().flat_map(|&b| by45bp_sends(t, b)).collect();
+    }
     match bytes {
         _ if !double => addressed(mask, board, bytes),
         [b] => vec![Send::Data(t, *b as c_int)],
@@ -5152,6 +5172,23 @@ fn spinb_level(mask: u8, board: c_int) -> Vec<Send> {
     v.push(Send::Pairs(t, SPINB_DOWN, 0x00, SPINB_STEPS));
     v.push(Send::Pairs(t, SPINB_UP, 0x00, SPINB_LEVEL));
     v
+}
+
+/// Baby Pac-Man's Cheap Squeak (`SNDBRD_BY45BP`): the video CPU sends a byte as two
+/// nibbles on the board's four data lines, with its PIA's CB2 as the strobe (byvidpin.c
+/// `pia2cb2_w`: `sndbrd_0_data_w` with the nibble, then `sndbrd_0_ctrl_w` with CB2). The
+/// sound program (babypac's `891-u29.764`, input-capture interrupt at `FA6F`) takes the
+/// low nibble on the strobe's rise, waits for the strobe to drop, then reads the high
+/// nibble; the game's boot sends `08` up, `01` down: command `18`. PinMAME's manual command
+/// (`cs_manCmd_w`) gives the strobe the BY45's sense, which this sub-type inverts
+/// (`cs_ctrl_w`), so nothing started (0 of 40).
+fn by45bp_sends(t: c_int, b: u8) -> Vec<Send> {
+    vec![
+        Send::Data(t, c_int::from(b & 0x0F)),
+        Send::Ctrl(t, 1),
+        Send::Data(t, c_int::from(b >> 4)),
+        Send::Ctrl(t, 0),
+    ]
 }
 
 /// One range of a sweep while it is built: what it is, and its commands.

@@ -86,6 +86,7 @@ are the system zips; 2796 of the 2961 sets are there).
 | HANKIN | HNK | 5 | 5 | 5 | 1978-1981 | Hankin | 5 | fjholden | ✅ | 38 of 40 |
 | MRGAME | MRGAME | 5 | 4 | 4 | 1988-1990 | Mr. Game (Italy) | 5 | dakar | ✅ | 26 of 40 |
 | GRAND | GRAND | 4 | 1 | 1 | 1986-2021 | Grand Products Inc., Grand Products Inc. / Quench | 4 | bullseye | ✅ | 39 of 40 |
+| BY45BP | BY45 | 4 | 2 | 2 | 1982-2006 | Bally, Bally / Oliver | 4 | babypac | ✅ | fixed (0 of 40 before): the video CPU sends a byte as two nibbles with its PIA's CB2 as the strobe (low nibble up, high nibble down, read in the sound program), which the tool now does with sndbrd_data_w/ctrl_w, after clearing the port 2 bit the video CPU clears: babypac 32 of 40, granny 28 of 40, all from silence |
 | JEUTEL | JEUTEL | 3 | 3 | 2 | 1983-1984 | Jeutel | 3 | leking | ✅ | 40 of 40 |
 | S11BS+S11JS | WMSS11+WMSS11J | 3 | 1 | 1 | 1989-1989 | Williams | 3 | jokrz_l6 | ✅ | 40 of 40 (38 files, 2 blips) on both boards |
 | S3S | WMSS67 | 3 | 3 | 3 | 1978-1978 | Williams | 3 | phnix_l1 | ✅ | fixed as S67S (0 of 40 before): phnix_l1 15 of 31, the program's 15 numbered sounds (10..1E; 00..0F only set a flag, read in its code), all from silence; the flag-then-command sounds not swept |
@@ -122,9 +123,8 @@ are the system zips; 2796 of the 2961 sets are there).
 | S3WCS | WMSS67 | 1 | 1 | 1 | 1978-1978 | Williams | 1 | wldcp_l1 | ⚠️ | with the S67S idle framing (0 of 40 before): 16 of 40, all from silence, but all alike (one 2.6 s sound); the control bit (s67s_ctrl_w) is never set |
 | ST300 | ST300 | 76 | 17 | 0 | 1979-2026 | Stern, Stern / Idleman | 67 | meteor | ❌ | not a command board: no sound ROM, the game programs the MC6840 timers itself (boot: register/value pairs 01 00 06 07 04 05); rom2altsound's command sweep does not apply |
 | ATARI1 | ATARI1 | 12 | 5 | 3 | 1976-2024 | Atari | 12 | atarians | ❌ | first run (the full set's zip is complete): 0 of 40; the game streams 00 bytes (14498 in the boot): discrete sound driven by lines, not by command numbers |
-| BY45BP | BY45 | 4 | 2 | 2 | 1982-2006 | Bally, Bally / Oliver | 4 | babypac | ❌ | 0 of 40. Baby Pac-Man's Cheap Squeak sits behind the video board: the game sent 00/0F at boot, our commands never start a sound. To look at: which CPU feeds the board |
 | ATARI2 | ATARI2 | 3 | 3 | 1 | 1979-1979 | Atari | 3 | superman | ❌ | 0 of 40: discrete sound (no sound ROM), the game sent no sound byte at boot; the board is driven by lines, not by command numbers |
-| JOCTRONIC | JOCTRONIC | 3 | 3 | 3 | 1986-1986 | Joctronic | 3 | punkywil | ❌ | first run: 0 of 40; the game sent one byte (01) at boot: to look at |
+| JOCTRONIC | JOCTRONIC | 3 | 3 | 3 | 1986-1986 | Joctronic | 3 | punkywil | ❌ | 0 of 40, and the boot plays nothing either: the sound program queues every command on its NMI (that part works) but its main loop waits on an IRQ counter, and the IRQ comes from the main CPU's CTC channel 0, which does not reach the sound CPU in PinMAME (read in punkywil's sound program); not fixable without inventing that interrupt |
 | ASTRO | ASTRO | 2 | 1 | 0 | ? | Stern | 2 | sam_iii | ❌ | first run: 0 of 40; the game toggles 00/01 (20 bytes at boot): a line, not a command |
 | TECNOPLAY | TECNOPLAY | 2 | 2 | 1 | 1987-1988 | Tecnoplay | 2 | xforce | ❌ | 0 of 40; the game streams sound bytes all the time (76978 bytes in the boot): to look at |
 | PLAYZ | PLAYZ | 1 | 1 | 1 | 1981-1981 | Playmatic | 1 | zira | ❌ | first run: 0 of 40; the game sent no sound byte at boot |

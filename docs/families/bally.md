@@ -258,21 +258,30 @@ Hunter (`spyhuntr`), Kings of Steel (`kosteel`), Black Pyramid (`blakpyra`)
 ## <a name="sndbrd_by45bp"></a>SNDBRD_BY45BP
 
 Cheap Squeak behind the Baby Pac-Man video board · interface `BY45`, sub-type 1
-(`src/wpc/by35snd.c`, `src/wpc/byvidpin.c`) · ❌ · 4 sets, 2 games, 2 sound ROM ids,
+(`src/wpc/by35snd.c`, `src/wpc/byvidpin.c`) · ✅ · 4 sets, 2 games, 2 sound ROM ids,
 1982-2006, Bally · Baby Pac-Man (`babypac`), Granny and the Gators (`granny`)
 
 - **Hardware**: the Cheap Squeak's M6803 and DAC, on a machine with a main M6800 and a
   video M6809 (both halted by the tool).
-- **Commands**: the video CPU, not the main one, writes the board: its PIA's port B
-  (`byvidpin.c` `pia2b_w`, low nibble) and CB2 (`pia2cb2_w` → `sndbrd_0_data_w`,
-  `sndbrd_0_ctrl_w`). Two things differ from the BY45 in `by35snd.c`: `cs_ctrl_w` reads
-  the strobe with the opposite sense for sub-type 1 (`ctrl = (data & 1) == subType`), and
-  `by45_p21_w` (set at machine reset, cleared by the video CPU's port B writes) forces
-  bit 1 of port 2 on. rom2altsound sends as on BY45 (`cs_manCmd_w`: strobe 0 then 1).
-- **Everything else**: as reported `BY45`: sweep `01`..`FF`, stop `00`.
-- **Measured**: babypac 0 of 40; the game sent `00`/`0F` at boot (board-support).
-- **Limits**: why no command starts a sound is not determined from the code; the strobe
-  sense and the `p21` bit above are where to look, then the board's program.
+- **Commands**: the video CPU, not the main one, writes the board: the nibble of its
+  PIA's port B (`byvidpin.c` `pia2b_w`, low nibble) goes out on every CB2 write
+  (`pia2cb2_w` → `sndbrd_0_data_w`, then `sndbrd_0_ctrl_w` with CB2). The sound program
+  (babypac's `891-u29.764`, input-capture interrupt at `FA6F`, read with a 6801
+  disassembler) takes the low nibble when the strobe rises, waits for it to drop, then
+  reads the high nibble: a byte in two nibbles. The game's boot sends `08` with the
+  strobe up and `01` with it down: command `18`. `cs_ctrl_w` reads the strobe with the
+  opposite sense for this sub-type (`ctrl = (data & 1) == subType`), and `by45_p21_w`
+  (set at machine reset, cleared by the video CPU's first port B write) forces bit 1 of
+  port 2, the command's lowest bit, on.
+- **What rom2altsound sends** (`by45bp_sends`, in `board_sends`): the low nibble
+  (`sndbrd_data_w`), the strobe up (`sndbrd_ctrl_w` 1), the high nibble, the strobe down,
+  as the video CPU does; once booted it clears the port 2 bit (`shim_by45_p21`), as the
+  video CPU's first write does. Before (0.2.3), PinMAME's manual command
+  (`cs_manCmd_w`: strobe 0 then 1, the BY45's sense) started nothing: 0 of 40.
+- **Everything else**: as `BY45`: sweep `01`..`FF`, stop `00` (framed the same way).
+- **Measured** (survey settings, board-support): babypac 32 of 40, granny 28 of 40, all
+  from silence.
+- **In VPinball**: AltSound receives each nibble write (two per command). Not tested.
 
 ## <a name="sndbrd_bytcs"></a>SNDBRD_BYTCS
 

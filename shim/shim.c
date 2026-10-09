@@ -833,3 +833,12 @@ void shim_mancmd_pairs(int board, int a, int b, int n, int slices) {
     for (j = 0; j < slices; j++) run_one_timeslice();
   }
 }
+
+// Baby Pac-Man's Cheap Squeak (SNDBRD_BY45BP): the board's port 2 bit 1 is forced on from
+// the machine reset until the video CPU first writes its PIA's port B (byvidpin.c
+// `pia2b_w` -> by35snd.c `by45_p21_w(0)`). The tool, which halts the video CPU and writes
+// the board itself, clears it the same way.
+extern void by45_p21_w(UINT8 data);
+void shim_by45_p21(int on) {
+  by45_p21_w((UINT8)on);
+}

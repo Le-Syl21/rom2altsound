@@ -395,8 +395,15 @@ Joctronic · e.g. Punky Willy (`punkywil`), Walkyria (`walkyria`), Pin Ball (`jp
 - **Loops**: audio, sequencer state (Z80 RAM).
 - **Measured**: `punkywil`, 0 of 40; the game sent one byte (`01`) at boot
   ([board support](../board-support.md)).
-- **Limits and what is missing**: the handler is a plain latch and NMI, so why the sweep's
-  bytes play nothing is not determined from the code. The survey's note: to look at.
+- **Limits and what is missing**: the handler is a plain latch and NMI, and the NMI part
+  works: punkywil's sound program (`pw_sound.bin`, read with a Z80 disassembler) queues
+  every non-zero byte in a ring at `8010` (NMI handler at `0066`). Its main loop, though,
+  only moves on each time the IRQ handler (`RST 38` → `003E`) has counted `28` interrupts
+  at `8002`, and the IRQ comes from the main CPU's CTC channel 0 (`joctronic.c` `to0_w`,
+  `cpu_set_irq_line(1, ...)`). The boot plays no sound either (0.0 s of sound, one click),
+  with the game CPU running: the queued commands are never played in PinMAME, whose CTC
+  output to the sound CPU does not seem to run. Not fixable from rom2altsound's side
+  without inventing that interrupt; left as is.
 - **In VPinball**: the game's byte is the byte the sweep sends; not tested in VPinball.
 
 ## <a name="sndbrd_rowamet"></a>SNDBRD_ROWAMET

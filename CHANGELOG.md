@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Baby Pac-Man's Cheap Squeak** (BY45BP: 4 sets, 0 sounds before): commands go out
+  as the video CPU sends them, two nibbles with the PIA's CB2 as the strobe (read in the
+  sound program); Baby Pac-Man 32 of 40, Granny and the Gators 28 of 40, all from silence.
 - **Game Plan boards** (GPMSU1, GPMSU3, GPSSU1..4: 20 sets): the sweep is only the
   nibbles the boards read; the MSU-3 takes a byte as two nibbles then the idle `F` (read
   in its program), the MSU-1 one nibble between idle ones, and the SSU tone boards stop on
