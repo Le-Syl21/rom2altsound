@@ -171,6 +171,8 @@ fn ac_couples_dac(family: &str) -> bool {
 ///   Corsario's and Atleta's programs (polled latch, as Spinball's) play their background
 ///   music (command `0C`) whenever the latch's bit 7 is clear, under every effect; `00`
 ///   does not change that (see the family's notes).
+/// - ROWAMET: `00`, which heavymtl's game sends after each command (boot: `12 00 12 00`...):
+///   38 of 40 from silence and no board reset, where the reset left 5 of 40.
 /// - BYSD (Bally Sounds Deluxe): `00`, which the games send at boot: specforc's first 40
 ///   commands give the same 12 files with 1 board reset instead of 97.
 /// - ZAC1346 (Zaccaria 1346/1146): `00`, the idle value (T1 cleared; on Locomotion it also
@@ -202,6 +204,7 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("ZAC1346", &[0x00]),
     ("BYSD", &[0x00]),
     ("INDER", &[0x00]),
+    ("ROWAMET", &[0x00]),
     ("GTS80SS", &[0x00]),
     ("DE", &[0x00]),
     ("SPINB", &[SPINB_STOP]),

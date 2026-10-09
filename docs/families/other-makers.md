@@ -429,7 +429,7 @@ Joctronic · e.g. Punky Willy (`punkywil`), Walkyria (`walkyria`), Pin Ball (`jp
 ## <a name="sndbrd_rowamet"></a>SNDBRD_ROWAMET
 
 Rowamet sound board (Z80 + DAC) · PinMAME interface `ROWAMET` (`src/wpc/rowamet.c`) ·
-status ⚠️ · 1 set, 1 game, 1 sound ROM id, year unknown, Rowamet · e.g. Heavy Metal
+status ✅ · 1 set, 1 game, 1 sound ROM id, year unknown, Rowamet · e.g. Heavy Metal
 (`heavymtl`)
 
 - **Hardware**: Taito game hardware with a Z80 (`MDRV_IMPORT_FROM(taito)`); a Z80 sound
@@ -438,8 +438,10 @@ status ⚠️ · 1 set, 1 game, 1 sound ROM id, year unknown, Rowamet · e.g. He
   two output nibbles, sent when it changes, see [Taito](taito.md)). `rowamet_data_w`
   (data and manual): latch, mixer volume back to 100, NMI pulse.
 - **Loops**: audio, sequencer state (Z80 RAM).
-- **Measured**: `heavymtl`, 5 of 40 ([board support](../board-support.md)).
-- **Limits and what is missing**: why most commands are silent is not determined from the
-  code (the handler is a plain latch and NMI); possibly the same two-write pattern as the
-  Taito boards it shares the game hardware with, which the boot log would show.
+- **Stop**: `00` (`BUILTIN_STOPS`), what the game sends after each command (heavymtl's
+  boot: `12 00 12 00`...). Until 0.2.3 a board reset, which left the latch on the last
+  command.
+- **Measured**: `heavymtl` 38 of 40, all from silence, no board reset (5 of 40 before,
+  [board support](../board-support.md)).
+- **Limits and what is missing**: no full run.
 - **In VPinball**: AltSound gets the game's changed bytes; not tested in VPinball.

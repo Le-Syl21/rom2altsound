@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Rowamet** (ROWAMET): stop `00`, which the game sends after each command: Heavy Metal
+  38 of 40 from silence (5 of 40 before).
 - **Jac Van Ham** (JVH): each command is followed by the idle `3F`: Ice Mania 17 of 40 (1
   before), Escape 40 of 40, all from silence.
 - **Inder** (SPINB machines with Inder's own handler): stop `00`; Lap By Lap 28 of 40 from

@@ -30,8 +30,8 @@ How each family is driven (hardware, commands, stop, volume, loops, what is miss
 
 PinMAME 3.7 (the submodule) knows 2971 sets, 10 of them shared system ROM sets (`gts80s`,
 `allied`...: no game, see [how it works](how-it-works.md#rom-verification)). Of the other
-2961, 2530 (554 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
-sets built outside the full set, see its row), 76 in a ⚠️ one, 98 in a ❌ one, 257 have
+2961, 2554 (570 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
+sets built outside the full set, see its row), 52 in a ⚠️ one, 98 in a ❌ one, 257 have
 no sound board (October 2026, after the protocol fixes listed below; before them: 1939
 ✅, 444 ⚠️, 315 ❌, 6 not run). "Sets" counts every set (clones
 and revisions included), "games" the sets without a parent, "sound ROM ids" the distinct
@@ -117,10 +117,10 @@ are the system zips; 2796 of the 2961 sets are there).
 | GTS80SS_VOTRAX_OLD | GTS80SS | 1 | 0 | 1 | 1981-1981 | Gottlieb | 1 | marsp | ✅ | as GTS80SS: marsp 31 of 40 (29 files, 2 blips), all from silence (3 of 40 before) |
 | TABART2 | TABART | 1 | 1 | 1 | 1984-1984 | Christian Tabart (France) | 1 | sahalove | ✅ | fixed (one tone under every file before): the commands now go through the game's own path, sndbrd_data_w with the sound lines, then 00 (idle), sweep the lines 01..0F and 40..4F: sahalove 28 of 31, all from silence |
 | TABART3 | TABART | 1 | 1 | 1 | 1985-1985 | Christian Tabart (France) | 1 | grand8 | ✅ | as TABART2: grand8 26 of 31, all from silence |
+| ROWAMET | ROWAMET | 1 | 1 | 1 | ? | Rowamet | 1 | heavymtl | ✅ | fixed (5 of 40 before): stop 00, which the game sends after each command: heavymtl 38 of 40, all from silence, no board reset |
 | SPINB | SPINB | 27 | 16 | 14 | 1985-1996 | Inder (Spain), Spinball (Spain) | 26 | bushido, corsario | ⚠️ | Spinball's own boards fixed (bushido, mach2, jolypark, vrnwrld: 7 sets; 0 of 40 before): both sound CPUs take a byte only while its bit 7 is set, so each command is 8x..FF followed by 00, stop 8F; the MSM6585 boards' step volume, which the games' boot steps down to 0, is set back to 122. bushido 31 of 40, mach2, jolypark, vrnwrld 40 of 40, all from silence. Inder's machines (20 sets, INDER in the logs): stop 00, lapbylap 28 of 40 from silence; the MSM5205 ones (moonlght, pinclown, corsario, atleta) play their background music whenever bit 7 is clear, under every command (read in corsario's program) |
 | ST300V | ST300 | 21 | 6 | 7 | 1980-2024 | Stern, Stern / Idleman | 20 | flight2k | ⚠️ | speech only: the sweep is now 40..7F, the S14001A's 64 words (the manual command is the speech path): flight2k 37 of 40, freefall 40 of 40, all from silence, 0.2 to 0.4 s each, some clipped (0 of 40 before). The effects are the game's own timer programming (as ST300), not extracted |
 | ROMSTAR | TMS320AV120 | 1 | 1 | 1 | 1994-1994 | Romstar | 1 | ghv101 | ⚠️ | 40 of 40 but doubtful: every file runs to the 5 s cap and none starts from silence (something keeps playing under every command) |
-| ROWAMET | ROWAMET | 1 | 1 | 1 | ? | Rowamet | 1 | heavymtl | ⚠️ | first run: 5 of 40 |
 | S3DFS | WMSS67 | 1 | 1 | 1 | 1978-1978 | Williams | 1 | disco_l1 | ⚠️ | with the S67S idle framing (1 of 40 before): 40 of 40, all from silence, but few distinct (the files repeat with the lowest low bit of the command); the control bit (s67s_ctrl_w) is never set |
 | TABART | TABART | 1 | 1 | 1 | 1986-1986 | Christian Tabart (France) | 1 | hexagone | ⚠️ | doubtful: 31 of 40, 22 not from silence, 5 distinct levels, then "still not silent after 3 waits". The program reads the lines in an NMI raised by the game's switch strobe; commands sent as manual-command pairs with the idle 10 after gave one held sound for all (8 of 40): left as is |
 | S3WCS | WMSS67 | 1 | 1 | 1 | 1978-1978 | Williams | 1 | wldcp_l1 | ⚠️ | with the S67S idle framing (0 of 40 before): 16 of 40, all from silence, but all alike (one 2.6 s sound); the control bit (s67s_ctrl_w) is never set |
@@ -142,8 +142,9 @@ are the system zips; 2796 of the 2961 sets are there).
   (`Board::sound_boards`) mirrors. Two boards are listed when the machine runs both
   (System 11: the CPU board's and the separate one). The extractor's own report names
   the same board for every ROM of the survey (`boards` in `manifest.json`).
-- **What a ❌ needs** is, in most cases, the command protocol: the byte (or bytes)
-  the game sends for one sound is not what the sweep sends. The boot log of each ROM
+- **What a ❌ needed** was, in most cases, the command protocol: the byte (or bytes)
+  the game sends for one sound was not what the sweep sent (see the protocol fixes
+  below). The boot log of each ROM
   (`rom2altsound.log`, "game sent N sound byte(s)") shows what the game sends, which is
   the place to start.
 - **A ⚠️ doubtful family** plays something under every command. The usual cause is a
@@ -155,35 +156,35 @@ are the system zips; 2796 of the 2961 sets are there).
   `rom2altsound roms --fix-names` merges in (see
   [how it works](how-it-works.md#rom-verification)). It was run in full, not surveyed.
 
-## Cheapest fixes
+## Protocol fixes (October 2026)
 
-By sets gained for the work, from the boot logs above (nothing here is done yet):
+The fixes listed here as "cheapest" before were made, family by family, reading the path
+the game's own CPU takes to the board in PinMAME (and, where the code did not tell, the
+board's sound program, read with a disassembler, or its accesses traced with
+`R2A_TRACE`, see [the common method](families/common.md#diagnostics)); the notes of each
+row give the before and after of the survey run. In short:
 
-1. **The Williams System 3 to 7 idle protocol** (S67S, S3S, S3DFS, S3WCS, S7S_ND: 113
-   sets). The board starts a sound on the change from the idle value, and the games send
-   7F, the command, 7F (boot FF FF 7F, or 7F 19 7F 26). Sending the idle byte before each
-   command of the sweep (and the inverted value) is one change in the sweep for the
-   WMSS67 board.
-2. **Stopping the AT91 board** (DE3S, Whitestar 2003-2008: 156 sets). The sounds already
-   come out, named from sounds.dat; only the stop between commands fails (neither the
-   stop command nor a board reset silences it within 10 s). Finding the board's real stop
-   (or its idle floor, if what plays on is only a level the silence detection misses)
-   should make the family ✅.
-3. **The later Data East alphanumeric games** (DE1S: bttf_a28, simp_a27; 38 sets in the
-   family): the same symptom on the older DE board, the stop to find in their sound
-   program.
-4. **The Zaccaria inverted strobed byte** (ZAC1370, ZAC13136, ZAC11178, ZAC11178_13181,
-   ZAC13181x3: 108 sets). The games send 00 FE FE 7E or 00 7F FF 7F 3F BF: one byte
-   protocol, inverted and strobed, to send for every command; one change for five
-   families.
-5. **Taito's doubled commands** (TAITO_SINTETIZADOR, TAITO_SINTETIZADORPP: 26 sets): the
-   games send each command twice, with and without bit 7 (98 18); the sweep sends one.
-6. **A stop for the tone boards** (ST100, ST100B, GPMSU1, GPSSU1..4, ZAC1346, TABART,
-   TABART2, TABART3: 48 sets): the files come out, but a tone sustains between commands;
-   the idle byte of each board to send as the stop.
-7. **The Gottlieb System 80 boards** (GTS80S, GTS80SS, GTS80SS_VOTRAX, _OLD: 79 sets): the
-   command bits of the board (gts80s.c), as the game streams them at boot.
+- **an idle value between commands**: Williams System 3 to 7 (`FF cmd FF`), Gottlieb
+  System 80 (`cmd 00`), Zaccaria 1346, Game Plan MSU-1, Jac Van Ham, Playmatic Zira;
+- **a strobe or a flag bit**: Zaccaria's 1370 family (bit 7), Spinball (bit 7, then
+  `00`), Taito (the `00` that lets CB1 rise again);
+- **two nibbles or a sequence**: Game Plan MSU-3 (low, high, then `F`), Baby Pac-Man's
+  Cheap Squeak (with the video CPU's strobe), Bell Games' -51N, Capcom's serial messages
+  (`DA 04 07 0F nnnn`);
+- **a real stop**: Whitestar II (AT91) and Data East alphanumeric (`00`), the tone boards
+  (Stern SB-100, Game Plan SSU), Bally Sounds Deluxe, Rowamet;
+- **the game's own path**: Tabart's Sahara Love and Le Grand 8 (`sndbrd_data_w`);
+- **the board's level**: Spinball's MSM6585 boards, stepped back up after the boot steps
+  them down to 0.
 
-The rest needs more than a protocol: ST300/ST300V (97 sets, the game programs the timers
-itself), the discrete Atari and Astro boards (driven by lines), Capcom, Spinball and
-Tecnoplay (their own command paths), Baby Pac-Man (the board behind the video board).
+What is left, and why (each family's notes say what was tried):
+
+- **No command to send**: ST300 (76 sets; the game programs the timers itself; ST300V's
+  speech is extracted), Atari Generation 1 and 2 and Astro (the game writes the tone
+  registers), Romstar's Goofy Hoops (the game drives its QSound chip).
+- **Not reached**: Joctronic (the sound CPU waits on an interrupt from the main CPU's CTC
+  that never comes in PinMAME), Tecnoplay (nothing found that the TMS7000 program takes),
+  Tabart's L'Hexagone (its NMI comes from the game's switch strobe).
+- **Doubtful**: Inder's MSM5205 machines (their background music plays under every
+  command), Williams' Disco Fever and World Cup (few distinct sounds; a control bit the
+  tool does not set).
