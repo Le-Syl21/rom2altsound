@@ -166,6 +166,8 @@ fn ac_couples_dac(family: &str) -> bool {
 ///   files started over the last sound. `00` alone silences them, but on tmac_a24 nothing
 ///   played after its commands `0A`..`0D` (10 of 40, 38 with the reset): the reset puts the
 ///   program back as the stop leaves the chips silent.
+/// - ZAC1346 (Zaccaria 1346/1146): `00`, the idle value (T1 cleared; on Locomotion it also
+///   mutes the SN76477), which the games send after every command.
 /// - GTS80, GTS80SS (Gottlieb System 80 sound, sound and speech): `00`, what the games
 ///   send after every command (see `gts80_released`).
 /// - TAITO: `00`, the games' idle value (taito.c `taito_silenceSavedSndCmd`). The board
@@ -190,6 +192,7 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("TAITO", &[0x00]),
     ("AT91", &[0x00]),
     ("GTS80", &[0x00]),
+    ("ZAC1346", &[0x00]),
     ("GTS80SS", &[0x00]),
     ("DE", &[0x00]),
     ("SPINB", &[SPINB_STOP]),
@@ -5035,7 +5038,12 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
         Some("ZAC1370") => return addressed(mask, board, &zac_strobed(bytes)),
         Some("SPINB") => return addressed(mask, board, &spinb_released(bytes)),
         Some("GPSM") => return addressed(mask, board, &gpsm_framed(bytes)),
-        Some("GTS80" | "GTS80SS") => return addressed(mask, board, &gts80_released(bytes)),
+        // Zaccaria 1346: the game also follows every command with `00` (locomotn's boot:
+        // `07 00 05 00 0A 00`...), which puts the MCU's T1 back to idle (zacsnd.c
+        // `sp1346_data_w`).
+        Some("GTS80" | "GTS80SS" | "ZAC1346") => {
+            return addressed(mask, board, &gts80_released(bytes));
+        }
         // Zira: the COP420 reads three lines and acts on a change from idle.
         Some("PLAYZ") => {
             let framed: Vec<u8> = bytes
@@ -5059,6 +5067,11 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
     }
     let double = unsafe { ffi::shim_board_flags(board) } & ffi::SNDBRD_DOUBLECMD != 0;
     let t = target(mask, board);
+    if board_typestr(board).as_deref() == Some("TABART")
+        && unsafe { ffi::shim_board_type(board) } & 0xFF != 0
+    {
+        return bytes.iter().flat_map(|&b| tabart_sends(t, b)).collect();
+    }
     if board_typestr(board).as_deref() == Some("BY45")
         && unsafe { ffi::shim_board_type(board) } & 0xFF == BY45BP_SUBTYPE
     {
@@ -5227,6 +5240,19 @@ fn spinb_level(mask: u8, board: c_int) -> Vec<Send> {
     v
 }
 
+/// Christian Tabart's Sahara Love and Le Grand 8 boards (`TABART`, sub-types 1 and 2, on
+/// Gottlieb System 1 CPU boards): a command is the state of the sound lines the game
+/// writes, then the lines back to idle (sahalove's boot: `48`, then `00`), through the
+/// game's own path, `sndbrd_data_w`, whose handler (tabart.c `tabart_data_w`) reorders and
+/// inverts the lines; the manual command would store the byte as is (every file was the
+/// same held tone). Hexagone's board (sub-type 0), which reads the lines in an NMI the
+/// game's switch strobe raises, keeps the common method: tried as pairs through the manual
+/// command's toggle (`tabart_manCmd_w`), the line, then the idle `10`, every command gave
+/// the same held sound (8 of 40).
+fn tabart_sends(t: c_int, b: u8) -> Vec<Send> {
+    vec![Send::Data(t, c_int::from(b)), Send::Data(t, 0)]
+}
+
 /// Baby Pac-Man's Cheap Squeak (`SNDBRD_BY45BP`): the video CPU sends a byte as two
 /// nibbles on the board's four data lines, with its PIA's CB2 as the strobe (byvidpin.c
 /// `pia2cb2_w`: `sndbrd_0_data_w` with the nibble, then `sndbrd_0_ctrl_w` with CB2). The
@@ -5361,6 +5387,14 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
             "GTS80SS" => (
                 vec![("01..3F (the six lines the board reads)".to_string(), singles(0x01..=0x3F))],
                 format!("board {b} (GTS80SS): bytes 01..3F (six lines), each followed by 00"),
+            ),
+            // Tabart: the sound lines the handler reads (`tabart_sends`).
+            "TABART" if unsafe { ffi::shim_board_type(b) } & 0xFF != 0 => (
+                vec![(
+                    "01..0F, 40..4F (the sound lines; each followed by the idle 00)".to_string(),
+                    singles(0x01..=0x0F).into_iter().chain(singles(0x40..=0x4F)).collect(),
+                )],
+                format!("board {b} (TABART): lines 01..0F and 40..4F, each followed by 00"),
             ),
             // Game Plan SSU boards: four lines, `F` is no tone (the stop).
             "GPS1" | "GPS2" | "GPS4" => (

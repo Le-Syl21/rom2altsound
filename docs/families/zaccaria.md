@@ -70,7 +70,7 @@ Star God (`stargod`)
 ## <a name="sndbrd_zac1346"></a>SNDBRD_ZAC1346
 
 Zaccaria 1346 sound board (i8035 MCU and DAC; 1146 with an extra SN76477 on Locomotion)
-· PinMAME interface `ZAC1346` (`src/wpc/zacsnd.c`) · ⚠️ · 6 sets, 3 games, 3 sound ROM
+· PinMAME interface `ZAC1346` (`src/wpc/zacsnd.c`) · ✅ · 6 sets, 3 games, 3 sound ROM
 ids, 1980-1981, Zaccaria · e.g. Locomotion (`locomotn`), Earth, Wind & Fire (`ewf`),
 Space Shuttle (`sshtlzac`)
 
@@ -81,19 +81,20 @@ Space Shuttle (`sshtlzac`)
   `sp1346_data_w` stores the byte for the program (read on ports `80`..`FF`,
   `sp1346_data_r`, with the DIP switches in the high nibble) and sets the MCU's test
   input T1 to "command waiting" for a non-zero byte, "idle" for `00`; on Locomotion `00`
-  also mutes the SN76477. rom2altsound sends one byte per command and never sends `00`.
+  also mutes the SN76477. The games follow every command with `00` (locomotn's boot:
+  `07 00 05 00 0A 00`...); rom2altsound does the same (`gts80_released`, in
+  `board_sends`). Until 0.2.3 it sent one byte per command and never sent `00`.
 - **Sound list**: raw sweep `01`..`FF`.
-- **Stop, boot and resets**: no stop command: an i8035 reset after every sound. The tool
-  never puts the board back to idle (`00`), so T1 stays at "command waiting".
+- **Stop, boot and resets**: `00` (`BUILTIN_STOPS`), the idle value.
 - **Volume**: the board's own level, not scaled.
 - **Loops**: audio; sequencer-state reads the external RAM (`MRA_RAM` `0800`-`08FF` in
   `i8035_readmem`), not the MCU's internal RAM. Not measured.
 - **DUCK / STOP / CHANNEL**: defaults.
-- **Measured** ([board support](../board-support.md)): locomotn 40 of 40, but 39 not
-  from silence and all 40 run to the 5 s cap (7 distinct levels).
-- **Limits and what is missing**: the board keeps playing between commands. Cheapest
-  fix ([board support](../board-support.md#cheapest-fixes), item 6): `00`, the board's
-  idle value (T1 cleared), as the stop; not tried.
+- **Measured** (survey settings, [board support](../board-support.md)): locomotn 33 of 40,
+  ewf 38 of 40, sshtlzac 38 of 40, all from silence (locomotn before: 40 of 40, 39 not
+  from silence, all 40 to the 5 s cap; with the stop `00` alone, still all 40 to the cap:
+  the command left on the lines replays).
+- **Limits and what is missing**: no full run.
 - **In VPinball**: as ZAC1125: every write of the RAM byte is an id. Not tested in
   VPinball.
 

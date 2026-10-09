@@ -208,17 +208,20 @@ Christian Tabart L'Hexagone board (Z80 + YM2203 + YM3526) · PinMAME interface `
 - **Loops**: audio, sequencer state (Z80 RAM).
 - **Measured**: `hexagone`, 31 of 40, 22 not from silence, 5 distinct levels, then "still
   not silent after 3 waits" ([board support](../board-support.md)).
-- **Limits and what is missing**: the board needs two manual calls per command. The
-  cheapest fix from `tabart_manCmd_w`: send each command as two bytes (the port B value,
-  then the command), as its handler expects. The stop by reset does not silence it (the
-  run's last line).
+- **Limits and what is missing**: tried after 0.2.3 and dropped: each command as a pair
+  through the toggle (`00`, then the line state as `tabart_data_w` stores it, `data ^
+  C7`), then the idle `10` the same way (hexagone's boot: `58` between `10`s): 8 of 40,
+  all the same held sound at -19.4 LUFS, 105 board resets. The NMI the program reads the
+  command in comes from the game's switch strobe (`tabart_ctrl_w`, strobe 1), which the
+  halted game no longer makes; the command would need that strobe sequence. Not
+  determined further.
 - **In VPinball**: AltSound gets the game's line writes (`data` before the `^ 0xC7` of
   `tabart_data_w`), not the manual handler's pairs; not tested in VPinball.
 
 ## <a name="sndbrd_tabart2"></a>SNDBRD_TABART2
 
 Christian Tabart Sahara Love board (Z80 + AY-3-8912) · PinMAME interface `TABART`
-(`src/wpc/tabart.c`, sub-type 1) · status ⚠️ · 1 set, 1 game, 1 sound ROM id, 1984,
+(`src/wpc/tabart.c`, sub-type 1) · status ✅ · 1 set, 1 game, 1 sound ROM id, 1984,
 Christian Tabart (France) · e.g. Sahara Love (`sahalove`)
 
 - **Hardware**: Gottlieb System 1 game hardware; a Z80 at 19.6608/8 MHz
@@ -228,29 +231,34 @@ Christian Tabart (France) · e.g. Sahara Love (`sahalove`)
   the command from them and DIP bank 3 (sub-type 1). The manual handler (sub-type
   non-zero) only stores the byte as the command: no strobe, the program reads the latch
   at every NMI.
-- **Sound list**: raw sweep `01`..`FF`.
-- **Stop, boot and resets**: board reset: the Z80 restarts, but the latch keeps the last
-  command (not cleared on reset), so the program reads it again.
+- **What rom2altsound sends** (`tabart_sends`): the game's path, `sndbrd_data_w` with the
+  lines, then `00`, the idle lines (sahalove's boot: `48`, then `00`). Until 0.2.3 the
+  manual command stored the byte as the command itself, unconverted, and nothing put the
+  lines back to idle.
+- **Sound list**: `01`..`0F` and `40`..`4F`, the lines `tabart_data_w` reads (bits 0-3
+  and 6).
+- **Stop, boot and resets**: board reset after each sound (the lines are already idle).
 - **Loops**: audio, sequencer state (Z80 RAM).
-- **Measured**: `sahalove`, 40 of 40 but 39 not from silence and all alike (-17.0 LUFS):
-  one tone that never stops ([board support](../board-support.md)).
-- **Limits and what is missing**: no stop known: the board plays whatever the latch holds.
-  The cheapest fix identified in the survey: the idle byte of the board as its stop (the
-  value the game leaves when silent, to read in the boot log), sent before each command.
+- **Measured** (survey settings, [board support](../board-support.md)): `sahalove` 28 of
+  31, all from silence, 17 levels (before: 40 of 40, 39 not from silence, all at -17.0
+  LUFS).
+- **Limits and what is missing**: no stop command known (the board reset is enough).
 - **In VPinball**: AltSound gets the game's raw line writes, not the converted command;
   not tested in VPinball.
 
 ## <a name="sndbrd_tabart3"></a>SNDBRD_TABART3
 
 Christian Tabart Le Grand 8 board (Z80 + AY-3-8912) · PinMAME interface `TABART`
-(`src/wpc/tabart.c`, sub-type 2) · status ⚠️ · 1 set, 1 game, 1 sound ROM id, 1985,
+(`src/wpc/tabart.c`, sub-type 2) · status ✅ · 1 set, 1 game, 1 sound ROM id, 1985,
 Christian Tabart (France) · e.g. Le Grand 8 (`grand8`)
 
 - **Hardware**: Gottlieb System 80 game hardware (`gts80games.c`, `INIT_S80(grand8, ...)`),
   the same Z80 + AY-3-8912 board as Sahara Love.
 - **Commands**: as Sahara Love; `tabart_data_w` builds the command with DIP bank 4
   (sub-type 2) instead of 3.
-- **Measured**: `grand8`: "as sahalove" ([board support](../board-support.md)).
+- **What rom2altsound sends**, **sound list**, **stop**: as Sahara Love.
+- **Measured**: `grand8` 26 of 31, all from silence (before: as sahalove, one tone)
+  ([board support](../board-support.md)).
 - **Limits and what is missing**: as Sahara Love.
 - **In VPinball**: as Sahara Love; not tested.
 

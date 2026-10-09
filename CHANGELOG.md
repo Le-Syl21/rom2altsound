@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Tabart's Sahara Love and Le Grand 8** (TABART2, TABART3): the commands go out through
+  the game's own path (the sound lines, then idle), not the manual command, which stored
+  them unconverted: 28 of 31 and 26 of 31, all from silence (one held tone before).
+- **Zaccaria 1346** (ZAC1346): each command is followed by `00`, as the games send it, and
+  `00` is the stop: locomotn 33 of 40 all from silence (39 of 40 over the last sound
+  before), ewf and sshtlzac 38 of 40.
 - **Williams shuffle alleys** (SNDBRD_S11S), first run: Alley Cats 32 of 40, Gold Mine,
   Top Dawg and Shuffle Inn 40 of 40, all from silence; Tic-Tac-Strike has no sound (its
   sound ROMs are not dumped).
