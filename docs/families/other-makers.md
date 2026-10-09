@@ -4,8 +4,9 @@ The sound boards of the smaller makers: `SNDBRD_SPINB`, `SNDBRD_NUOVA`, `SNDBRD_
 `SNDBRD_JVH`, `SNDBRD_JVH2`, `SNDBRD_TABART`, `SNDBRD_TABART2`, `SNDBRD_TABART3`,
 `SNDBRD_HANKIN`, `SNDBRD_GRAND`, `SNDBRD_JEUTEL`, `SNDBRD_BARNI`, `SNDBRD_TECHNO`,
 `SNDBRD_TECNOPLAY`, `SNDBRD_JOCTRONIC` and `SNDBRD_ROWAMET`. Each has its own PinMAME
-interface, and none of them is named anywhere in rom2altsound's code: all go through the
-[common method](common.md) unchanged. That is, for every family below:
+interface, and most of them go through the [common method](common.md) unchanged; where a
+family's section says otherwise (its sends, its sweep range, a hook of the shim), that part
+replaces the default. That is, unless said otherwise:
 
 - **Sound list**: no sounds.dat section, so the raw sweep `01`..`FF` (`sweep`, default
   range), one byte per `sndbrd_manCmd` call every 4 frames, through the interface's manual
@@ -403,27 +404,45 @@ e.g. X Force (`xforce`), Space Team (`spcteam`)
 ## <a name="sndbrd_joctronic"></a>SNDBRD_JOCTRONIC
 
 Joctronic sound board (Z80 + AY-3-8910, DAC; YM2203 on some) · PinMAME interface
-`JOCTRONIC` (`src/wpc/joctronic.c`) · status ❌ · 3 sets, 3 games, 3 sound ROM ids, 1986,
+`JOCTRONIC` (`src/wpc/joctronic.c`) · status ✅ · 3 sets, 3 games, 3 sound ROM ids, 1986,
 Joctronic · e.g. Punky Willy (`punkywil`), Walkyria (`walkyria`), Pin Ball (`jpinball`)
 
-- **Hardware**: a Z80 game CPU; a Z80 sound CPU at 6 MHz (`snd_readmem`, RAM
-  `8000`-`87FF`, `MRA_RAM`, the command at `C000`); `joctronicS1`: two AY-3-8910 whose
-  ports feed two DACs; `joctronicS2`: an AY-3-8910, a YM2203 and the DACs.
+- **Hardware**: a Z80 game CPU with a Z80 CTC; a Z80 sound CPU at 6 MHz (`snd_readmem`,
+  RAM `8000`-`87FF`, `MRA_RAM`, the command at `C000`); `joctronicS1` (Walkyria, Pin
+  Ball): two AY-3-8910 whose ports feed two DACs; `joctronicS2` (Punky Willy): an
+  AY-3-8910, a YM2203 and the DACs.
 - **Commands**: the game writes the byte at `E000` (`sndbrd_0_data_w` in its memory map).
   `snd_data_w` (data and manual): latch, then an NMI pulse to the sound CPU. One byte =
-  one command, as far as the handler shows.
+  one command.
+- **The sound program** (read with a Z80 disassembler, the three programs): interrupt mode
+  1. The NMI handler (`0066`) queues every non-zero byte in a 16-byte ring at `8010`
+  (write pointer `800C`, read pointer `800E`). The IRQ (`RST 38`, through the vector at
+  `8000`, normally `003E`) counts at `8002` and writes `E000` (its acknowledge, `MWA_NOP`
+  in PinMAME); the main loop (`00B6`/`00AF`) takes one queued byte per pass, runs the
+  voices, then waits for `28` (Punky Willy) or `10` (the others) IRQs. The IRQ is the main
+  CPU's CTC channel 0 (`joctronic.c` `to0_w`, `cpu_set_irq_line(1, ...)`): the game
+  programs it 0.52 s into its boot (control `07`, time constant `13`: timer, prescaler 16,
+  no interrupt), 3 MHz / 16 / 19 = 9868 Hz, and from then on the sound CPU gets its IRQs,
+  game CPU halted or not (the CTC runs on PinMAME timers).
+  - Walkyria's and Pin Ball's programs restart on `80` in the NMI handler (`0071`:
+    `CP 80h`, `JP Z,0000h`) and play `01`..`3C` (`070A`: `CP 3Dh`, then a table of 60
+    scripts at `10CF` / `14E4`).
+  - Punky Willy's restarts on `01` (`0D00`) and plays `40`..`9F` in six groups of sixteen
+    (`40`-`4F` the four-voice tunes, table `16D2`; `50`-`5F` effects, `1E4E`; `60`-`6F`
+    `1E6E`; `70`-`7F` a tune and an effect together, `1752`; `80`-`8F` and `90`-`9F` two
+    more effect voices, `2264`, `2284`); every other byte is ignored.
+- **Sound list** (`sweep`, `joctronic_resets_on_80`, from the program in the sound CPU's
+  region: the `CP 80h`, `JP Z,0` of the first two): `01`..`3C` on Walkyria and Pin Ball,
+  `40`..`9F` on Punky Willy.
+- **Stop**: the board reset (the common one); the programs' own restart bytes do the
+  same (`JP 0000h`).
 - **Loops**: audio, sequencer state (Z80 RAM).
-- **Measured**: `punkywil`, 0 of 40; the game sent one byte (`01`) at boot
-  ([board support](../board-support.md)).
-- **Limits and what is missing**: the handler is a plain latch and NMI, and the NMI part
-  works: punkywil's sound program (`pw_sound.bin`, read with a Z80 disassembler) queues
-  every non-zero byte in a ring at `8010` (NMI handler at `0066`). Its main loop, though,
-  only moves on each time the IRQ handler (`RST 38` → `003E`) has counted `28` interrupts
-  at `8002`, and the IRQ comes from the main CPU's CTC channel 0 (`joctronic.c` `to0_w`,
-  `cpu_set_irq_line(1, ...)`). The boot plays no sound either (0.0 s of sound, one click),
-  with the game CPU running: the queued commands are never played in PinMAME, whose CTC
-  output to the sound CPU does not seem to run. Not fixable from rom2altsound's side
-  without inventing that interrupt; left as is.
+- **Measured** (survey settings, [board support](../board-support.md)): `punkywil` 29 of
+  40 (0 of 40 before: the sweep's `01`..`28` are all ignored or the restart),
+  `walkyria` 39 of 40, `jpinball` 28 of 40 (unchanged: their range starts at `01`).
+- **Limits and what is missing**: the earlier note here said the CTC interrupt never came
+  in PinMAME: it does, once the game has programmed the CTC; what failed was the range.
+  No stop command beyond the restart.
 - **In VPinball**: the game's byte is the byte the sweep sends; not tested in VPinball.
 
 ## <a name="sndbrd_rowamet"></a>SNDBRD_ROWAMET

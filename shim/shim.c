@@ -850,3 +850,14 @@ extern void by45_p21_w(UINT8 data);
 void shim_by45_p21(int on) {
   by45_p21_w((UINT8)on);
 }
+
+// ---------------------------------------------------------------------------------------
+// The program a CPU runs: its memory region (REGION_CPU1 + cpu, where the driver loads the
+// CPU's ROMs), or NULL. Lets the Rust side tell apart sound programs that share a board
+// interface but read their commands differently (Joctronic).
+const unsigned char *shim_cpu_region(int cpu, unsigned *len) {
+  if (cpu < 0 || cpu >= MAX_CPU || !Machine->drv->cpu[cpu].cpu_type)
+    return NULL;
+  *len = memory_region_length(REGION_CPU1 + cpu);
+  return memory_region(REGION_CPU1 + cpu);
+}

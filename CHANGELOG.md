@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Joctronic** (JOCTRONIC): the sweep is the range each sound program plays (read in
+  the three programs): Punky Willy's `40`..`9F` (it ignores everything else, and `01`
+  restarts it), Walkyria's and Pin Ball's `01`..`3C` (`80` restarts them): punkywil 29 of
+  40 (0 before), walkyria 39 of 40, jpinball 28 of 40. The board was documented as waiting
+  on a CTC interrupt PinMAME never delivers: the interrupt does arrive once the game has
+  set up its CTC; the range was the problem.
 - **Rowamet** (ROWAMET): stop `00`, which the game sends after each command: Heavy Metal
   38 of 40 from silence (5 of 40 before).
 - **Jac Van Ham** (JVH): each command is followed by the idle `3F`: Ice Mania 17 of 40 (1

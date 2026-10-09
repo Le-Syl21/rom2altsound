@@ -5568,6 +5568,22 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                     "board {b} (WPCS): bytes 01..FF without tempo/volume/prefix bytes 1E-2F, 60-72, 79, 7A, then the second bank 7A00..7AFF"
                 ),
             ),
+            // Joctronic: the range the board's own program plays (`joctronic_resets_on_80`).
+            "JOCTRONIC" if joctronic_resets_on_80() => (
+                vec![(
+                    "01..3C (the program's sounds; 80 = restart)".to_string(),
+                    singles(0x01..=0x3C),
+                )],
+                format!("board {b} (JOCTRONIC): bytes 01..3C (the program ignores 3D and up; 80 restarts it)"),
+            ),
+            "JOCTRONIC" => (
+                vec![(
+                    "40..9F (six groups of sixteen; 01 = restart, the other bytes are ignored)"
+                        .to_string(),
+                    singles(0x40..=0x9F),
+                )],
+                format!("board {b} (JOCTRONIC): bytes 40..9F (the program ignores 02..3F and A0 up; 01 restarts it)"),
+            ),
             _ => (
                 vec![("01..FF".to_string(), singles(1..=0xFF))],
                 format!("board {b} ({typestr}): bytes 01..FF"),
@@ -5604,6 +5620,20 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
         }
     }
     (v, notes, ranges)
+}
+
+/// Joctronic's two sound programs take different commands (both queue every non-zero byte
+/// in their NMI handler, `0066`, and take one per pass of their main loop). Walkyria's and
+/// Pin Ball's (`wk_sound.bin`, `pb.ic8s`) restart on `80` in that handler (`0071`:
+/// `CP 80h`, `JP Z,0000h`) and play `01`..`3C` (`070A`: `CP 3Dh`, then a table of 60
+/// scripts). Punky Willy's (`pw_sound.bin`) restarts on `01` and plays `40`..`9F`, six
+/// groups of sixteen (`0D00`: tunes, effects, a pair of both, two more effect voices),
+/// ignoring every byte below `40` and from `A0` up.
+fn joctronic_resets_on_80() -> bool {
+    let cpu = unsafe { ffi::shim_audio_cpu(0) };
+    ffi::cpu_region(cpu)
+        .and_then(|r| r.get(0x66..0x90))
+        .is_some_and(|nmi| nmi.windows(5).any(|w| w == [0xFE, 0x80, 0xCA, 0x00, 0x00]))
 }
 
 /// A sound command for one board: `board_sends`, plus what the board needs to play it.

@@ -129,6 +129,7 @@ unsafe extern "C" {
     ) -> c_int;
     pub fn shim_cpu_read(cpu: c_int, addr: c_uint, len: c_uint, out: *mut u8) -> c_int;
     pub fn shim_cpu_reg(cpu: c_int, reg: c_int) -> c_uint;
+    pub fn shim_cpu_region(cpu: c_int, len: *mut c_uint) -> *const u8;
     pub fn shim_board_type(board: c_int) -> c_int;
     pub fn shim_nibble_hook(board: c_int) -> c_int;
     pub fn shim_nibble_cmd(board: c_int, data: c_int);
@@ -188,6 +189,14 @@ pub fn vpm_path(vpm: &std::path::Path) -> [c_char; PINMAME_MAX_PATH] {
 pub fn sound_region() -> Option<&'static [u8]> {
     let mut len: c_uint = 0;
     let p = unsafe { shim_sound_region(&mut len) };
+    (!p.is_null() && len > 0).then(|| unsafe { std::slice::from_raw_parts(p, len as usize) })
+}
+
+/// The memory region of CPU `cpu` (where its program is loaded), if it has one. Only valid
+/// while the emulation runs; read it from the emulation thread.
+pub fn cpu_region(cpu: c_int) -> Option<&'static [u8]> {
+    let mut len: c_uint = 0;
+    let p = unsafe { shim_cpu_region(cpu, &mut len) };
     (!p.is_null() && len > 0).then(|| unsafe { std::slice::from_raw_parts(p, len as usize) })
 }
 
