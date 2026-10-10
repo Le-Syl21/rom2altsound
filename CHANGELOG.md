@@ -4,11 +4,20 @@
 
 - **Tecnoplay `40`..`7F` were wrong** (DAC samples, Space Team): counted as sounds in
   0.2.5 because the DAC was written, they played the sound program's own code. The
-  samples sit in four banked ROMs (ic8-ic11) that were never dumped and that the game
-  never asks for. [vpinball/pinmame#729](https://github.com/vpinball/pinmame/pull/729)
+  samples sit in four banked ROMs (ic8-ic11) that were never dumped and that Space
+  Team never asks for (X Force does: `40`, `4C`, `4D`, so its sample ROMs existed). [vpinball/pinmame#729](https://github.com/vpinball/pinmame/pull/729)
   (open) maps the banks and makes them silent; the submodule moves once it is merged.
   The "60 Hz square wave after a sample" reported on #721 was our test harness reading
   PinMAME's mono output as stereo, not PinMAME.
+- **Tecnoplay `80`..`FF` silent and the tunes without melody** (Space Team): three
+  wrong instructions in PinMAME's TMS7000 core (`SUB`/`SBB` operands reversed and the
+  borrow inverted, `XCHB Rn`, `DJNZ` changing the flags) sent the effects' instruments
+  to the wrong Y8950 registers and kept every tune note but the drums from keying on;
+  and the game never sent a command at all, since PinMAME returned 0 for the sound
+  board's READY bit at `0x15800`. Found by disassembling the whole sound program.
+  [vpinball/pinmame#730](https://github.com/vpinball/pinmame/pull/730) and
+  [#731](https://github.com/vpinball/pinmame/pull/731) (open); the 0.2.5 Space
+  Team pack has both faults, and the submodule moves once they are merged.
 
 ## 0.2.5 (2026-10-10)
 

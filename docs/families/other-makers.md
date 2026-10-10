@@ -459,9 +459,15 @@ e.g. X Force (`xforce`), Space Team (`spcteam`)
   command on port A: `00` back to the silent sound 0 (`E0EB`), `01`..`3F` the effects
   (low nibble the sound, bits 4-5 its variants: repeated or held), `40`..`7F` the DAC
   samples (low nibble, `E26D`; `4F` stops the sample, `DC38`; bits 4-5 ignored),
-  `80`..`FF` a note on channel 0 (`E101`). INT2 is the CPU's Timer 1 (`E688`, the voice
-  update, about 1.45 kHz), INT1 the Y8950 (`DBB8`: timer B steps the effects, timer A
-  plays the samples at 6.25 kHz).
+  `80`..`FF` the effects (`E101`): `81`/`82` switch an output latch bit, `80` ends the
+  effect, `83`..`DF` play instrument `cmd & 7F` on channels 0 and 1 together (two layered
+  voices) with a note from the table at `E1A4`, `E0`..`FF` play a sequence of notes
+  (pointers at `FEDA`, stepped by Timer 1). The tunes are `31`..`38` (`35` the attract
+  tune), on channels 0 and 2-5 plus the Y8950's rhythm mode on 6-8. INT2 is the CPU's
+  Timer 1 (`E688`, the voice update, about 1.45 kHz), INT1 the Y8950 (`DBB8`: timer B
+  steps the tunes, timer A plays the samples at 6.25 kHz). The program drives the
+  TKY2016 exactly as a Y8950/OPL (operators, `A0`-`C8`, `BD`, timers); it never touches
+  the ADPCM, keyboard or I/O registers, so nothing in it tells the two apart.
 - **What PinMAME lost** (why the board played only the first notes of a command before
   the PinMAME of 2026-10-10): `cpu/tms7000/tms7000.c` only looked at the interrupt lines
   at the start of a timeslice that followed a `tms7000_set_irq_line` call, kept a line
@@ -478,6 +484,23 @@ e.g. X Force (`xforce`), Space Team (`spcteam`)
   interrupts taken from IOCNT0's flags, Timer 1 wakes the CPU, a reset leaves `IDLE`, one
   timer). The shim is gone: rom2altsound sends the commands with `sndbrd_manCmd` as on
   every other board, and gets the same results.
+- **What PinMAME still got wrong** (found 2026-10-10, by disassembling the whole sound
+  program and logging every Y8950 write): three instructions of the TMS7000 core
+  (`cpu/tms7000/tms70op.c`). `SUB`/`SBB` computed source - destination (and `SBB`
+  subtracted the carry, not the borrow), `XCHB Rn` wrote A instead of Rn, and `DJNZ`
+  changed the status bits. The instrument loader (`E348`, `SUB %>9,B`) wrote every
+  `80`..`FF` effect into the wrong registers (the test register `01`, `06`, `58`...), and the
+  tune player's channel test (`RRC` in a `DJNZ` loop, then `JL`, `DDED`) never keyed a
+  melodic note: **the tunes played only their drums**, and after an `80`..`FF` the board
+  often stopped answering. And the game never sent anything: it waits for the board's
+  READY bit (TMS7000 port B bit 1) on D0 of `0x15800` (the send routine `1D62`), which
+  PinMAME returned as 0 (it had the status, inverted, at `0x14800`, where the schematic
+  wrongly puts it; MAME's `techno.cpp` has it at `0x15800`). Fixed by rom2altsound's
+  [vpinball/pinmame#730](https://github.com/vpinball/pinmame/pull/730) (the core,
+  as MAME's) and [#731](https://github.com/vpinball/pinmame/pull/731) (the ready
+  bit), both open: with them the game plays by itself, in the harness a whole game sends
+  74 commands in 36 s (`35`, `95`, `31`, `86`, `9F`, `F1`, `92`, `BF`, `ED`, `85`, `8A`,
+  `F9`, `A3`, `AD`, `FB`, `84`), all heard, and the tunes have their melody back.
 - **Sound list**: raw sweep `01`..`FF`.
 - **Stop**: `4F` (stops the sample) then `00` (`BUILTIN_STOPS`); a board reset only when
   the stop fails (none in the runs below).
@@ -498,13 +521,18 @@ e.g. X Force (`xforce`), Space Team (`spcteam`)
   and notes that no machine has those ROMs. PinMAME mapped `sound.bin` flat, so these
   commands played the sound program's own code as audio, then `FF`. Space Team's game
   program never sends `40`..`7F` (every byte it writes to the sound latch, `$43FE`, is
-  read in its code), so the sockets were probably empty.
+  read in its code), so its sockets were probably empty. X Force's game program does send
+  `40`, `4C` and `4D`, and the shared sound program has sample entries cut for exactly those
+  (`E2B8`/`E2D8`: `4800`-`B800`, `4A00`-`98FF`, `9C00`-`BA00`), so X Force had sample ROMs,
+  undumped like its sound ROM.
   [vpinball/pinmame#729](https://github.com/vpinball/pinmame/pull/729) (open) maps the
   banks; with no dump they read `FF` and `40`..`7F` are silent (rms 0.5 LSB, the
   mixer's dither; `40` a click under 0.5 ms). The submodule stays on f45e404 until it is
   merged.
-- **Limits and what is missing**: `80`..`FF` (a note on channel 0, which the game sends
-  often) give no sound on their own; `40`..`7F` play code as audio until #729 is in.
+- **Limits and what is missing**: until #730 is in, `80`..`FF` (the effects, which the
+  game sends all the time) give no sound and `01`..`3F` lack their melody (drums only):
+  the 0.2.5 packs have both faults; `40`..`7F` play code as audio until #729 is in. The
+  submodule moves once they are merged.
 - **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436
   and older: their libaltsound has no case for generation 0 (none) and joins the bytes two
   by two ([In VPinball](common.md#in-vpinball)), and their PinMAME logged every write of
