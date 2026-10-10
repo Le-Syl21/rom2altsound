@@ -1,0 +1,32 @@
+[package]
+name = "rom2altsound-gui"
+version.workspace = true
+edition = "2024"
+description = "rom2altsound in a window: pick ROM zips, see what they hold, make their AltSound packs"
+license = "BSD-3-Clause"
+repository = "https://github.com/Le-Syl21/rom2altsound"
+homepage = "https://github.com/Le-Syl21/rom2altsound"
+publish = false
+
+[features]
+default = []
+# Lets an egui_inspection client (the `egui_mcp` server, tools/gui-test) attach to a
+# running window, to drive it and take screenshots, when EGUI_INSPECTION is set.
+# Development only.
+inspection = ["eframe/inspection"]
+
+[dependencies]
+# The extraction engine, the ROM check and the command line's own option definitions.
+rom2altsound = { path = ".." }
+clap = "4.6"
+# Render with glow (OpenGL), not the default wgpu: half the dependencies, as in the
+# other egui apps of the project's author.
+eframe = { version = "0.36", default-features = false, features = [
+    "accesskit",
+    "default_fonts",
+    "glow",
+    "wayland",
+    "x11",
+] }
+rfd = "0.17"
+sys-locale = "0.3"

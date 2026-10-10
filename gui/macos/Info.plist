@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The bundle of rom2altsound-gui; CI replaces @VERSION@ with the crate version. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>rom2altsound</string>
+  <key>CFBundleDisplayName</key>
+  <string>rom2altsound</string>
+  <key>CFBundleIdentifier</key>
+  <string>io.github.le-syl21.rom2altsound</string>
+  <key>CFBundleExecutable</key>
+  <string>rom2altsound-gui</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@VERSION@</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>14.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>

@@ -24,7 +24,7 @@ use crate::soundsdat::SoundsDat;
 use crate::{dcsrom, sam, sha1};
 
 /// The board survey, read for the support level of each family.
-const BOARD_SUPPORT: &str = include_str!("../docs/board-support.md");
+pub(crate) const BOARD_SUPPORT: &str = include_str!("../docs/board-support.md");
 
 #[derive(Parser)]
 #[command(

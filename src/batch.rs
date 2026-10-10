@@ -4,8 +4,11 @@
 
 use std::ffi::OsString;
 use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::Cli;
@@ -173,43 +176,76 @@ fn firmware_dirs(cli: &Cli, rom: &RomSpec) -> Vec<PathBuf> {
 }
 
 /// How one ROM went.
-struct Outcome {
-    rom: String,
-    out: PathBuf,
-    secs: f64,
-    error: Option<String>,
+#[derive(Debug, Clone)]
+pub struct Outcome {
+    pub rom: String,
+    /// Its folder (empty when the ROM was not found).
+    pub out: PathBuf,
+    pub secs: f64,
+    pub error: Option<String>,
 }
+
+/// What the engine reports while it runs.
+pub enum Event<'a> {
+    /// A ROM could not be started (not found, or its process could not start).
+    NotStarted(&'a Outcome),
+    /// A ROM's process started; `log` is its log file when its output goes there.
+    Started {
+        rom: &'a str,
+        out: &'a Path,
+        log: Option<&'a Path>,
+    },
+    /// A line of a ROM's log (watched runs only).
+    Log { rom: &'a str, line: &'a str },
+    /// Where a ROM stands (watched runs only).
+    Progress {
+        rom: &'a str,
+        step: &'a crate::progress::Step,
+    },
+    /// A ROM's process ended.
+    Finished(&'a Outcome),
+}
+
+/// A watched run (the window program): every ROM's output goes to its log file and is read
+/// back as [`Event::Log`] lines, its progress comes as [`Event::Progress`], and setting
+/// `cancel` stops everything (each ROM's processes are killed, and the ROMs not started yet
+/// are not started).
+#[derive(Default)]
+pub struct Watch {
+    pub cancel: Arc<AtomicBool>,
+}
+
+/// The message of a ROM stopped by [`Watch::cancel`].
+pub const CANCELLED: &str = "cancelled";
 
 struct Running {
     rom: RomSpec,
     out: PathBuf,
     child: Child,
     start: Instant,
+    log: Option<Tail>,
+    progress: Option<(Tail, crate::progress::Tracker)>,
+}
+
+/// The ROM arguments that cannot go together; `Err` is the message.
+pub fn check(cli: &Cli) -> Result<(), String> {
+    if cli.names.is_some() && cli.rom_args.len() > 1 {
+        // Names belong to one sound ROM.
+        return Err("--names goes with one ROM (each sound ROM has its own names)".into());
+    }
+    Ok(())
+}
+
+/// The folder every ROM's folder goes in.
+pub fn root(cli: &Cli) -> PathBuf {
+    cli.out.clone().unwrap_or_else(|| PathBuf::from("."))
 }
 
 /// Extracts every ROM of the command line; returns the process exit code.
 pub fn run(cli: &Cli) -> i32 {
-    if cli.names.is_some() && cli.rom_args.len() > 1 {
-        // Names belong to one sound ROM.
-        eprintln!("error: --names goes with one ROM (each sound ROM has its own names)");
+    if let Err(e) = check(cli) {
+        eprintln!("error: {e}");
         return 2;
-    }
-    let root = cli.out.clone().unwrap_or_else(|| PathBuf::from("."));
-    let mut outcomes = Vec::new();
-    let mut queue = Vec::new();
-    for arg in &cli.rom_args {
-        match resolve(arg, cli.roms.as_deref()) {
-            Ok(r) => queue.push(r),
-            Err(e) => {
-                eprintln!("{arg}: {e}");
-                outcomes.push(Outcome {
-                    rom: arg.clone(),
-                    out: PathBuf::new(),
-                    secs: 0.0,
-                    error: Some(e),
-                });
-            }
-        }
     }
     let exe = match std::env::current_exe() {
         Ok(e) => e,
@@ -218,22 +254,81 @@ pub fn run(cli: &Cli) -> i32 {
             return 1;
         }
     };
+    let outcomes = run_with(cli, &exe, None, &mut |e| match e {
+        Event::NotStarted(o) => eprintln!("{}: {}", o.rom, o.error.as_deref().unwrap_or("")),
+        Event::Started {
+            rom, log: Some(l), ..
+        } => eprintln!("{rom}: started (log: {})", l.display()),
+        Event::Finished(o) => println!("{}", line(o)),
+        _ => {}
+    });
+    let code = recap(&outcomes);
+    match write_index(cli, &outcomes) {
+        Some(Ok(p)) => println!("pages of every ROM: {}", p.display()),
+        Some(Err(e)) => eprintln!("cannot write the index page: {e}"),
+        None => {}
+    }
+    code
+}
+
+/// The page linking every ROM's page at the output root, once some ROM went through (and
+/// pages are written); its path, or why it could not be written.
+pub fn write_index(cli: &Cli, outcomes: &[Outcome]) -> Option<Result<PathBuf, String>> {
+    if cli.no_html || cli.cold_boot_only || !outcomes.iter().any(|o| o.error.is_none()) {
+        return None;
+    }
+    crate::listen::write_index(&root(cli)).transpose()
+}
+
+/// Extracts every ROM of `cli` with child processes of `exe` (this program), reporting what
+/// happens to `on`; returns how each ROM went, in the order they ended.
+pub fn run_with(
+    cli: &Cli,
+    exe: &Path,
+    watch: Option<&Watch>,
+    on: &mut dyn FnMut(Event),
+) -> Vec<Outcome> {
+    let root = root(cli);
+    let mut outcomes = Vec::new();
+    let mut queue = Vec::new();
+    for arg in &cli.rom_args {
+        match resolve(arg, cli.roms.as_deref()) {
+            Ok(r) => queue.push(r),
+            Err(e) => {
+                let o = Outcome {
+                    rom: arg.clone(),
+                    out: PathBuf::new(),
+                    secs: 0.0,
+                    error: Some(e),
+                };
+                on(Event::NotStarted(&o));
+                outcomes.push(o);
+            }
+        }
+    }
+    let cancelled = || watch.is_some_and(|w| w.cancel.load(Ordering::Relaxed));
     let jobs = (cli.jobs as usize).min(queue.len()).max(1);
-    // One at a time: the child writes to the terminal. Several: each to a log file in its
-    // ROM folder, and only the summaries come here.
-    let live = jobs == 1;
+    // One at a time on a terminal: the child writes to it. Otherwise: each to a log file in
+    // its ROM folder, and only the summaries come here.
+    let live = jobs == 1 && watch.is_none();
     queue.reverse();
     let mut running: Vec<Running> = Vec::new();
     while !queue.is_empty() || !running.is_empty() {
-        while running.len() < jobs {
+        while running.len() < jobs && !cancelled() {
             let Some(rom) = queue.pop() else { break };
             let out = root.join(&rom.name);
-            match spawn(&exe, cli, &rom, &out, live) {
+            let progress = watch.map(|_| progress_file(&rom.name));
+            match spawn(exe, cli, &rom, &out, live, progress.as_deref()) {
                 Ok(child) => {
-                    if !live {
-                        eprintln!("{}: started (log: {})", rom.name, out.join(LOG).display());
-                    }
+                    let log = (!live).then(|| out.join(LOG));
+                    on(Event::Started {
+                        rom: &rom.name,
+                        out: &out,
+                        log: log.as_deref(),
+                    });
                     running.push(Running {
+                        log: watch.and(log).map(Tail::new),
+                        progress: progress.map(|p| (Tail::new(p), Default::default())),
                         rom,
                         out,
                         child,
@@ -241,22 +336,46 @@ pub fn run(cli: &Cli) -> i32 {
                     })
                 }
                 Err(e) => {
-                    eprintln!("{}: {e}", rom.name);
-                    outcomes.push(Outcome {
+                    let o = Outcome {
                         rom: rom.name,
                         out,
                         secs: 0.0,
                         error: Some(e),
-                    });
+                    };
+                    on(Event::NotStarted(&o));
+                    outcomes.push(o);
                 }
             }
         }
+        if cancelled() {
+            for mut job in running.drain(..) {
+                kill_tree(&mut job.child);
+                follow(&mut job, on);
+                let o = Outcome {
+                    rom: job.rom.name,
+                    out: job.out,
+                    secs: job.start.elapsed().as_secs_f64(),
+                    error: Some(CANCELLED.into()),
+                };
+                if let Some((p, _)) = &job.progress {
+                    let _ = std::fs::remove_file(&p.path);
+                }
+                on(Event::Finished(&o));
+                outcomes.push(o);
+            }
+            break;
+        }
         let mut i = 0;
         while i < running.len() {
+            follow(&mut running[i], on);
             match running[i].child.try_wait() {
                 Ok(None) => i += 1,
                 r => {
-                    let job = running.swap_remove(i);
+                    let mut job = running.swap_remove(i);
+                    follow(&mut job, on);
+                    if let Some((p, _)) = &job.progress {
+                        let _ = std::fs::remove_file(&p.path);
+                    }
                     let error = match r {
                         Ok(Some(st)) if st.success() => None,
                         Ok(Some(st)) => Some(match last_error(&job.out, live) {
@@ -272,7 +391,7 @@ pub fn run(cli: &Cli) -> i32 {
                         secs: job.start.elapsed().as_secs_f64(),
                         error,
                     };
-                    println!("{}", line(&o));
+                    on(Event::Finished(&o));
                     outcomes.push(o);
                 }
             }
@@ -281,20 +400,112 @@ pub fn run(cli: &Cli) -> i32 {
             std::thread::sleep(Duration::from_millis(200));
         }
     }
-    let code = recap(&outcomes);
-    if !cli.no_html && !cli.cold_boot_only && outcomes.iter().any(|o| o.error.is_none()) {
-        match crate::listen::write_index(&root) {
-            Ok(Some(p)) => println!("pages of every ROM: {}", p.display()),
-            Ok(None) => {}
-            Err(e) => eprintln!("cannot write the index page: {e}"),
+    outcomes
+}
+
+/// Reports what a watched ROM wrote since the last look.
+fn follow(job: &mut Running, on: &mut dyn FnMut(Event)) {
+    let rom = job.rom.name.as_str();
+    if let Some(t) = &mut job.log {
+        for l in t.lines() {
+            on(Event::Log { rom, line: &l });
         }
     }
-    code
+    if let Some((t, tracker)) = &mut job.progress {
+        for l in t.lines() {
+            if let Some(step) = tracker.line(&l) {
+                on(Event::Progress { rom, step });
+            }
+        }
+    }
+}
+
+/// The progress file of a watched ROM (a few lines, removed when the ROM ends).
+fn progress_file(rom: &str) -> PathBuf {
+    let p = std::env::temp_dir().join(format!(
+        "rom2altsound-progress-{}-{rom}.jsonl",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&p);
+    p
+}
+
+/// A file another process appends to, read line by line as it grows.
+struct Tail {
+    path: PathBuf,
+    pos: u64,
+    partial: Vec<u8>,
+}
+
+impl Tail {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            pos: 0,
+            partial: Vec::new(),
+        }
+    }
+
+    /// The whole lines written since the last call.
+    fn lines(&mut self) -> Vec<String> {
+        let Ok(mut f) = File::open(&self.path) else {
+            return Vec::new();
+        };
+        if f.seek(SeekFrom::Start(self.pos)).is_err() {
+            return Vec::new();
+        }
+        let mut buf = Vec::new();
+        if f.read_to_end(&mut buf).is_err() {
+            return Vec::new();
+        }
+        self.pos += buf.len() as u64;
+        self.partial.extend_from_slice(&buf);
+        let mut out = Vec::new();
+        while let Some(i) = self.partial.iter().position(|&b| b == b'\n') {
+            let l: Vec<u8> = self.partial.drain(..=i).collect();
+            out.push(
+                String::from_utf8_lossy(&l)
+                    .trim_end_matches(['\r', '\n'])
+                    .to_owned(),
+            );
+        }
+        out
+    }
+}
+
+/// Stops a ROM's process and the ones it started (the factory cold boot).
+fn kill_tree(child: &mut Child) {
+    // Its process group (see `spawn`): the child and every process it started.
+    #[cfg(unix)]
+    if let Ok(pgid) = libc::pid_t::try_from(child.id()) {
+        // SAFETY: a plain system call on a process group this program created.
+        unsafe { libc::kill(-pgid, libc::SIGKILL) };
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &child.id().to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 const LOG: &str = "rom2altsound.log";
 
-fn spawn(exe: &Path, cli: &Cli, rom: &RomSpec, out: &Path, live: bool) -> Result<Child, String> {
+fn spawn(
+    exe: &Path,
+    cli: &Cli,
+    rom: &RomSpec,
+    out: &Path,
+    live: bool,
+    progress: Option<&Path>,
+) -> Result<Child, String> {
     std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
     let mut cmd = Command::new(exe);
     cmd.args(child_args(cli, rom, out));
@@ -306,7 +517,25 @@ fn spawn(exe: &Path, cli: &Cli, rom: &RomSpec, out: &Path, live: bool) -> Result
             .map_err(|e| format!("{}: {e}", log.display()))?;
         cmd.stdout(Stdio::from(f)).stderr(Stdio::from(g));
     }
+    if let Some(p) = progress {
+        cmd.env(crate::progress::ENV, p).stdin(Stdio::null());
+        // A process group of its own, so that a cancel stops the processes it starts too.
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+    }
     cmd.spawn().map_err(|e| format!("cannot start: {e}"))
+}
+
+/// A ROM's listening page, when it was written.
+pub fn page_of(out: &Path) -> Option<PathBuf> {
+    let p = out.join(crate::listen::PAGE);
+    p.is_file().then_some(p)
 }
 
 /// The child's last `error:` line, from its log file (when it was not live).
@@ -322,7 +551,7 @@ fn last_error(out: &Path, live: bool) -> Option<String> {
 }
 
 /// One line per ROM, from its manifest.
-fn line(o: &Outcome) -> String {
+pub fn line(o: &Outcome) -> String {
     if let Some(e) = &o.error {
         return format!("{}: FAILED: {e}", o.rom);
     }

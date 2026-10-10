@@ -4110,6 +4110,12 @@ impl Extractor {
             _ => cmd.id.clone(),
         };
         eprint!("  {what} {:<32}", cmd.name);
+        crate::progress::command(
+            &format!("{:?}", self.pass),
+            self.queue.len(),
+            &cmd.id,
+            &cmd.name,
+        );
         self.solo(match cmd.check.map(|c| c.kind) {
             Some(TakeKind::ChipVoice) => Some(VOICE_CHIP),
             Some(TakeKind::MixMusic | TakeKind::MixWith) => Some(FM_CHIP),
