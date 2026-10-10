@@ -83,6 +83,10 @@ are in a C shim.
    until the game's master volume was seen; at most `--boot-max-secs` (60 s). The manifest
    says which of `quiet`, `repeats` or `max` ended it. Then every game CPU is halted, using
    the commander's own selection (`cpu_type && cpu_flags == 0`). Audio CPUs keep running.
+   On the boards that take no command (Stern SB-300) the game CPU is the
+   one that plays the sounds: it keeps running, and each sound is asked for through the
+   game's own sound layer, read in its program
+   ([game-driven boards](families/common.md#game-driven-boards)).
    If the halt split a Whitestar `FE xx FD` (see Volume), the missing `FD` is sent.
 4. After 0.5 s, so that any half-sent command expires, the tool sends the stop command and
    waits for silence. With the factory settings (the default) it then sends the reference

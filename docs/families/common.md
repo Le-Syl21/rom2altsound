@@ -6,7 +6,10 @@ reference for every step is [how it works](../how-it-works.md); this page is the
 pipeline seen from the board's side, with the code that implements each step.
 
 Stern SAM is the exception to everything here: it has no sound board and is read from
-the ROM image without emulation (see [Stern SAM](stern-sam.md#sndbrd_none_sam)).
+the ROM image without emulation (see [Stern SAM](stern-sam.md#sndbrd_none_sam)). The
+boards that take no sound command at all (Stern SB-300, Stern's Astro tester) are the
+other one: the game itself is asked for its sounds, see
+[Game-driven boards](#game-driven-boards).
 
 ## Which family a game belongs to
 
@@ -246,6 +249,47 @@ sound boards, `0x00xx` for each board 1 row where board 0 has no row for that by
 the families concerned are listed as not playable in `docs/vpx_playback.json` and on the
 site. Unless a section says otherwise, no pack of a family has been played in VPinball
 itself: what is measured is the id AltSound looks up.
+
+## Game-driven boards
+
+On two families the game CPU makes every sound itself, by writing the sound chip's
+registers over time, and sends no sound command: Stern's SB-300
+([ST300](stern-early.md#sndbrd_st300)) and its board tester
+([ASTRO](stern-early.md#sndbrd_astro)). There is nothing to sweep: a byte
+sent to these boards is a register value, not a sound. What every one of these programs
+has is a sound layer: a routine that plays a sound and a request the rest of the game uses
+to ask for one. `src/gamesound.rs` reads that layer in the game's program image (the game
+CPU's memory region):
+
+- **The request**: what the game's own code writes to start a sound: a script pointer and
+  a delay byte in RAM (Stern).
+- **The catalog**: every sound the program asks for, found where the program refers to it
+  (thread instructions, direct loads, tables), each checked against the format the sound
+  routine reads.
+- **The stop**: what the game does to silence its sounds (Stern: the script op that
+  silences the board).
+
+The extraction then differs from the method above in four places
+(`Extractor::end_boot`, `gamesound::game_driven`):
+
+- **No halt**: the game CPU keeps running, idling in its attract mode, since it is the one
+  that plays the sounds. None of these games plays a sound in attract mode once booted:
+  every file of the runs the family sections give starts from silence, and every wait for
+  quiet succeeded at once.
+- **Sending**: a request is written into the game's RAM through the game CPU's own memory
+  map, all its bytes between two frames (`Send::Pokes`, shim.c `shim_game_pokes`, which
+  calls PinMAME's `cpunum_write_byte`), so the game never sees half of one.
+- **The ids** are the game's own internal sound ids: a script address (Stern). They are written in `altsound.csv` as they are, but
+  they are not sound commands: AltSound never receives them (no command reaches it on
+  these machines), so **the packs cannot play in VPinball**. They are a recording of every
+  sound of the game, for listening, measurement and archive, and for the loudness of each
+  ROM. `manifest.json` (`game_sound`) gives the layer read, what an id is, and where the
+  program refers to each sound.
+- **Volume**: no volume command; the files are at the level the game plays them.
+
+The boot, the recording, the end of a sound, the loops (from the audio only: these
+machines have no sound CPU whose state could be read) and the pack's columns are the
+common ones.
 
 ## The quick survey
 

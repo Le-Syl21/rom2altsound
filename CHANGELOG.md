@@ -23,6 +23,19 @@
   and reports JavaScript errors, failed requests and WAV files the browser cannot decode.
 - Release workflow: GUI archives for every system, signed like the command line
   (Authenticode on Windows; Developer ID, notarized and stapled on macOS).
+- **Boards with no sound command, game-driven** (`src/gamesound.rs`): on Stern's SB-300
+  (ST300) and its Astro board tester the game CPU plays every sound itself, programming the
+  timers from scripts its interrupt runs, and sends no command, so the sweep had nothing
+  to send (meteor, sam_iii: 0 of 40). The game's own sound layer is now read in its
+  program (six script formats among the 15 programs, MOD sets included), the game is left
+  running in attract mode, and every script the program starts is asked for as its code
+  does (the script pointer and the delay byte in RAM, written between two frames:
+  `shim_game_pokes`); the stop is the game's own silencing op. meteor 16 of 16, the 15
+  programs 308 of 317, sam_iii 6 of 6, all from silence. The ids in `altsound.csv` are the
+  scripts' addresses, not commands: the packs cannot play in VPinball (no command reaches
+  AltSound there); `manifest.json` (`game_sound`) says what the layer is and where the
+  program refers to each sound. ST300V's effects (the same scripts) are not done: the
+  speech sweep halts the game CPU.
 
 ## 0.2.4 (2026-10-10)
 

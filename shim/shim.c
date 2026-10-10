@@ -977,3 +977,30 @@ void shim_tecnoplay_cmd(int board, int data) {
   shim_tecno_zero = (data & 0xff) == 0;
   shim_tecno_pending = 1;
 }
+
+// ---------------------------------------------------------------------------------------
+// Game-driven sound (Stern SB-300, Atari, Astro, Romstar): boards with no sound command,
+// whose sounds the game CPU makes itself by writing the sound registers over time. The
+// tool leaves the game running and asks for a sound the way the game's own code does, by
+// writing the game's sound request into its RAM (rust: gamesound.rs). This writes the game
+// CPU's memory through its own memory map, as the CPU would (cpuintrf.c
+// `cpunum_write_byte`), between two frames.
+
+// The game CPU: the first CPU with a type and no flags (the selection of PinMAME's sound
+// commander, as `shim_halt_game_cpus`), or -1.
+int shim_game_cpu(void) {
+  int ii;
+  for (ii = 0; ii < MAX_CPU; ii++)
+    if (Machine->drv->cpu[ii].cpu_type && Machine->drv->cpu[ii].cpu_flags == 0)
+      return ii;
+  return -1;
+}
+
+// Writes `n` bytes, `data[i]` at `addr[i]`, in order, all before the CPU runs again.
+void shim_game_pokes(int cpu, const unsigned *addr, const unsigned char *data, int n) {
+  int i;
+  if (cpu < 0 || cpu >= MAX_CPU || !Machine->drv->cpu[cpu].cpu_type)
+    return;
+  for (i = 0; i < n; i++)
+    cpunum_write_byte(cpu, addr[i], data[i]);
+}

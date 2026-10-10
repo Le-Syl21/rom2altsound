@@ -22,6 +22,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
+use crate::gamesound::{self, Poke, Request};
 use crate::loudness::{self, Aggregate, FileLoudness};
 use crate::soundsdat::{Entry, SoundsDat};
 use crate::volume::{self, VolumeCmd};
@@ -460,6 +461,27 @@ enum Send {
     /// Scenario (`--only 0x000C+2.5+0x0390`): wait this many seconds (in milliseconds)
     /// before the next send, keeping the recording open.
     Wait(u32),
+    /// Game-driven sound (`gamesound`): the first `n` bytes written into the game CPU's
+    /// memory map in one frame, the game's own sound request.
+    Pokes([Poke; gamesound::MAX_POKES], u8),
+}
+
+/// A game-driven request as sends.
+fn requests(r: &Request) -> Vec<Send> {
+    match r {
+        Request::Pokes(p) => pokes(p),
+    }
+}
+
+/// The bytes as one `Send::Pokes` per `MAX_POKES`.
+fn pokes(v: &[Poke]) -> Vec<Send> {
+    v.chunks(gamesound::MAX_POKES)
+        .map(|c| {
+            let mut a = [Poke { addr: 0, val: 0 }; gamesound::MAX_POKES];
+            a[..c.len()].copy_from_slice(c);
+            Send::Pokes(a, c.len() as u8)
+        })
+        .collect()
 }
 
 /// What the commands being played are for.
@@ -1191,6 +1213,10 @@ struct Manifest<'a> {
     /// change leaks into the next.
     refreshed_before_each_command: &'a [String],
     commands_from: &'a [String],
+    /// Game-driven sound (`gamesound`): the game's own sound layer, what an id is, and
+    /// where the program refers to each sound.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    game_sound: Option<serde_json::Value>,
     /// Raw sweep (no sounds.dat section): per board and range, what came out of it.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     sweep: Vec<SweepResult>,
@@ -1425,6 +1451,9 @@ pub struct Extractor {
     /// the first frame), and every word the game sent it, with the board's replies.
     p2k: Option<bool>,
     p2k_log: Vec<ffi::P2kWord>,
+    /// Game-driven sound: the game's sound layer, read once booted (the game CPU then keeps
+    /// running, `gamesound`).
+    game: Option<gamesound::Layer>,
     pub done: bool,
     pub error: Option<String>,
 }
@@ -1512,6 +1541,7 @@ impl Extractor {
             mix_music: None,
             p2k: None,
             p2k_log: Vec::new(),
+            game: None,
             done: false,
             error: None,
         }
@@ -1990,6 +2020,20 @@ impl Extractor {
                 Send::Reset => {
                     self.reset_boards();
                     None
+                }
+                Send::Pokes(p, n) => {
+                    let p = &p[..n as usize];
+                    let addr: Vec<c_uint> = p.iter().map(|p| p.addr).collect();
+                    let val: Vec<u8> = p.iter().map(|p| p.val).collect();
+                    unsafe {
+                        ffi::shim_game_pokes(
+                            ffi::shim_game_cpu(),
+                            addr.as_ptr(),
+                            val.as_ptr(),
+                            c_int::from(n),
+                        )
+                    };
+                    Some(0)
                 }
             };
             let dcs = board.is_some_and(|b| is_dcs(&self.families[(b & 1) as usize]));
@@ -2890,8 +2934,34 @@ impl Extractor {
         {
             eprintln!("cannot dump the sound region to {}: {e}", path.display());
         }
-        let halted = unsafe { ffi::shim_halt_game_cpus(1) };
-        eprintln!("halted {halted} game CPU(s)");
+        let game_driven = self.mask == 1
+            && gamesound::game_driven(
+                &ffi::cstr(unsafe { ffi::sndbrd_typestr(0) }).unwrap_or_default(),
+                unsafe { ffi::shim_board_type(0) } & 0xFF,
+            );
+        if game_driven {
+            let typestr = ffi::cstr(unsafe { ffi::sndbrd_typestr(0) }).unwrap_or_default();
+            let image = ffi::cpu_region(unsafe { ffi::shim_game_cpu() }).unwrap_or_default();
+            match gamesound::find(&typestr, image) {
+                Ok(layer) => {
+                    eprintln!(
+                        "  board 0 ({}): no sound command; the game's own sound layer: {}",
+                        self.families[0], layer.what
+                    );
+                    eprintln!("  game CPU left running (its attract mode)");
+                    self.game = Some(layer);
+                }
+                Err(e) => {
+                    return self.fail(format!(
+                        "sound board 0 ({}) takes no sound command (the game CPU makes the sounds) and the game's sound layer was not found: {e}",
+                        self.families[0]
+                    ));
+                }
+            }
+        } else {
+            let halted = unsafe { ffi::shim_halt_game_cpus(1) };
+            eprintln!("halted {halted} game CPU(s)");
+        }
         let mixer = ffi::mixer_channels();
         self.mixer = mixer.clone();
         eprintln!(
@@ -2927,7 +2997,7 @@ impl Extractor {
         if self.mask == 0 {
             return self.fail("no sound board on this machine".into());
         }
-        for b in self.board_list() {
+        for b in self.board_list().filter(|_| self.game.is_none()) {
             let typestr = board_typestr(b).unwrap_or_default();
             if unsafe { ffi::shim_board_has_mancmd(b) } == 0
                 || NOOP_MANCMD.contains(&typestr.as_str())
@@ -4213,6 +4283,9 @@ impl Extractor {
     /// The family's own stop command from sounds.dat ("All sound off" for DCS, "Reset Sound
     /// System" for WPCS), else from `BUILTIN_STOPS`; boards without one are reset instead.
     fn stop_sends(&self) -> Vec<Send> {
+        if let Some(game) = &self.game {
+            return requests(&game.stop);
+        }
         if let Some(stop) = &self.opts.stop {
             let e = Entry {
                 bytes: parse_id(stop),
@@ -4253,7 +4326,32 @@ impl Extractor {
         let entries = self
             .dat
             .game_entries(&self.opts.rom, self.opts.parent.as_deref());
-        let mut cmds: Vec<Cmd> = if entries.is_empty() {
+        let mut cmds: Vec<Cmd> = if let Some(game) = &self.game {
+            let digits = game.id_digits;
+            self.commands_from = vec![format!(
+                "the game's own sound layer ({} sounds; ids: {}): {}",
+                game.sounds.len(),
+                game.id_is,
+                game.what
+            )];
+            eprintln!(
+                "{} sound(s) of the game's own sound layer",
+                game.sounds.len()
+            );
+            game.sounds
+                .iter()
+                .map(|g| Cmd {
+                    id: format!("0x{:0digits$X}", g.id),
+                    name: String::new(),
+                    board: self.families[0].clone(),
+                    board_no: 0,
+                    sends: requests(&g.start),
+                    slot: None,
+                    alt: None,
+                    check: None,
+                })
+                .collect()
+        } else if entries.is_empty() {
             let (cmds, notes, ranges) = sweep(self.mask);
             eprintln!(
                 "no sounds.dat section for {}: sweeping raw commands",
@@ -4314,7 +4412,14 @@ impl Extractor {
             }
             cmds
         };
-        if let Some(only) = &self.opts.only {
+        if let (Some(only), Some(_)) = (&self.opts.only, &self.game) {
+            // Game-driven sound: the ids are the game's (`--only 0x5883`).
+            let want: Vec<Option<u32>> =
+                only.iter().map(|w| crate::altsound::parse_id(w)).collect();
+            cmds.retain(|c| want.contains(&crate::altsound::parse_id(&c.id)));
+            self.commands_from
+                .push(format!("--only ({} sounds)", cmds.len()));
+        } else if let Some(only) = &self.opts.only {
             cmds = only
                 .iter()
                 .map(|want| {
@@ -4835,6 +4940,14 @@ impl Extractor {
                 Send::Ctrl(b, v) => format!("ctrl_w({b},{v:02X})"),
                 Send::Reset => "board reset".into(),
                 Send::Wait(ms) => format!("wait {ms} ms"),
+                Send::Pokes(p, n) => format!(
+                    "game RAM {}",
+                    p[..*n as usize]
+                        .iter()
+                        .map(|p| format!("{:04X}={:02X}", p.addr, p.val))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ),
             })
             .collect();
         let vol = self.volume_report();
@@ -4891,6 +5004,17 @@ impl Extractor {
             volume_replays: self.volume_replays,
             refreshed_before_each_command: &self.refresh_labels,
             commands_from: &self.commands_from,
+            game_sound: self.game.as_ref().map(|g| {
+                serde_json::json!({
+                    "note": "the board takes no sound command: the game CPU makes every sound itself. The game was left running in its attract mode and each sound was asked for as the game's own code does (the request written into the game's RAM); the ids are the game's internal sound ids, not sound commands, and AltSound never receives them: the pack cannot play in VPinball",
+                    "layer": g.what,
+                    "id": g.id_is,
+                    "sounds": g.sounds.iter().map(|s| serde_json::json!({
+                        "id": format!("0x{:0w$X}", s.id, w = g.id_digits),
+                        "referred_from": s.refs,
+                    })).collect::<Vec<_>>(),
+                })
+            }),
             sweep: self.sweep_results(),
             counts: self.counts(),
             loudness: self.loudness_report(),

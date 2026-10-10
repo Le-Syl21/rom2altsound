@@ -58,9 +58,9 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_ATARI2`](atari.md#sndbrd_atari2) | ❌ | 3 | 3 | Superman; Hercules; Road Runner |
 | [`SNDBRD_ST100B`](stern-early.md#sndbrd_st100b) | ✅ | 16 | 7 | Trident; Magic; Cosmic Princess |
 | [`SNDBRD_ST100`](stern-early.md#sndbrd_st100) | ✅ | 10 | 4 | Dracula; Wild Fyre; Lectronamo |
-| [`SNDBRD_ST300`](stern-early.md#sndbrd_st300) | ❌ | 76 | 17 | Meteor; Dragonfist; Seawitch |
+| [`SNDBRD_ST300`](stern-early.md#sndbrd_st300) | ✅ | 76 | 17 | Meteor; Dragonfist; Seawitch |
 | [`SNDBRD_ST300V`](stern-early.md#sndbrd_st300v) | ⚠️ | 21 | 6 | Flight 2000; Lightning; Orbitor 1 |
-| [`SNDBRD_ASTRO`](stern-early.md#sndbrd_astro) | ❌ | 2 | 1 | S.A.M. III Board Tester |
+| [`SNDBRD_ASTRO`](stern-early.md#sndbrd_astro) | ✅ | 2 | 1 | S.A.M. III Board Tester |
 | [`SNDBRD_GTS80B`](gottlieb.md#sndbrd_gts80b) | ✅ | 148 | 32 | Bad Girls; Monte Carlo; Spring Break |
 | [`SNDBRD_GTS3`](gottlieb.md#sndbrd_gts3) | ✅ | 51 | 23 | Cue Ball Wizard; Super Mario Bros.; Stargate |
 | [`SNDBRD_GTS80SP`](gottlieb.md#sndbrd_gts80sp) | ✅ | 26 | 11 | Alien Star; Chicago Cubs Triple Play; Tag-Team Pinball |

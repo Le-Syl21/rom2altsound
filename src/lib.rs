@@ -14,6 +14,7 @@ mod drivers;
 mod ducking;
 mod extract;
 mod ffi;
+mod gamesound;
 pub mod inventory;
 mod listen;
 mod looping;
@@ -55,7 +56,10 @@ Supported boards: Williams/Bally DCS, Pinball 2000 (DCS2), WPC (WPC89/WPCS), Sys
 (BSMT), Sega/Stern Whitestar, Bally Cheap Squeak / Turbo Cheap Squeak and the
 early Bally boards (Sounds Plus -51/-56, Squawk & Talk -61). Stern SAM has no sound board: its sounds are read from the ROM image (every sound, every
 song as one file, at full scale); its AltSound files, keyed by the game's sound
-calls, do not play in PinMAME today (SAM sends no sound command).
+calls, do not play in PinMAME today (SAM sends no sound command). The boards that
+take no sound command (Stern SB-300) are game-driven:
+the game, left running, is asked for each of its sounds as its own code does; their
+files are keyed by the game's internal sound ids and do not play in VPinball.
 
 BSMT boards (Data East, Sega, Whitestar): with the chip's own program,
 bsmt2000.zip (bsmt2000.bin, CRC c2a265af, not distributed), next to the ROM zip,

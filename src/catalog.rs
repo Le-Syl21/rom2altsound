@@ -743,7 +743,7 @@ mod tests {
         assert!(real.len() > 80, "{} rows", real.len());
         assert_eq!(real["DCS95"].support, Support::Works);
         assert_eq!(real["DE3S"].support, Support::Works);
-        assert_eq!(real["ST300"].support, Support::None);
+        assert_eq!(real["ST300"].support, Support::Works);
     }
 
     #[test]
