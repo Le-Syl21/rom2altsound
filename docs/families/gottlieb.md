@@ -197,12 +197,12 @@ Flipprojets · e.g. Raven (`raven`), Bad Girls (`badgirls`), Rock (`rock`), Spri
 - **DUCK / STOP / CHANNEL**: defaults.
 - **Measured** ([board support](../board-support.md)): badgirls 28 of 40, raven 37 of 40.
 - **Limits and what is missing**: loops, ducking and the full sweep are not verified.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  `GEN_GTS80B` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for `GEN_GTS80B` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
   Measured on `amazonh2`: the game sent `1A 1A 1A 1B`, AltSound looked up `1A1A 1A1B`;
   with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `001A 001A 001A 001B`. Each byte the game writes is the same byte as the
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `001A 001A 001A 001B`. Each byte the game writes is the same byte as the
   tool's (both go through `gts80b_data_w`), so with that change the ids would match.
 
 ## <a name="sndbrd_gts3"></a>SNDBRD_GTS3
@@ -225,10 +225,10 @@ Operation Thunder (`opthund`)
 - **DUCK / STOP / CHANNEL**: defaults.
 - **Measured** ([board support](../board-support.md)): cueball 40 of 40.
 - **Limits and what is missing**: loops, ducking and the full sweep are not verified.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  `GEN_GTS3` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for `GEN_GTS3` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
   Measured on `barbwire`: the game sent `00 FF 00 55 00 FF`, AltSound looked up `00FF 0055
   00FF`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `0000 00FF 0000 0055`. The game writes the value the tool sends
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `0000 00FF 0000 0055`. The game writes the value the tool sends
   (`GTS3locals.sound_data`), so with that change the ids would match.

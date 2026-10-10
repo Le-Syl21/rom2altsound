@@ -194,8 +194,12 @@ sample is the twin of an earlier one; every command keeps its own file and rows 
 
 ## In VPinball
 
-What VPinball's AltSound looks up, read in the code it builds (VPinball master, which pins
-PinMAME 2150eab and libaltsound f908262 since 2026-10-07) and measured:
+What VPinball's AltSound looks up, read in the code it builds and measured. Two states
+matter: the VPinball releases up to 10.8.1-5436 (pre-release of 2026-08-21) and the master
+builds up to 2026-10-09 (PinMAME 2150eab, libaltsound f908262), and the master builds from
+commit 3abe805 (2026-10-10) on, which pin PinMAME f45e404 (with vpinball/pinmame#719 to
+#723) and libaltsound ce11780 (with vpinball/libaltsound#20 and #21). No VPinball release
+has the second state yet.
 
 1. **PinMAME** logs a sound command with `snd_cmd_log(board, byte)`, which
    `sndbrd_data_w` calls for every write of a sound board's data (unless the main board
@@ -206,7 +210,8 @@ PinMAME 2150eab and libaltsound f908262 since 2026-10-07) and measured:
    libaltsound when the game's controller appears, passes the game's generation
    (`core_gameData->gen`, through `GetMachineState`) to `AltSoundSetHardwareGen`, and
    calls `AltSoundProcessCommand(cmd, 0)` for every message: **the board number is
-   dropped**.
+   dropped** (libaltsound has had `AltSoundProcessBoardCommand(board, cmd, attenuation)`
+   since #21, which the plugin does not call yet).
 3. **libaltsound** (`altsound_preprocess_commands`, the same cases as PinMAME's
    `src/wpc/altsound/snd_alt.cpp`) builds the id it looks up (`getSample`, an exact match
    on the CSV's ID):
@@ -220,17 +225,37 @@ PinMAME 2150eab and libaltsound f908262 since 2026-10-07) and measured:
 | `GEN_WS`, `WS_1`, `WS_2` | `FC`..`FF xx` as `0xFCxx`..; `FE 10`..`2F` volume; other bytes paired |
 | `GEN_GTS80` | one byte; `00` filtered |
 | `GEN_BY17`, `BY35` | one byte (since libaltsound#16) |
-| every other generation, 0 included | **no case: the bytes are paired**, `(previous << 8) \| byte` on every second byte, which pair depending on how many bytes came since AltSound started |
+| every other generation, 0 included | before libaltsound ce11780: **no case, the bytes are paired**, `(previous << 8) \| byte` on every second byte, which pair depending on how many bytes came since AltSound started; since [vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20) (merged 2026-10-10): **one byte** |
 
 The last line covers System 3 to 9, the Bally 6803 machines, Stern MPU-100/200, Gottlieb
 System 1, 80B and 3, Zaccaria (and the machines on its generations: Jac van Ham,
 Rowamet, Tecnoplay's Scramble), Hankin, Alvin G., Mr. Game, Capcom, and every machine
 whose generation is 0 (Atari, Game Plan, Playmatic, Taito, Inder/Spinball, Tabart,
 Jeutel, Barni, Joctronic...): a pack keyed by the command byte does not play there as
-written. One byte per command for them is proposed in
-[vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20) (draft).
+written in VPinball 10.8.1-5436 and older, and **plays from VPinball master 3abe805 on**
+(the next release after 10.8.1-5436). On the Bally 6803 machines this also takes
+[vpinball/pinmame#722](https://github.com/vpinball/pinmame/pull/722) (in the same
+builds): PinMAME logged every write of the game's port 1 (the command, then its high
+nibble), and now logs the byte on the sound strobe only. On Whirlwind (System 11
+`S11_SNDOVERLAY`), #723 stops the solenoid overlay's bytes from reaching AltSound as sound
+commands. This holds for the families where a command reaches AltSound at all:
+not on the game-driven boards (below), SAM, Pinball 2000, Capcom, Mr. Game, Playmatic's
+last board, Romstar, Spinball and Zaccaria 1311, whose packs stay unplayable. Nor where
+what the game makes PinMAME log is not the byte the pack is keyed by: System 3 and 4 to 7
+(the logged bytes keep the solenoid lines in bits 5-7), Baby Pac-Man and Game Plan's
+MSU-3 (nibbles), Tabart's L'Hexagone (line and chime state), Stern SB-300 with its
+Vocalizer (the speech goes through the unlogged `sndbrd_ctrl_w`); in part only on Hankin,
+Playmatic's third board (Cerberus), System 3's Disco Fever and World Cup boards, Tabart's
+second board, Taito's Sintetizador (a command logged with and without bit 7) and
+Tecnoplay's Scramble (each command logged twice). Each family's section says which.
+`docs/vpx_playback.json` holds the result (`"state": "newer"` for the families that play
+from master 3abe805 on). One more difference: where the game rewrites its command on every
+pass (Game Plan, Gottlieb 80B, Playmatic, Stern MPU-100, Zaccaria 1125, System 9...), each
+write is now looked up (only the System 11 case skips a repeated byte), so a held command
+may restart its sound. No pack of these families has been played in VPinball itself yet:
+the ids are read in the code and in the logs.
 
-**Measured.** One ROM per family ran in libPinMAME (PinMAME 2150eab) for 45 s of attract
+**Measured** (the first state). One ROM per family ran in libPinMAME (PinMAME 2150eab) for 45 s of attract
 mode, with coins and start (keys 3, 5, then 1), its commands fed to libaltsound
 (f908262) exactly as the plugin does, with a test pack holding every id
 `0x0000`..`0x01FF` and libaltsound's debug log giving each id it looked up. The commands
@@ -244,10 +269,13 @@ register) only tells the generation.
 too (`altsound::Aliases`, rows with the same file): on Whitestar (BSMT2000 and AT91, not
 Data East), `0xFDxx` for each one-byte row, since the games send their sounds as `FD xx`
 ([SNDBRD_DE2S](data-east-sega-stern.md#sndbrd_de2s)); on System 11 machines with two
-sound boards, `0x00xx` for each board 1 row where board 0 has no row for that byte
-([System 11](williams-system11.md)). Where the ids are paired, no fixed id can be written:
-the families concerned are listed as not playable in `docs/vpx_playback.json` and on the
-site. Unless a section says otherwise, no pack of a family has been played in VPinball
+sound boards, the board 1 rows are `0x01xx` (what libaltsound's
+`AltSoundProcessBoardCommand` looks up for board 1 since #21) and each also gets a row
+`0x00xx` where board 0 has no row for that byte, for the VPinball builds whose plugin
+drops the board number (all of them so far; [System 11](williams-system11.md)). Where the
+ids are paired, no fixed id can be written: `docs/vpx_playback.json` and the site list
+those families as playing only from VPinball master 3abe805 on, and the families no
+command reaches as not playable. Unless a section says otherwise, no pack of a family has been played in VPinball
 itself: what is measured is the id AltSound looks up.
 
 ## Game-driven boards

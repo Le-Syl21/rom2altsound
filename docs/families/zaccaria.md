@@ -65,12 +65,12 @@ Star God (`stargod`)
   silence.
 - **Limits and what is missing**: the sweep plays every state many times; a sweep of the
   8 states (`02`, `04`... `0E` and `01`) would be enough.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  `GEN_ZAC1` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for `GEN_ZAC1` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
   Measured on `firemntn`: the game sent `08 09 0A 0B 0A 0B`, AltSound looked up `0809 0A0B
   0A0B`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `0008 0009 000A 000B`. AltSound gets every write of the RAM byte.
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `0008 0009 000A 000B`. AltSound gets every write of the RAM byte.
 
 ## <a name="sndbrd_zac1346"></a>SNDBRD_ZAC1346
 
@@ -100,12 +100,12 @@ Space Shuttle (`sshtlzac`)
   from silence, all 40 to the 5 s cap; with the stop `00` alone, still all 40 to the cap:
   the command left on the lines replays).
 - **Limits and what is missing**: no full run.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  `GEN_ZAC1` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for `GEN_ZAC1` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
   Measured on `ewf`: the game sent `01 00 01 00 01 00`, AltSound looked up `0100 0100
   0100`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `0001 0000 0001 0000`.
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `0001 0000 0001 0000`.
 
 ## <a name="sndbrd_zac1370"></a>SNDBRD_ZAC1370
 
@@ -147,12 +147,12 @@ Kings (`socrking`), Pinball Champ (`pinchamp`), Thunder Man (`thndrman`)
   40, all from silence; 0 of 40 before the framing.
 - **Limits and what is missing**: no full sweep run yet; which edge of CB1 the program
   arms was not needed (both are made). No names (no sounds.dat section).
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  `GEN_ZAC2` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for `GEN_ZAC2` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
   Measured on `pinchamp`: the game sent `8C 8C 0C E3 E3 63`, AltSound looked up `8C8C 0CE3
   E363`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `008C 008C 000C 00E3 00E3 0063`. The game writes each command with and
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `008C 008C 000C 00E3 00E3 0063`. The game writes each command with and
   without bit 7 (`8C 8C 0C`), `zac.c` `data_port_w` → `sndbrd_0_data_w`.
 
 ## <a name="sndbrd_zac13136"></a>SNDBRD_ZAC13136
@@ -175,12 +175,12 @@ Zaccaria · e.g. Time Machine (`tmachzac`), Farfalla (`farfalla`), Devil Riders
 - **Measured** ([board support](../board-support.md)): tmachzac 35 of 40, farfalla 34
   of 40, all from silence, no board reset (0 of 40 before).
 - **Limits and what is missing**: as ZAC1370.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  `GEN_ZAC2` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for `GEN_ZAC2` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
   Measured on `dvlrider`: the game sent `FF FF 7F F9 F9 79`, AltSound looked up `FFFF 7FF9
   F979`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `00FF 00FF 007F 00F9 00F9 0079`.
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `00FF 00FF 007F 00F9 00F9 0079`.
 
 ## <a name="sndbrd_zac11178"></a>SNDBRD_ZAC11178
 
@@ -200,12 +200,12 @@ Mexico 86 (`mexico`)
 - **Measured** ([board support](../board-support.md)): clown 40 of 40, poolcham 40 of 40,
   all from silence, no board reset (0 of 40 before the ZAC1370 framing).
 - **Limits and what is missing**: as ZAC1370.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  `GEN_ZAC2` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for `GEN_ZAC2` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
   Measured on `bbeltzac`: the game sent `FF FF 7F FC FC 7C`, AltSound looked up `FFFF 7FFC
   FC7C`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `00FF 00FF 007F 00FC 00FC 007C`.
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `00FF 00FF 007F 00FC 00FC 007C`.
 
 ## <a name="sndbrd_zac11178_13181"></a>SNDBRD_ZAC11178_13181
 
@@ -231,12 +231,12 @@ Zaccaria · e.g. Spooky (`spooky`), Zankor (`zankor`)
   all from silence (the first 40 commands, `FE`..`D7`, are the 6802's).
 - **Limits and what is missing**: the Z80 half (`BF`..`80`) is not in the survey's first
   40 commands; not measured.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  `GEN_ZAC2` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for `GEN_ZAC2` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
   Measured on `spooky`: the game sent `7F FF 7F 3F BF 3F`, AltSound looked up `7FFF 7F3F
   BF3F`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `007F 00FF 007F 003F 00BF 003F`.
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `007F 00FF 007F 003F 00BF 003F`.
 
 ## <a name="sndbrd_zac13181x3"></a>SNDBRD_ZAC13181x3
 
@@ -256,9 +256,9 @@ Zaccaria · e.g. Star's Phoenix (`strsphnx`), New Star's Phoenix (`nstrphnx`)
 - **Measured** ([board support](../board-support.md)): strsphnx 21 of 40 (20 files, 1
   blip), nstrphnx the same, all from silence, no board reset.
 - **Limits and what is missing**: the second Z80's half (`BF`..`80`) not measured.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  `GEN_ZAC2` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for `GEN_ZAC2` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
   Measured on `strsphnf`: the game sent `7F FF 7F 3F BF 3F`, AltSound looked up `7FFF 7F3F
   BF3F`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `007F 00FF 007F 003F 00BF 003F`.
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `007F 00FF 007F 003F 00BF 003F`.

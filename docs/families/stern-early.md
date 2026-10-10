@@ -36,12 +36,12 @@ sound ROM, 1978-2022, Stern · Dracula (`dracula`), Lectronamo (`lectrono`), Wil
   is held as long as its bit is set, so each file is one held tone combination.
 - **Limits**: the files are held tones, cut at `--max-secs` or at their loop (a full run
   with the loop search is not measured).
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  `GEN_STMPU100` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for `GEN_STMPU100` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
   Measured on `dracula`: the game sent `00 00 00...`, AltSound looked up `0000`; with one
   byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `0000`. The bytes are the mask bytes the game writes at `A0`; a tone is a
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `0000`. The bytes are the mask bytes the game writes at `A0`; a tone is a
   state, not a sound with an end.
 
 ## <a name="sndbrd_st100b"></a>SNDBRD_ST100B
@@ -142,12 +142,13 @@ Stern SB-300 with the VS-1000 speech board · interface `ST300`, sub-type 1
   [ST300's layer](#sndbrd_st300)), but the speech sweep halts the game CPU, which plays
   them: not done. The stop is still a board reset, which does nothing on a board without
   a CPU (the words end by themselves).
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  `GEN_STMPU200` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+- **In VPinball**: **the pack does not play, in any VPinball so far**: its speech words go
+  through `sndbrd_ctrl_w`, which is not logged, and up to 10.8.1-5436 libaltsound has no
+  case for `GEN_STMPU200` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
   Measured on `catacomb`: the game sent `01 00 06 07 04 05 02 03... (46018 in 45 s)`,
   AltSound looked up `0100 0607 0405 0203`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `0001 0000 0006 0007`. The speech goes through `sndbrd_ctrl_w`, which
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `0001 0000 0006 0007`. The speech goes through `sndbrd_ctrl_w`, which
   AltSound does not receive (`snd_cmd_log` is called from `sndbrd_data_w` only).
 
 ## <a name="sndbrd_astro"></a>SNDBRD_ASTRO

@@ -203,7 +203,7 @@ def exercise_site(page, problems, shots, name, catalog):
         page.click("#more")
     keys, seen = [], set()
     for e in catalog["entries"]:
-        kind = (e.get("label"), e.get("id") is None, e.get("vpx_playable") is False,
+        kind = (e.get("label"), e.get("id") is None, e.get("vpx_playable", True),
                 (e.get("sounds") or {}).get("kind"))
         if kind not in seen:
             seen.add(kind)

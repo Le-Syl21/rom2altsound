@@ -133,6 +133,7 @@ code.id { font-size: 0.82rem; }
 .b-none { color: var(--no); background: var(--no-bg); }
 .b-no-board, .b-untested { color: var(--nb); background: var(--nb-bg); }
 .b-novpx { color: var(--part); background: transparent; border: 1px dashed currentColor; padding-block: 0; cursor: help; }
+.b-newvpx { color: var(--muted); background: transparent; border: 1px dotted currentColor; padding-block: 0; font-weight: 500; cursor: help; }
 
 #detail { background: var(--surface); border: 2px solid var(--accent); border-radius: 12px; padding: 0.4rem 1.1rem 1rem; margin: 1rem 0; scroll-margin-top: 0.5rem; }
 #detail h2 { margin: 0.6rem 0 0.3rem; font-size: 1.3rem; padding: 0; }

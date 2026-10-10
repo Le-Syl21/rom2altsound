@@ -564,13 +564,20 @@ program, with the file's CRC) or `hle`. `--bsmt-hle` forces the older one.
   from its master of 2026-10-07 on (PinMAME and libaltsound now hand AltSound the game's
   commands); earlier builds get the raw writes of the solenoid and sound lines (see note
   12 under [Supported boards](#supported-boards)). The Bally 6803 machines (Turbo Cheap
-  Squeak, Sounds Deluxe) still do not.
-- **Older and smaller makers' boards** (System 3 to 9, Stern, Gottlieb 80B and System 3,
-  Zaccaria, Playmatic, Taito, Game Plan, Atari, Hankin, Alvin G. and others): VPinball's
-  AltSound pairs their bytes two by two (libaltsound has no case for their hardware
-  generation), so their packs do not play there as written; Whitestar and two-board
-  System 11 packs carry extra rows for the ids AltSound looks up. Family by family:
-  [In VPinball](docs/families/common.md#in-vpinball).
+  Squeak, Sounds Deluxe) play in VPinball built from its master commit 3abe805
+  (2026-10-10) on, not in 10.8.1-5436 and older.
+- **Older and smaller makers' boards** (System 9, Stern MPU-100/200, Gottlieb 80B and
+  System 3, Zaccaria, Playmatic, Taito, Game Plan, Alvin G., Tecnoplay and others):
+  VPinball 10.8.1-5436 and older pair their bytes two by two (libaltsound had no case for
+  their hardware generation), so their packs do not play there as written. VPinball
+  built from its master commit 3abe805 (2026-10-10) on takes them one byte per command
+  (vpinball/libaltsound#20, merged with the PinMAME fixes made for rom2altsound) and plays
+  them. Not everywhere: on System 3 to 7, Baby Pac-Man, Game Plan MSU-3, Tabart's
+  L'Hexagone and Stern's Vocalizer the game's logged bytes are not the pack's ids, and on
+  a few more (Hankin, Taito Sintetizador, Scramble...) only partly; the game-driven boards
+  (Stern SB-300, Atari, Astro, Romstar) send no command at all. The site's catalog marks
+  each family. Whitestar and two-board System 11 packs carry extra rows for the ids
+  AltSound looks up. Family by family: [In VPinball](docs/families/common.md#in-vpinball).
 - **Pinball 2000** packs do not play in VPinball yet: the game's sound requests do not go
   through PinMAME's sound command path (see note 16 under
   [Supported boards](#supported-boards)).
@@ -592,7 +599,7 @@ BSD-3-Clause (see [LICENSE](LICENSE)), the license PinMAME is moving to. rom2alt
 [vendor/pinmame/LICENSE](https://github.com/vpinball/pinmame/blob/master/LICENSE): BSD-3-Clause
 for new code, the former MAME license for the rest), built from a fork
 (<https://github.com/Le-Syl21/pinmame>, branch `bsmt2000-lle`) that adds the BSMT2000
-chip program emulation and the Cheap Squeak / Turbo Cheap Squeak commands. You need your own ROM files and, for the BSMT2000, its program; none are
+chip program emulation to upstream master. You need your own ROM files and, for the BSMT2000, its program; none are
 included.
 
 The release binaries embed PinMAME, so they are distributed under PinMAME's terms as well: free of charge, with the source available here.
@@ -1198,11 +1205,20 @@ programme de la puce, avec le CRC du fichier) ou `hle`. `--bsmt-hle` impose l'an
   désormais à AltSound les commandes du jeu) ; les versions antérieures reçoivent les
   écritures brutes des lignes bobines et son (voir la note 12 de
   [Cartes son prises en charge](#cartes-son-prises-en-charge)). Les machines Bally 6803
-  (Turbo Cheap Squeak, Sounds Deluxe) pas encore.
-- **Cartes plus anciennes et des petits fabricants** (System 3 à 9, Stern, Gottlieb 80B et
-  System 3, Zaccaria, Playmatic, Taito, Game Plan, Atari, Hankin, Alvin G. et d'autres) :
-  l'AltSound de VPinball assemble leurs octets deux par deux (libaltsound n'a pas de cas
-  pour leur génération), si bien que leurs packs ne s'y jouent pas tels quels ; les packs
+  (Turbo Cheap Squeak, Sounds Deluxe) se jouent dans VPinball compilé à partir du commit
+  3abe805 de son master (2026-10-10), pas dans la 10.8.1-5436 ni avant.
+- **Cartes plus anciennes et des petits fabricants** (System 9, Stern MPU-100/200,
+  Gottlieb 80B et System 3, Zaccaria, Playmatic, Taito, Game Plan, Alvin G., Tecnoplay et
+  d'autres) : VPinball 10.8.1-5436 et les versions précédentes assemblent leurs octets
+  deux par deux (libaltsound n'avait pas de cas pour leur génération), si bien que leurs
+  packs ne s'y jouent pas tels quels. VPinball compilé à partir du commit 3abe805 de son
+  master (2026-10-10) les prend un octet par commande (vpinball/libaltsound#20, fusionné
+  avec les correctifs PinMAME faits pour rom2altsound) et les joue. Pas partout : sur les
+  System 3 à 7, Baby Pac-Man, la MSU-3 de Game Plan, L'Hexagone de Tabart et le
+  Vocalizer de Stern, les octets que le jeu transmet ne sont pas les identifiants du pack,
+  et sur quelques autres (Hankin, Sintetizador de Taito, Scramble...) seulement en
+  partie ; les cartes pilotées par le jeu (Stern SB-300, Atari, Astro, Romstar)
+  n'envoient aucune commande. Le catalogue du site marque chaque famille. Les packs
   Whitestar et System 11 à deux cartes portent des lignes en plus pour les identifiants
   qu'AltSound cherche. Famille par famille :
   [In VPinball](docs/families/common.md#in-vpinball).
@@ -1229,8 +1245,7 @@ BSD-3-Clause (voir [LICENSE](LICENSE)), la licence vers laquelle PinMAME migre. 
 [vendor/pinmame/LICENSE](https://github.com/vpinball/pinmame/blob/master/LICENSE) :
 BSD-3-Clause pour le code récent, l'ancienne licence MAME pour le reste), compilé depuis
 une branche (<https://github.com/Le-Syl21/pinmame>, branche `bsmt2000-lle`) qui ajoute
-l'émulation du programme de la puce BSMT2000 et les commandes des Cheap Squeak / Turbo
-Cheap Squeak. Il vous faut vos propres fichiers de ROM et, pour le
+l'émulation du programme de la puce BSMT2000 au master amont. Il vous faut vos propres fichiers de ROM et, pour le
 BSMT2000, son programme ; aucun n'est fourni.
 
 Les binaires publiés embarquent PinMAME : ils sont donc aussi distribués selon ses conditions, gratuitement et avec les sources disponibles ici.

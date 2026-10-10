@@ -4,8 +4,8 @@
 Run from anywhere: python3 docs/build_site.py
 The table itself is filled by app.js from catalog.json, which `rom2altsound catalog` writes
 (see the README): this script writes the two pages around it, the sitemap and .nojekyll,
-and marks in catalog.json the entries whose packs cannot play in VPinball today (from
-vpx_playback.json). The site holds metadata only: no ROM, no sound, no sounds.dat name.
+and marks in catalog.json the entries whose packs VPinball cannot play, or only its builds
+newer than its last release (from vpx_playback.json). The site holds metadata only: no ROM, no sound, no sounds.dat name.
 """
 import json
 import sys
@@ -69,8 +69,10 @@ init starts it, with a link to the family's notes.</li>
 <li><strong>rom2altsound</strong>: the result of the <a href="{BLOB}docs/board-support.md">board survey</a>
 for the family: <em>Works</em> (sounds come out, distinct, each from silence), <em>Partial</em>,
 <em>No sound yet</em>, <em>No sound board</em>. A second badge, <em>AltSound pack not played in VPX</em>, marks the families
-whose AltSound packs VPinball cannot use today because AltSound does not receive their sound commands:
-the game itself still plays with its own sound; its tooltip says why.</li>
+whose AltSound packs VPinball cannot use because AltSound does not receive their sound commands as the
+pack's ids: the game itself still plays with its own sound; its tooltip says why. A softer one,
+<em>pack plays in VPX after 10.8.1-5436</em>, marks the families whose packs the released VPinball does
+not play but its master builds since October 2026 do (libaltsound takes their commands one byte at a time).</li>
 <li><strong>Sets</strong>: how many of the entry's PinMAME sets were complete in the reference ROM set the
 catalog was built from (2804 VPinMAME zips), out of all.</li>
 <li><strong>Sounds</strong>: read from the ROMs without running them, where the layout is known: the populated
@@ -138,9 +140,12 @@ l'initialisation de la machine la démarre, avec un lien vers les notes de la fa
 <li><strong>rom2altsound</strong> : le résultat du <a href="{BLOB}docs/board-support.md">relevé des cartes</a>
 pour la famille : <em>Fonctionne</em> (les sons sortent, distincts, chacun depuis le silence),
 <em>Partiel</em>, <em>Pas encore de son</em>, <em>Pas de carte son</em>. Un second badge, <em>pack AltSound
-non joué dans VPX</em>, marque les familles dont VPinball ne peut pas utiliser les packs AltSound
-aujourd'hui, faute de recevoir leurs commandes son dans AltSound : le jeu lui-même a toujours son propre
-son ; son infobulle dit pourquoi.</li>
+non joué dans VPX</em>, marque les familles dont VPinball ne peut pas utiliser les packs AltSound,
+faute de recevoir dans AltSound leurs commandes son sous les identifiants du pack : le jeu lui-même a
+toujours son propre son ; son infobulle dit pourquoi. Un badge plus discret, <em>pack joué par VPX après
+10.8.1-5436</em>, marque les familles dont la version publiée de VPinball ne joue pas les packs, mais que
+ses versions de développement (master) jouent depuis octobre 2026 (libaltsound y prend leurs commandes
+un octet à la fois).</li>
 <li><strong>Jeux de ROM</strong> : combien des jeux de ROM PinMAME de l'entrée étaient complets dans la
 collection de référence d'où le catalogue est tiré (2804 zips VPinMAME), sur le total.</li>
 <li><strong>Sons</strong> : lu dans les ROM sans les faire tourner, là où leur organisation est connue : les
@@ -251,25 +256,31 @@ def render(lang):
 
 
 def mark_vpx_playback():
-    """Copy vpx_playback.json into catalog.json: `vpx_not_playable` (label -> reason, per
-    language) at the top, `vpx_playable: false` on each entry of those families. Kept in
-    the format `rom2altsound catalog` writes (sorted head, one entry per line), so running
-    this twice changes nothing."""
+    """Copy vpx_playback.json into catalog.json: `vpx_playback` (label -> state and reason,
+    per language) at the top, `vpx_playable` on each entry of those families: false when
+    VPinball cannot play its packs, "newer" when only VPinball builds newer than the release
+    named in `newer_than` play them. Kept in the format `rom2altsound catalog` writes
+    (sorted head, one entry per line), so running this twice changes nothing."""
     path = DOCS / "catalog.json"
     if not path.exists():
         return
     rules = json.loads((DOCS / "vpx_playback.json").read_text(encoding="utf-8"))
-    reasons = {label: rules["reasons"][r] for label, r in rules["families"].items()}
+    reasons = {}
+    for label, key in rules["families"].items():
+        r = rules["reasons"][key]
+        reasons[label] = {"state": r.get("state", "no"), "en": r["en"], "fr": r["fr"]}
     catalog = json.loads(path.read_text(encoding="utf-8"))
     entries = catalog.pop("entries")
     labels = {e["label"] for e in entries}
     for label in sorted(set(reasons) - labels):
         print(f"vpx_playback.json: no catalog entry has the family {label!r}", file=sys.stderr)
-    catalog["vpx_not_playable"] = {k: v for k, v in sorted(reasons.items()) if k in labels}
+    catalog.pop("vpx_not_playable", None)
+    catalog["vpx_playback"] = {k: v for k, v in sorted(reasons.items()) if k in labels}
+    catalog["vpx_newer_than"] = rules["newer_than"]
     for e in entries:
         e.pop("vpx_playable", None)
         if e["label"] in reasons:
-            e["vpx_playable"] = False
+            e["vpx_playable"] = "newer" if reasons[e["label"]]["state"] == "newer" else False
     compact = {"ensure_ascii": False, "separators": (",", ":")}
     head = json.dumps(catalog, sort_keys=True, **compact)
     text = (head[:-1] + ',"entries":[\n'

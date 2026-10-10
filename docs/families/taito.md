@@ -46,13 +46,13 @@ Shared by the four:
   defaults.
 - **In VPinball**: AltSound gets every changed byte the game writes (`taito_sndCmd_w` →
   `sndbrd_0_data_w` → `snd_cmd_log`), with the generation 0 (none) set on every Taito
-  machine; libaltsound has no case for it and joins the bytes two by two ([In
-  VPinball](common.md#in-vpinball)), so **the packs do not play as written** (cavnegro:
+  machine; up to 10.8.1-5436 libaltsound has no case for it and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)), so **the packs do not play as written there** (cavnegro:
   `00 39 00 3A` looked up as `0039 003A` only because each pair started on the `00`). With
   one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) the
-  game's one-byte commands would be the pack's ids; where it writes two (the 1979 boards,
-  below), AltSound would see both.
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) the
+  game's one-byte commands are the pack's ids, and **the packs play from VPinball master
+  3abe805 on**; where it writes two (the 1979 boards, below), AltSound sees both.
 
 ## <a name="sndbrd_taito_sintetizador"></a>SNDBRD_TAITO_SINTETIZADOR
 
@@ -77,7 +77,7 @@ Football (`football`), Oba-Oba (`obaoba`), Gemini 2000 (`gemini`)
   does not stop; the board reset after it does.
 - **Limits and what is missing**: what the bit-7 byte does (`98` before `18`) is not
   known; a sound with bit 7 set is swept as its own command. No full run.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+- **In VPinball**: **the pack does not play as written, in any VPinball so far**: the game sends a command with and without bit 7 (`98 18`), both pack rows, so each command looks up two ids; and up to 10.8.1-5436 libaltsound has no case for
   generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)); `cosmic` sent no sound command in 45 s of attract
   mode with a coin and start, so nothing was measured. AltSound sees every changed byte
@@ -97,8 +97,8 @@ ids, 1982-1985, Taito · e.g. Snake Machine (`snake`), Mr. Black (`mrblack`), Sp
 - **Measured**: snake 35 of 40, mrblack 36 of 40, polar 25 of 40, all from silence (0 of
   40 before the stop `00`, [board support](../board-support.md)).
 - **Limits and what is missing**: as the Sintetizador.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  generation 0 (none) and joins the bytes two by two ([In
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)); `mrblack` sent no sound command in 45 s of attract
   mode with a coin and start, so nothing was measured.
 
@@ -121,12 +121,12 @@ e.g. Titan (`titan`), Hawkman (`hawkman`), Fire Action (`fireact`), Cavaleiro Ne
   they took commands without it). No full run is recorded.
 - **Limits**: only the quick survey; loops and the full sweep are not checked on a full
   run.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  generation 0 (none) and joins the bytes two by two ([In
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)). Measured on `cavnegro`: the game sent `00 39 00 3A`,
   AltSound looked up `0039 003A`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `0000 0039 0000 003A`. This run matched only because each pair started on
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `0000 0039 0000 003A`. This run matched only because each pair started on
   the `00`.
 
 ## <a name="sndbrd_taito_sintevoxpp"></a>SNDBRD_TAITO_SINTEVOXPP
@@ -141,7 +141,7 @@ ids, 1982, Taito · e.g. Gork (`gork`), Fire Action Deluxe (`fireactd`)
 - **Measured**: `gork`, 37 of 40 ([board support](../board-support.md)), the same with the
   stop `00` (28 board resets instead of 47).
 - **Limits**: only the quick survey.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  generation 0 (none) and joins the bytes two by two ([In
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)); `fireactd` sent no sound command in 45 s of attract
   mode with a coin and start, so nothing was measured.

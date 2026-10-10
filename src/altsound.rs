@@ -299,13 +299,15 @@ impl Aliases {
     }
 }
 
-/// System 11 with two sound boards: VPinball's AltSound plugin passes the command byte
-/// without its board (`AltSoundProcessCommand(cmd, 0)`) and libaltsound's System 11 case
-/// takes every byte as an 8-bit id, so a board 1 command `xx` is looked up as `0x00xx`,
-/// the id of board 0's byte `xx`; the pack's `0x01xx` rows are never looked up. Each board 1
-/// row also gets a row `0x00xx` with the same file when board 0 has no row for `xx` (where
-/// both boards have a sound for `xx`, AltSound cannot tell them apart and board 0's stays).
-/// Returns how many rows were added.
+/// System 11 with two sound boards: the board 1 rows stay `0x01xx`, what libaltsound's
+/// `AltSoundProcessBoardCommand(1, xx, ..)` looks up on `GEN_S11X` and `GEN_S11B2` since
+/// vpinball/libaltsound#21 (falling back to `0x00xx` when the pack has no such row). But
+/// VPinball's AltSound plugin still passes the command byte without its board
+/// (`AltSoundProcessCommand(cmd, 0)`), and libaltsound's System 11 case takes every byte as
+/// an 8-bit id, so there a board 1 command `xx` is looked up as `0x00xx`, the id of board
+/// 0's byte `xx`. Each board 1 row also gets a row `0x00xx` with the same file when board 0
+/// has no row for `xx` (where both boards have a sound for `xx`, AltSound cannot tell them
+/// apart without the board and board 0's stays). Returns how many rows were added.
 pub fn system11_board1_aliases(rows: &mut Vec<Row>) -> usize {
     let ids: std::collections::BTreeSet<u32> = rows.iter().map(|r| r.id).collect();
     let aliases: Vec<Row> = rows
@@ -1417,6 +1419,16 @@ mod tests {
         assert_eq!(system11_board1_aliases(&mut rows), 1);
         let added = rows.last().unwrap();
         assert_eq!((added.id, added.fname.as_str()), (0x0093, "193.wav"));
+        // The board 1 rows stay as 0x01xx (what AltSoundProcessBoardCommand looks up), and
+        // board 0's own row for 05 is not shadowed.
+        let ids: Vec<u32> = rows.iter().map(|r| r.id).collect();
+        assert_eq!(ids, [0x0005, 0x0105, 0x0193, 0x0100, 0x0093]);
+        let five: Vec<&str> = rows
+            .iter()
+            .filter(|r| r.id == 0x0005)
+            .map(|r| r.fname.as_str())
+            .collect();
+        assert_eq!(five, ["5.wav"]);
     }
 
     #[test]

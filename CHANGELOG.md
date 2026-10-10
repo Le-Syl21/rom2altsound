@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **Upstream merges (2026-10-10)**: toxie merged rom2altsound's PinMAME pull requests
+  #719 (Tecnoplay: every sound command delivered, `00` included), #720 (Y8950: BRDY no
+  longer drives the IRQ output), #721 (TMS7000: interrupts taken as the chip flags them),
+  #722 (Bally 6803: one logged byte per sound command) and #723 (Whirlwind: the solenoid
+  overlay's bytes no longer logged as sound commands), plus his follow-ups (a missing
+  include, whatsnew), and libaltsound #20 (one byte per command for the generations
+  without a case) and #21 (`AltSoundProcessBoardCommand`: a two-board System 11's board 1
+  looked up as `0x01xx`, else `0x00xx`). VPinball master pins both since commit 3abe805.
+- PinMAME submodule moved to upstream master f45e404 (the fork's `bsmt2000-lle` branch
+  now is upstream plus the BSMT2000 low level emulation only).
+- **Tecnoplay**: the shim tick and port A hook that worked around PinMAME's TMS7000 and
+  Y8950 are removed; commands go through `sndbrd_manCmd` as on every other board. Same
+  results: spcteam 38 of 40, full sweep 109 of 255, all from silence, no board reset.
+  Bally 6803 (beatclck, blackblt, atlantis), Whirlwind and the regression ROMs give the
+  same results as before the bump.
+- **VPinball playback, per family**: `docs/vpx_playback.json` now tells three cases
+  apart: packs that play in VPinball builds from master 3abe805 on (not in 10.8.1-5436
+  and older: 36 families whose bytes the game logs as the pack's ids, the Bally 6803
+  ones included), packs that do not play in any VPinball (the game's logged bytes are
+  not the pack's ids, in whole or in part: System 3 to 7, Baby Pac-Man, Game Plan MSU-3,
+  Tabart, Hankin, Taito Sintetizador, Scramble, Playmatic 3, Stern's Vocalizer; no
+  command at all: SAM, Pinball 2000, Capcom, Mr. Game, Playmatic's last board, Spinball,
+  Zaccaria 1311, and the game-driven Stern SB-300, Atari, Astro and Romstar). The site
+  shows a softer badge, "pack plays in VPX after 10.8.1-5436", for the first case; the
+  window program says "newer VPX". Each family's "In VPinball" notes say which.
+- Two-board System 11 packs keep their board 1 rows as `0x01xx` (what libaltsound #21
+  looks up) and the `0x00xx` alias rows for the VPinball builds whose plugin still drops
+  the board number (all so far).
 - **A window program, `rom2altsound-gui`** (a separate download, `rom2altsound-gui-<system>`,
   so that the command line one stays small; on macOS an application, `rom2altsound.app`):
   drop ROM zips or a ROM folder on it, see what each zip holds (complete, with its

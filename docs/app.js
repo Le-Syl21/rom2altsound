@@ -28,7 +28,7 @@
       notFound: "No entry for this link.",
       bySupport: "PinMAME sets by rom2altsound support", dash: "—",
       boards: { "NONE (Stern SAM)": "Stern SAM", "NONE (other)": "No sound board" },
-      noVpx: "AltSound pack not played in VPX", hideNoVpx: "Hide boards whose AltSound pack VPinball cannot play yet", dVpx: "AltSound pack in VPinball",
+      noVpx: "AltSound pack not played in VPX", newVpx: function (v) { return "pack plays in VPX after " + v; }, hideNoVpx: "Hide boards whose AltSound pack VPinball cannot play yet", dVpx: "AltSound pack in VPinball",
     },
     fr: {
       loading: "Chargement du catalogue…",
@@ -53,7 +53,7 @@
       notFound: "Aucune entrée pour ce lien.",
       bySupport: "Jeux de ROM PinMAME par prise en charge", dash: "—",
       boards: { "NONE (Stern SAM)": "Stern SAM", "NONE (other)": "Aucune carte son" },
-      noVpx: "pack AltSound non joué dans VPX", hideNoVpx: "Masquer les cartes dont VPinball ne joue pas encore le pack AltSound", dVpx: "Pack AltSound dans VPinball",
+      noVpx: "pack AltSound non joué dans VPX", newVpx: function (v) { return "pack joué par VPX après " + v; }, hideNoVpx: "Masquer les cartes dont VPinball ne joue pas encore le pack AltSound", dVpx: "Pack AltSound dans VPinball",
     },
   }[lang];
   var SUPPORT_ORDER = ["works", "partial", "none", "no-board", "untested"];
@@ -76,16 +76,20 @@
   // stays the filter value and the tooltip).
   function boardName(label) { return T.boards[label] || short(label); }
   function dash() { return '<span class="sets">' + esc(T.dash) + "</span>"; }
-  // Why the entry's packs cannot play in VPinball today (vpx_playback.json, through
-  // build_site.py), or "" when nothing is known against it.
+  // Why the entry's packs cannot play in VPinball (vpx_playable false), or play only in
+  // its builds newer than its last release ("newer"), from vpx_playback.json through
+  // build_site.py; "" when nothing is known against it.
+  function vpxNote(e) { return e.vpx_playable === false || e.vpx_playable === "newer"; }
   function vpxReason(e) {
-    if (e.vpx_playable !== false) return "";
-    var r = (data.vpx_not_playable || {})[e.label];
+    if (!vpxNote(e)) return "";
+    var r = (data.vpx_playback || {})[e.label];
     return r ? r[lang] || r.en : "";
   }
   function vpxBadge(e) {
-    if (e.vpx_playable !== false) return "";
-    return ' <span class="badge b-novpx" title="' + esc(vpxReason(e)) + '">' + esc(T.noVpx) + "</span>";
+    if (!vpxNote(e)) return "";
+    var newer = e.vpx_playable === "newer";
+    return ' <span class="badge ' + (newer ? "b-newvpx" : "b-novpx") + '" title="' + esc(vpxReason(e)) + '">' +
+      esc(newer ? T.newVpx(data.vpx_newer_than || "") : T.noVpx) + "</span>";
   }
   function badge(s) { return '<span class="badge b-' + esc(s) + '">' + esc(T[s] || s) + "</span>"; }
   function soundCount(e) { return e.sounds ? e.sounds.count : -1; }
@@ -237,7 +241,7 @@
       "<dt>" + esc(T.id) + "</dt><dd>" + (e.id ? "<code>" + esc(e.id) + "</code>" : esc(T.dIdNone)) + "</dd>" +
       "<dt>" + esc(T.dFamily) + "</dt><dd>" + docLink(e.family, e.label) + "</dd>" +
       "<dt>" + esc(T.dSupport) + "</dt><dd>" + badge(e.support) + "</dd>" +
-      (e.vpx_playable === false ? "<dt>" + esc(T.dVpx) + "</dt><dd>" + vpxBadge(e).trim() + " " + esc(vpxReason(e)) + "</dd>" : "") +
+      (vpxNote(e) ? "<dt>" + esc(T.dVpx) + "</dt><dd>" + vpxBadge(e).trim() + " " + esc(vpxReason(e)) + "</dd>" : "") +
       "<dt>" + esc(T.dSounds) + "</dt><dd>" + esc(soundsTxt) + "</dd>" +
       "<dt>" + esc(T.dNames) + "</dt><dd>" + fmt(e.names) + "</dd>" +
       "</dl>" +

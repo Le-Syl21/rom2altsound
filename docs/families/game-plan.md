@@ -43,12 +43,12 @@ Family Fun! (`famlyfun`), Vegas (`vegasgp`)
   all from silence, each held to the 5 s cap (17 of 40 before, 5 not from silence).
 - **Limits and what is missing**: a tone is a state, held until the next nibble: the files
   are cut at `--max-secs` or at their loop.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  generation 0 (none) and joins the bytes two by two ([In
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)). Measured on `famlyfun`: the game sent `0F 0F 0F...
   (the idle bank)`, AltSound looked up `0F0F`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `000F`. The forwarded bank writes (`00`, `01`, `05`, `06`, `0F`) are
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `000F`. The forwarded bank writes (`00`, `01`, `05`, `06`, `0F`) are
   logged on every write, the idle `0F` included.
 
 ## <a name="sndbrd_gpssu2"></a>SNDBRD_GPSSU2
@@ -71,12 +71,12 @@ Game Plan SSU-2 (three SN76477, no CPU) · PinMAME interface `GPS2` (`src/wpc/gp
 - **Measured** ([board support](../board-support.md)): sshooter 15 of 15, all from
   silence (38 of 40 before, 24 not from silence); 10 are held tones, cut at the 5 s cap.
 - **Limits and what is missing**: the held tones (as GPSSU1).
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  generation 0 (none) and joins the bytes two by two ([In
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)). Measured on `sshooter`: the game sent `0F 0F 0F...`,
   AltSound looked up `0F0F`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `000F`.
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `000F`.
 
 ## <a name="sndbrd_gpssu3"></a>SNDBRD_GPSSU3
 
@@ -90,12 +90,12 @@ Game Plan SSU-3 · PinMAME interface `GPS2` (`src/wpc/gpsnd.c`, sub-type 1) · �
 - **Measured** ([board support](../board-support.md)): coneyis 15 of 15, all from silence,
   as sshooter.
 - **Limits and what is missing**: as GPSSU2.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  generation 0 (none) and joins the bytes two by two ([In
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)). Measured on `coneyis`: the game sent `0F 0F 0F...`,
   AltSound looked up `0F0F`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `000F`.
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `000F`.
 
 ## <a name="sndbrd_gpssu4"></a>SNDBRD_GPSSU4
 
@@ -116,12 +116,12 @@ Game Plan SSU-4 (SN76477, no CPU) · PinMAME interface `GPS4` (`src/wpc/gpsnd.c`
 - **Measured** ([board support](../board-support.md)): suprnova 10 of 15, all from
   silence (29 of 40 before, 6 not from silence).
 - **Limits and what is missing**: the held tones (as GPSSU1).
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  generation 0 (none) and joins the bytes two by two ([In
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)). Measured on `suprnova`: the game sent `0F 0F 0F...`,
   AltSound looked up `0F0F`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `000F`.
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `000F`.
 
 ## <a name="sndbrd_gpmsu1"></a>SNDBRD_GPMSU1
 
@@ -152,12 +152,12 @@ Global Warfare (`gwarfare`), Attila The Hun (`attila`), Captain Hook (`cpthook`)
   all from silence (lizard 40 of 40 before, 37 not from silence, all at -14.9 LUFS).
 - **Limits and what is missing**: the MC6840 emulation is incomplete in PinMAME, so the
   sounds are PinMAME's approximation; no stop known (a 6802 reset after each sound).
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
-  generation 0 (none) and joins the bytes two by two ([In
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
+  their libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)). Measured on `lizard`: the game sent `0F 0F 0F...`,
   AltSound looked up `0F0F`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
-  would look up `000F`.
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
+  looks up `000F`.
 
 ## <a name="sndbrd_gpmsu3"></a>SNDBRD_GPMSU3
 
@@ -187,7 +187,7 @@ Sharpshooter (`ladyshot`), Cyclopes (`cyclopes`)
   40 (38 files, 1 blip), all from silence (0 of 40 before: single nibbles).
 - **Limits and what is missing**: the bytes with two equal nibbles (if the game ever
   plays them, it is with a step the tool does not know); no stop known.
-- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+- **In VPinball**: **the pack does not play as written, in any VPinball so far**: the game sends a command as two nibbles, each logged, and the pack's ids are the whole bytes; and up to 10.8.1-5436 libaltsound has no case for
   generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)); `andromed` sent no sound command in 45 s of attract
   mode with a coin and start, so nothing was measured.

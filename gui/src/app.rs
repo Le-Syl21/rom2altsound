@@ -583,10 +583,12 @@ impl App {
                             match &s.vpx_not_played {
                                 None => ui.label(t.vpx_yes).on_hover_text(t.vpx_yes_tip),
                                 Some(n) => ui
-                                    .label(
+                                    .label(if n.newer {
+                                        RichText::new(t.vpx_newer).weak()
+                                    } else {
                                         RichText::new(t.vpx_no)
-                                            .color(Color32::from_rgb(200, 140, 40)),
-                                    )
+                                            .color(Color32::from_rgb(200, 140, 40))
+                                    })
                                     .on_hover_text(match lang {
                                         Lang::En => &n.en,
                                         Lang::Fr => &n.fr,

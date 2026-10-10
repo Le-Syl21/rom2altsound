@@ -13,7 +13,7 @@ use crate::catalog::{self, Support};
 use crate::drivers::{self, Board, Driver};
 use crate::romcheck::{self, Index, SetMatch, SetStatus};
 
-/// The families whose packs VPinball does not play today, and why.
+/// The families whose packs VPinball does not play, or plays only in its newer builds, and why.
 const VPX_PLAYBACK: &str = include_str!("../docs/vpx_playback.json");
 
 pub use crate::catalog::Support as SupportLevel;
@@ -21,6 +21,9 @@ pub use crate::catalog::Support as SupportLevel;
 /// Why VPinball does not play a family's packs, in English and in French.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotPlayed {
+    /// The packs play in VPinball builds newer than its last release (`newer_than` in
+    /// docs/vpx_playback.json), not in that release.
+    pub newer: bool,
     pub en: String,
     pub fr: String,
 }
@@ -47,7 +50,7 @@ pub struct SetInfo {
     /// The family label of the survey ("DCS95", "S11XS+S11CS", "NONE (Stern SAM)").
     pub family: String,
     pub support: Support,
-    /// `Some` when VPinball does not play this family's packs today.
+    /// `Some` when VPinball does not play this family's packs, or only its newer builds.
     pub vpx_not_played: Option<NotPlayed>,
 }
 
@@ -179,7 +182,7 @@ fn best_set<'a>(sets: &'a [SetMatch], stem: &str) -> Option<&'a SetMatch> {
         .or_else(|| sets.first())
 }
 
-/// docs/vpx_playback.json: family label -> why its packs do not play.
+/// docs/vpx_playback.json: family label -> why its packs do not play (or only in newer builds).
 fn vpx_not_played(text: &str) -> HashMap<String, NotPlayed> {
     let v: Value = serde_json::from_str(text).unwrap_or_default();
     let mut out = HashMap::new();
@@ -189,6 +192,7 @@ fn vpx_not_played(text: &str) -> HashMap<String, NotPlayed> {
             out.insert(
                 label.clone(),
                 NotPlayed {
+                    newer: r["state"] == "newer",
                     en: r["en"].as_str().unwrap_or_default().to_owned(),
                     fr: r["fr"].as_str().unwrap_or_default().to_owned(),
                 },
@@ -208,6 +212,10 @@ mod tests {
         assert!(!m.is_empty());
         let sam = &m["NONE (Stern SAM)"];
         assert!(sam.en.contains("SAM") && sam.fr.contains("SAM"));
+        assert!(!sam.newer);
+        assert!(m["BYTCS"].newer && m["ZAC1370"].newer && m["TECNOPLAY"].newer);
+        assert!(!m["S67S"].newer && !m["HANKIN"].newer);
+        assert!(!m["ST300"].newer && !m["ROMSTAR"].newer);
         assert!(m.values().all(|r| !r.en.is_empty() && !r.fr.is_empty()));
     }
 }
