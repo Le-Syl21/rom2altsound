@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.5 (2026-10-10)
 
 - **Older Macs**: the macOS binaries (command line and `rom2altsound.app`) now run on
   macOS 10.15 Catalina and later on Intel, 11 Big Sur and later on Apple Silicon; 0.2.4
