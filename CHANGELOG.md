@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Older Macs**: the macOS binaries (command line and `rom2altsound.app`) now run on
+  macOS 10.15 Catalina and later on Intel, 11 Big Sur and later on Apple Silicon; 0.2.4
+  required macOS 14. `MACOSX_DEPLOYMENT_TARGET` is set per architecture for rustc, the C
+  shim and PinMAME's CMake build (whose hard-coded 14.0 build.rs now replaces), C/C++
+  calls to newer APIs without an availability check fail the build
+  (`-Werror=unguarded-availability`), the bundle's `LSMinimumSystemVersion` follows, and
+  the verify jobs fail if a binary's `minos` is above the announced minimum.
+
 - **Upstream merges (2026-10-10)**: toxie merged rom2altsound's PinMAME pull requests
   #719 (Tecnoplay: every sound command delivered, `00` included), #720 (Y8950: BRDY no
   longer drives the IRQ output), #721 (TMS7000: interrupts taken as the chip flags them),

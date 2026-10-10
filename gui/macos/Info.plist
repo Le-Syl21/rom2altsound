@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- The bundle of rom2altsound-gui; CI replaces @VERSION@ with the crate version. -->
+<!-- The bundle of rom2altsound-gui; CI replaces @VERSION@ with the crate version and @MACOS_MIN@ with the
+     oldest macOS of the architecture (MACOSX_DEPLOYMENT_TARGET: 10.15 Intel, 11.0 Apple Silicon). -->
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
@@ -20,7 +21,7 @@
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>LSMinimumSystemVersion</key>
-  <string>14.0</string>
+  <string>@MACOS_MIN@</string>
   <key>NSHighResolutionCapable</key>
   <true/>
 </dict>

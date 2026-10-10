@@ -75,12 +75,16 @@ jobs:
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             label: linux-aarch64
+          # The oldest macOS each binary runs on: 11.0 Big Sur is the first macOS for
+          # Apple Silicon, 10.15 Catalina the Intel floor.
           - os: macos-latest
             target: aarch64-apple-darwin
             label: macos-arm64
+            macos_min: '11.0'
           - os: macos-latest
             target: x86_64-apple-darwin
             label: macos-x86_64
+            macos_min: '10.15'
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             label: windows-x86_64
@@ -88,9 +92,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.label }}
     env:
-      # libpinmame's CMakeLists builds for macOS 14; the Rust side matches it
-      # (ignored on the other systems).
-      MACOSX_DEPLOYMENT_TARGET: '14.0'
+      # Read by rustc, the cc crate and build.rs (which hands it to PinMAME's CMake
+      # build): every object of the binary targets the same oldest macOS. Empty, and
+      # ignored, on the other systems.
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_min }}
 
     steps:
       - uses: actions/checkout@v7
@@ -172,7 +177,9 @@ jobs:
           cp target/${{ matrix.target }}/release/rom2altsound-gui "$app/Contents/MacOS/"
           version=$(cargo pkgid -p rom2altsound-gui)
           version="${version##*[@#]}"
-          sed "s/@VERSION@/$version/g" gui/macos/Info.plist > "$app/Contents/Info.plist"
+          sed -e "s/@VERSION@/$version/g" -e "s/@MACOS_MIN@/$MACOSX_DEPLOYMENT_TARGET/g" \
+            gui/macos/Info.plist > "$app/Contents/Info.plist"
+          grep -A1 LSMinimumSystemVersion "$app/Contents/Info.plist"
           plutil -lint "$app/Contents/Info.plist"
           cp README.md LICENSE pkg-gui/
           ditto -c -k pkg-gui rom2altsound-gui-${{ matrix.label }}.zip
@@ -474,10 +481,12 @@ jobs:
             label: windows-x86_64
           - os: macos-latest
             label: macos-arm64
+            macos_min: '11.0'
           # A real Intel Mac: the x86_64 binary is cross-built on arm64, where it would
           # only run under Rosetta.
           - os: macos-15-intel
             label: macos-x86_64
+            macos_min: '10.15'
     runs-on: ${{ matrix.os }}
     name: verify ${{ matrix.label }}
     defaults:
@@ -485,6 +494,7 @@ jobs:
         shell: bash
     env:
       LABEL: ${{ matrix.label }}
+      MACOS_MIN: ${{ matrix.macos_min }}
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || '' }}
     steps:
       # The test files only (no submodule, no build).
@@ -564,6 +574,37 @@ jobs:
             xcrun stapler validate gui/rom2altsound.app 2>&1 || true
           fi
           spctl -a -vv -t exec "$CLI" 2>&1 || true
+
+      # The binaries must load on the oldest macOS announced (no runner has it): their
+      # minos must not exceed it, nor the bundle's LSMinimumSystemVersion. Frameworks
+      # and libraries are listed with how they are loaded (a weak load may be absent).
+      - name: Oldest macOS accepted (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          fail=0
+          for bin in "$CLI" "$GUI"; do
+            [ -e "$bin" ] || continue
+            echo "::group::$bin"
+            vtool -show-build "$bin"
+            otool -l "$bin" | grep -A1 -E 'LC_LOAD_(WEAK_)?DYLIB' | grep -v -- '--' || true
+            echo "::endgroup::"
+            minos=$(otool -l "$bin" | awk '/LC_BUILD_VERSION/{b=1} b && $1=="minos"{print $2; exit}')
+            echo "$bin: minos $minos (announced: $MACOS_MIN)"
+            if [ -z "$minos" ]; then
+              echo "::error::$bin: no LC_BUILD_VERSION minos"; fail=1
+            elif [ "$(printf '%s\n%s\n' "$minos" "$MACOS_MIN" | sort -V | tail -1)" != "$MACOS_MIN" ]; then
+              echo "::error::$bin: minos $minos is above $MACOS_MIN"; fail=1
+            fi
+          done
+          plist=gui/rom2altsound.app/Contents/Info.plist
+          if [ -f "$plist" ]; then
+            lsmin=$(plutil -extract LSMinimumSystemVersion raw "$plist")
+            echo "LSMinimumSystemVersion: $lsmin"
+            if [ "$lsmin" != "$MACOS_MIN" ]; then
+              echo "::error::LSMinimumSystemVersion $lsmin, expected $MACOS_MIN"; fail=1
+            fi
+          fi
+          exit $fail
 
       - name: Extract the test ROM, command line
         run: |
@@ -692,8 +733,8 @@ jobs:
           | Linux x86_64 | `rom2altsound-linux-x86_64.tar.gz` | `rom2altsound-gui-linux-x86_64.tar.gz` |
           | Linux aarch64 | `rom2altsound-linux-aarch64.tar.gz` | `rom2altsound-gui-linux-aarch64.tar.gz` |
           | Windows x86_64 (signed) | `rom2altsound-windows-x86_64.zip` | `rom2altsound-gui-windows-x86_64.zip` |
-          | macOS Apple Silicon (signed, notarized) | `rom2altsound-macos-arm64.tar.gz` | `rom2altsound-gui-macos-arm64.zip` |
-          | macOS Intel (signed, notarized) | `rom2altsound-macos-x86_64.tar.gz` | `rom2altsound-gui-macos-x86_64.zip` |
+          | macOS Apple Silicon, 11 Big Sur or later (signed, notarized) | `rom2altsound-macos-arm64.tar.gz` | `rom2altsound-gui-macos-arm64.zip` |
+          | macOS Intel, 10.15 Catalina or later (signed, notarized) | `rom2altsound-macos-x86_64.tar.gz` | `rom2altsound-gui-macos-x86_64.zip` |
 
           The window program is a separate download (the command line one stays small); it
           does everything the command line does.

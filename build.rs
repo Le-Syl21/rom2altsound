@@ -25,6 +25,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=shim/shim.c");
     println!("cargo:rerun-if-changed={}", upstream.display());
+    println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
     println!(
         "cargo:rerun-if-changed={}",
         root.join("src/version.h").display()
@@ -62,11 +63,31 @@ fn main() {
     fs::create_dir_all(&src_dir).unwrap();
     // A Windows checkout has CRLF line endings; the patches match LF.
     let text = fs::read_to_string(&upstream).unwrap().replace("\r\n", "\n");
-    fs::write(src_dir.join("CMakeLists.txt"), patch_cmakelists(&text)).unwrap();
+    let mut text = patch_cmakelists(&text);
+    if platform == "macos" {
+        // Upstream builds for macOS 14 whatever the caller asks. The library follows
+        // MACOSX_DEPLOYMENT_TARGET instead, as rustc and the cc crate do, so that every
+        // object of the binary agrees on the oldest macOS it runs on.
+        let deployment_target = macos_deployment_target(&target_arch);
+        replace_once(
+            &mut text,
+            "set(CMAKE_OSX_DEPLOYMENT_TARGET 14.0)",
+            &format!("set(CMAKE_OSX_DEPLOYMENT_TARGET {deployment_target})"),
+        );
+    }
+    fs::write(src_dir.join("CMakeLists.txt"), text).unwrap();
 
     let lib_dir = out.join("lib");
     let lib_dir_cmake = cmake_path(&lib_dir);
-    let dst = cmake::Config::new(&src_dir)
+    let mut config = cmake::Config::new(&src_dir);
+    if platform == "macos" {
+        // A call to an API newer than the deployment target, without an availability check,
+        // is an error rather than a binary that fails to load (or crashes) on an older macOS.
+        config
+            .cflag("-Werror=unguarded-availability")
+            .cxxflag("-Werror=unguarded-availability");
+    }
+    let dst = config
         // Always an optimized library: the emulation is the hot path, and on MSVC a Debug
         // CMake build would also pick the debug CRT, which rustc never links.
         .profile("Release")
@@ -92,6 +113,9 @@ fn main() {
         .replace("\r\n", "\n");
     let mut shim = cc::Build::new();
     shim.file("shim/shim.c").warnings(false);
+    if platform == "macos" {
+        shim.flag("-Werror=unguarded-availability");
+    }
     if !msvc {
         // What CMake uses for C_STANDARD 99 with extensions on (its default).
         shim.flag("-std=gnu99");
@@ -134,6 +158,17 @@ fn main() {
         }
         _ if !msvc => println!("cargo:rustc-link-lib=dylib=stdc++"),
         _ => {}
+    }
+}
+
+/// The oldest macOS the binary runs on: `MACOSX_DEPLOYMENT_TARGET` when set (the release
+/// builds set it), else the project's floor: 10.15 Catalina on Intel, 11.0 Big Sur on Apple
+/// Silicon (the first macOS for arm64).
+fn macos_deployment_target(arch: &str) -> String {
+    match env::var("MACOSX_DEPLOYMENT_TARGET") {
+        Ok(v) if !v.trim().is_empty() => v.trim().to_owned(),
+        _ if arch == "aarch64" => "11.0".to_owned(),
+        _ => "10.15".to_owned(),
     }
 }
 

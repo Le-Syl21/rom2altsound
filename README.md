@@ -53,7 +53,9 @@ level and loop yourself, sound by sound. rom2altsound does it all in one go:
 **Release binaries** (Linux x86_64/aarch64, Windows x86_64, macOS arm64/x86_64): download
 the archive for your system from the
 [releases page](https://github.com/Le-Syl21/rom2altsound/releases), unpack it and run
-`rom2altsound` from a terminal. The Windows and macOS binaries are signed. Prefer a
+`rom2altsound` from a terminal. The Windows and macOS binaries are signed. On macOS
+they need 10.15 Catalina or later on an Intel Mac, 11 Big Sur or later on Apple
+Silicon. Prefer a
 window to a terminal? Take the `rom2altsound-gui-…` archive instead (see
 [The window program](#the-window-program)).
 
@@ -661,6 +663,8 @@ par son. rom2altsound fait tout d'un coup :
 téléchargez l'archive pour votre système sur la
 [page des versions](https://github.com/Le-Syl21/rom2altsound/releases), décompressez-la
 et lancez `rom2altsound` depuis un terminal. Les binaires Windows et macOS sont signés.
+Sur macOS, il faut 10.15 Catalina ou plus récent sur un Mac Intel, 11 Big Sur ou plus
+récent sur Apple Silicon.
 Vous préférez une fenêtre à un terminal ? Prenez plutôt l'archive `rom2altsound-gui-…`
 (voir [Le programme à fenêtre](#le-programme-à-fenêtre)).
 
