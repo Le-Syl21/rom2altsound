@@ -54,8 +54,8 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_BYSD`](bally.md#sndbrd_bysd) | ✅ | 10 | 6 | Special Force; Party Animal; Heavy Metal Meltdown |
 | [`SNDBRD_BY51N`](bally.md#sndbrd_by51n) | ✅ | 2 | 1 | Super Bowl |
 | [`SNDBRD_BY45BP`](bally.md#sndbrd_by45bp) | ✅ | 4 | 2 | Baby Pac-Man; Granny and the Gators |
-| [`SNDBRD_ATARI1`](atari.md#sndbrd_atari1) | ❌ | 12 | 5 | Atarians, The; Middle Earth; Time 2000 |
-| [`SNDBRD_ATARI2`](atari.md#sndbrd_atari2) | ❌ | 3 | 3 | Superman; Hercules; Road Runner |
+| [`SNDBRD_ATARI1`](atari.md#sndbrd_atari1) | ✅ | 12 | 5 | Atarians, The; Middle Earth; Time 2000 |
+| [`SNDBRD_ATARI2`](atari.md#sndbrd_atari2) | ✅ | 3 | 3 | Superman; Hercules; Road Runner |
 | [`SNDBRD_ST100B`](stern-early.md#sndbrd_st100b) | ✅ | 16 | 7 | Trident; Magic; Cosmic Princess |
 | [`SNDBRD_ST100`](stern-early.md#sndbrd_st100) | ✅ | 10 | 4 | Dracula; Wild Fyre; Lectronamo |
 | [`SNDBRD_ST300`](stern-early.md#sndbrd_st300) | ✅ | 76 | 17 | Meteor; Dragonfist; Seawitch |

@@ -36,6 +36,15 @@
   AltSound there); `manifest.json` (`game_sound`) says what the layer is and where the
   program refers to each sound. ST300V's effects (the same scripts) are not done: the
   speech sweep halts the game CPU.
+- **Atari, game-driven**: generation 1 and 2 boards take no command either (the game
+  writes the tone latches step by step). The game's per-sound RAM bytes are read in its
+  program and set as its code does: one down-counter per sound and the lengths the game
+  stores in it (The Atarians, Time 2000, Airborne Avenger), a table of slots (Space
+  Riders), sound descriptors (Middle Earth), one pending count per sound number with the
+  driver's descriptor table (Superman, Hercules, Road Runner). atarians 6 of 6, time2000
+  7 of 7, aavenger 10 of 10, midearth 8 of 8, spcrider 13 of 13, superman 18 of 18,
+  hercules 20 of 20, roadrunr 16 of 16, all from silence (0 of 40 before). Ids: a counter
+  and its length, a slot or a sound number.
 
 ## 0.2.4 (2026-10-10)
 

@@ -1,7 +1,8 @@
 //! Game-driven sound: the boards that take no sound command.
 //!
-//! On Stern's SB-300 (`ST300`) and its Astro board tester (`ASTRO`), the game CPU makes
-//! every sound itself: it writes the sound chip's timers over time. There is no command byte between the game and its board, so
+//! On Stern's SB-300 (`ST300`), Atari's generation 1 and 2 boards (`ATARI1`, `ATARI2`) and
+//! Stern's Astro board tester (`ASTRO`), the game CPU makes every sound itself: it writes
+//! the sound chip's registers over time (timers, tone latches). There is no command byte between the game and its board, so
 //! the sweep of the other boards has nothing to send. The game's own program has a sound
 //! layer, though: a routine that starts a sound and a request the rest of the game uses to
 //! ask for one (a pointer to a sound script, a sound number in a RAM byte...). This module
@@ -63,7 +64,7 @@ pub struct Layer {
 pub fn game_driven(typestr: &str, subtype: i32) -> bool {
     match typestr {
         "ST300" => subtype == 0,
-        "ASTRO" => true,
+        "ASTRO" | "ATARI1" | "ATARI2" => true,
         _ => false,
     }
 }
@@ -73,6 +74,8 @@ pub fn game_driven(typestr: &str, subtype: i32) -> bool {
 pub fn find(typestr: &str, image: &[u8]) -> Result<Layer, String> {
     match typestr {
         "ST300" | "ASTRO" => st300::find(image),
+        "ATARI1" => atari::gen1(image),
+        "ATARI2" => atari::gen2(image),
         _ => Err(format!("no reader for the {typestr} game's sound layer")),
     }
 }
@@ -695,6 +698,268 @@ mod st300 {
     }
 }
 
+/// Atari (1976-1979): the game program steps the tone itself, from slots in RAM.
+///
+/// No sound CPU: the game writes a waveform select, a frequency and a volume to latches
+/// (generation 1: `1080`/`1084`/`1088`, enable `3000`, reset `6000`; generation 2: `1800`
+/// and `1820`), one step of a sound at a time, from a routine its main loop or interrupt
+/// calls. What the rest of the game sets to ask for a sound is a RAM byte per sound:
+/// - generation 1, The Atarians, Time 2000, Airborne Avenger: one down-counter per sound
+///   (the routine plays the highest one that is not zero, one table step per call, and
+///   disables the tone when all are zero); the game starts a sound by storing its length
+///   there (`LDAA #len; STAA counter`). Id: the counter's address and that length.
+/// - generation 1, Space Riders: a table of slots (a step byte and a pending count each);
+///   the game asks for slot `n` by adding to its pending count. Id: the slot number.
+/// - generation 1, Middle Earth: a list of sound descriptors, each pointing at its own
+///   step and pending bytes in RAM. Id: the descriptor's address.
+/// - generation 2, Superman, Hercules, Road Runner: an array of pending counts, one per
+///   sound number, the descriptor table at `A8B7` (6 bytes each); the game's rule code
+///   asks for sound `n` through its sound instruction (`3214`: `INC count[n]`). Id: the
+///   sound number.
+mod atari {
+    use super::*;
+
+    fn poke(addr: usize, val: u8) -> Poke {
+        Poke {
+            addr: addr as u32,
+            val,
+        }
+    }
+
+    /// Every match of the pattern `p` in `from..to`.
+    fn all(m: &[u8], p: &str, from: usize, to: usize) -> Vec<usize> {
+        let p = pat(p);
+        let mut v = Vec::new();
+        let mut i = from;
+        while let Some(at) = find_pat(m, &p, i, to) {
+            v.push(at);
+            i = at + 1;
+        }
+        v
+    }
+
+    pub fn gen1(m: &[u8]) -> Result<Layer, String> {
+        if m.len() < 0x8000 {
+            return Err("program image smaller than the generation 1 map".into());
+        }
+        let (lo, hi) = (0x7000, 0x8000);
+        // Down-counters: `LDAA c; BEQ; LDX #table; JSR index; LDAB wave; DEC c`.
+        let blocks: Vec<usize> = all(m, "96 ?? 27 ?? CE ?? ?? BD ?? ?? F6 ?? ?? 7A 00 ??", lo, hi)
+            .into_iter()
+            .filter(|&i| m[i + 1] == m[i + 15])
+            .collect();
+        if blocks.len() >= 2 {
+            let counters: Vec<u8> = blocks.iter().map(|&i| m[i + 1]).collect();
+            let mut sounds = Vec::new();
+            for &c in &counters {
+                // Every `STAA c` / `STAB c` with its `LDAA #v` / `LDAB #v` a few bytes before.
+                let mut starts = std::collections::BTreeMap::<u8, Vec<String>>::new();
+                for i in lo + 2..hi - 1 {
+                    let reg = match m[i] {
+                        0x97 => 0x86,
+                        0xD7 => 0xC6,
+                        _ => continue,
+                    };
+                    if m[i + 1] != c {
+                        continue;
+                    }
+                    if let Some(k) = (i.saturating_sub(10)..i - 1).rev().find(|&k| m[k] == reg)
+                        && m[k + 1] != 0
+                    {
+                        starts.entry(m[k + 1]).or_default().push(format!("{i:04X}"));
+                    }
+                }
+                for (v, at) in starts {
+                    sounds.push(GameSound {
+                        id: u32::from(c) << 8 | u32::from(v),
+                        refs: format!("counter ${c:02X} = {v:02X} at {}", at.join(", ")),
+                        start: Request::Pokes(vec![poke(usize::from(c), v)]),
+                    });
+                }
+            }
+            if sounds.is_empty() {
+                return Err("generation 1 sound counters found, but no code starting them".into());
+            }
+            return Ok(Layer {
+                what: format!(
+                    "Atari generation 1 sound counters {} (the routine at {:04X} plays the highest one that is not zero, one step per call, and turns the tone off when all are zero); {} sounds: the lengths the game stores in them; stop: every counter to 0",
+                    counters.iter().map(|c| format!("${c:02X}")).collect::<Vec<_>>().join(" "),
+                    blocks[0],
+                    sounds.len()
+                ),
+                id_is: "the counter's RAM address (high byte) and the length the game stores in it to start the sound (low byte)".into(),
+                id_digits: 4,
+                sounds,
+                stop: Request::Pokes(counters.iter().map(|&c| poke(usize::from(c), 0)).collect()),
+            });
+        }
+        // Slots of a step and a pending count: `LDX #base ... LDAA 0,X; BNE; LDAA 1,X; BEQ;
+        // DEC 1,X`, up to `CPX #end`.
+        if let Some(i) = all(
+            m,
+            "CE 00 ?? DF ?? 7F 00 ?? DE ?? A6 00 26 ?? A6 01 27 ?? 6A 01",
+            lo,
+            hi,
+        )
+        .first()
+        .copied()
+        {
+            let base = usize::from(m[i + 2]);
+            let Some(end) = (i..i + 0x60)
+                .find(|&k| m[k] == 0x8C && m[k + 1] == 0 && usize::from(m[k + 2]) > base)
+                .map(|k| usize::from(m[k + 2]))
+            else {
+                return Err(format!(
+                    "generation 1 sound slots at ${base:02X}: their end was not found"
+                ));
+            };
+            let n = (end - base) / 2;
+            let sounds = (0..n)
+                .map(|s| GameSound {
+                    id: s as u32,
+                    refs: format!("slot {s}: pending count at ${:02X}", base + 2 * s + 1),
+                    start: Request::Pokes(vec![poke(base + 2 * s + 1, 1)]),
+                })
+                .collect();
+            return Ok(Layer {
+                what: format!(
+                    "Atari generation 1 sound slots ${base:02X}..${:02X} (a step byte and a pending count each, stepped by the routine at {i:04X}); {n} sounds; stop: every slot to 0",
+                    end - 1
+                ),
+                id_is: "the sound's slot number (the game asks for slot n by adding to its pending count)".into(),
+                id_digits: 2,
+                sounds,
+                stop: Request::Pokes((base..end).map(|a| poke(a, 0)).collect()),
+            });
+        }
+        // Descriptors with a pointer to their own step and pending bytes: the routine
+        // (`STX; STX; LDX 1,X; LDAA 0,X; BNE; LDAA 1,X; BNE`) and every `LDX #descriptor;
+        // BSR routine` that calls it.
+        if let Some(r) = all(m, "DF ?? DF ?? EE 01 A6 00 26 ?? A6 01 26", lo, hi)
+            .first()
+            .copied()
+        {
+            let mut descs: Vec<usize> = Vec::new();
+            for i in all(m, "CE ?? ?? 8D ??", lo, hi) {
+                let target = (i + 5).wrapping_add_signed(isize::from(m[i + 4] as i8));
+                let d = usize::from(be16(m, i + 1));
+                if target == r && (lo..hi).contains(&d) && !descs.contains(&d) {
+                    descs.push(d);
+                }
+            }
+            descs.sort_unstable();
+            if descs.is_empty() {
+                return Err(format!(
+                    "generation 1 sound routine at {r:04X}: no descriptor passed to it"
+                ));
+            }
+            let state = |d: usize| usize::from(be16(m, d + 1));
+            return Ok(Layer {
+                what: format!(
+                    "Atari generation 1 sound descriptors {} (stepped by the routine at {r:04X}; each points at its step and pending bytes in RAM); {} sounds; stop: every step and pending byte to 0",
+                    descs
+                        .iter()
+                        .map(|d| format!("{d:04X}"))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    descs.len()
+                ),
+                id_is: "the address of the sound's descriptor in the game's program".into(),
+                id_digits: 4,
+                sounds: descs
+                    .iter()
+                    .map(|&d| GameSound {
+                        id: d as u32,
+                        refs: format!("descriptor {d:04X}: pending count at ${:02X}", state(d) + 1),
+                        start: Request::Pokes(vec![poke(state(d) + 1, 1)]),
+                    })
+                    .collect(),
+                stop: Request::Pokes(
+                    descs
+                        .iter()
+                        .flat_map(|&d| [poke(state(d), 0), poke(state(d) + 1, 0)])
+                        .collect(),
+                ),
+            });
+        }
+        Err("no generation 1 sound routine of a known kind found".into())
+    }
+
+    /// The generation 2 system program (Superman, Hercules: `3214`; Road Runner: `31FE`).
+    pub fn gen2(m: &[u8]) -> Result<Layer, String> {
+        if m.len() < 0x4000 {
+            return Err("program image smaller than the generation 2 map".into());
+        }
+        let (lo, hi) = (0x2800, 0x4000);
+        // The sound instruction: `PSHA; LDX #count; ANDA #1F; JSR add; ...; INC 0,X`.
+        let Some(req) = all(m, "36 CE 00 ?? 84 1F BD", lo, hi).first().copied() else {
+            return Err("no generation 2 sound instruction found".into());
+        };
+        let base = usize::from(m[req + 3]);
+        // The driver: `CMPA #n` before the `CLR 1800` that ends a pass over the counts,
+        // then `LDAA #FF; STAA current` (no sound playing).
+        let Some(clr) = all(m, "7F 18 00", lo, hi)
+            .into_iter()
+            .find(|&k| (k.saturating_sub(16)..k).any(|q| m[q] == 0x81 && m[q + 2] == 0x26))
+        else {
+            return Err("generation 2 sound driver not found".into());
+        };
+        let count = (clr - 16..clr)
+            .rev()
+            .find(|&q| m[q] == 0x81 && m[q + 2] == 0x26)
+            .map(|q| usize::from(m[q + 1]))
+            .unwrap_or(0);
+        let current =
+            find_pat(m, &pat("86 FF 97 ??"), clr, clr + 16).map(|k| usize::from(m[k + 3]));
+        // The descriptor of sound `n`: `LDX #table + 6n` in the driver, after its pass end.
+        let Some(table) = find_pat(m, &pat("48 16 48 1B CE ?? ?? BD"), clr, clr + 0x80)
+            .map(|k| usize::from(be16(m, k + 5)))
+        else {
+            return Err("generation 2 sound descriptor table not found".into());
+        };
+        // The descriptors in use: 6 bytes, two lengths in order, small flags (the table is
+        // followed by other data).
+        let valid = |n: usize| {
+            let d = &m[table + 6 * n..table + 6 * n + 6];
+            d[2] <= d[3] && d[3] < 0x40 && d[4] < 0x10
+        };
+        let n = (0..count.min(0x20)).take_while(|&n| valid(n)).count();
+        if n == 0 {
+            return Err(format!(
+                "generation 2 sound table at {table:04X}: no descriptor"
+            ));
+        }
+        let mut stop: Vec<Poke> = (base..base + count).map(|a| poke(a, 0)).collect();
+        if let Some(c) = current {
+            stop.push(poke(c, 0xFF));
+        }
+        stop.push(poke(0x1800, 0));
+        Ok(Layer {
+            what: format!(
+                "Atari generation 2 sound instruction at {req:04X}: one pending count per sound number at ${base:02X}..${:02X}, the driver's descriptors at {table:04X} (6 bytes each, {n} in use of the {count} counts); stop: the counts to 0, no sound current{}, the sound register 1800 to 0",
+                base + count - 1,
+                current
+                    .map(|c| format!(" (${c:02X} = FF)"))
+                    .unwrap_or_default()
+            ),
+            id_is: "the game's sound number (the index of its pending count and descriptor)".into(),
+            id_digits: 2,
+            sounds: (0..n)
+                .map(|s| GameSound {
+                    id: s as u32,
+                    refs: format!(
+                        "sound {s}: pending count at ${:02X}, descriptor {:04X}",
+                        base + s,
+                        table + 6 * s
+                    ),
+                    start: Request::Pokes(vec![poke(base + s, 1)]),
+                })
+                .collect(),
+            stop: Request::Pokes(stop),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -760,6 +1025,34 @@ mod tests {
                     val: 0x8D
                 }
             ]
+        );
+    }
+
+    /// Atari generation 1 (The Atarians): one block per down-counter in the sound routine,
+    /// and the lengths the game stores in each.
+    #[test]
+    fn atari_gen1_counters_and_their_lengths() {
+        let mut m = vec![0u8; 0x10000];
+        let block = |c: u8| {
+            [
+                0x96, c, 0x27, 0x0E, 0xCE, 0x7F, 0x6B, 0xBD, 0x7B, 0xDA, 0xF6, 0x7F, 0x8B, 0x7A,
+                0x00, c,
+            ]
+        };
+        m[0x785D..0x786D].copy_from_slice(&block(0xC5));
+        m[0x786F..0x787F].copy_from_slice(&block(0xA5));
+        // LDAA #1F; STAA $A5 and LDAA #20; STAA $C5.
+        m[0x7929..0x792D].copy_from_slice(&[0x86, 0x1F, 0x97, 0xA5]);
+        m[0x7B6A..0x7B6E].copy_from_slice(&[0x86, 0x20, 0x97, 0xC5]);
+        let l = atari::gen1(&m).unwrap();
+        let ids: Vec<u32> = l.sounds.iter().map(|s| s.id).collect();
+        assert_eq!(ids, [0xC520, 0xA51F]);
+        assert_eq!(
+            l.sounds[1].start,
+            Request::Pokes(vec![Poke {
+                addr: 0xA5,
+                val: 0x1F
+            }])
         );
     }
 }

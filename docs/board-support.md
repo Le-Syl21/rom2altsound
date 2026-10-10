@@ -36,8 +36,8 @@ the families whose packs do not play there are flagged on the site (`docs/vpx_pl
 
 PinMAME 3.7 (the submodule) knows 2971 sets, 10 of them shared system ROM sets (`gts80s`,
 `allied`...: no game, see [how it works](how-it-works.md#rom-verification)). Of the other
-2961, 2637 (593 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
-sets built outside the full set, see its row), 52 in a ⚠️ one, 15 in a ❌ one, 257
+2961, 2652 (601 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
+sets built outside the full set, see its row), 52 in a ⚠️ one, none in a ❌ one, 257
 have no sound board (October 2026, after the protocol fixes and the game-driven boards
 listed below; before them: 1939 ✅, 444 ⚠️, 315 ❌, 6 not run). "Sets" counts every set (clones
 and revisions included), "games" the sets without a parent, "sound ROM ids" the distinct
@@ -127,6 +127,8 @@ are the system zips; 2796 of the 2961 sets are there).
 | JOCTRONIC | JOCTRONIC | 3 | 3 | 3 | 1986-1986 | Joctronic | 3 | punkywil, walkyria | ✅ | fixed (punkywil 0 of 40 before): the sweep is the range each sound program plays (read in both programs): Punky Willy's 40..9F (it ignores the 01..28 the survey sent, and 01 restarts it), Walkyria's and Pin Ball's 01..3C (80 restarts them): punkywil 29 of 40, walkyria 39 of 40, jpinball 28 of 40. The CTC interrupt the program counts does reach the sound CPU once the game has set the CTC up (0.52 s into the boot); the earlier note that it never came was wrong |
 | TECNOPLAY | TECNOPLAY | 2 | 2 | 1 | 1987-1988 | Tecnoplay | 2 | spcteam, xforce | ✅ | fixed (0 of 40 before): the TMS7000 program (read with PinMAME's own disassembler) runs from interrupts that PinMAME's TMS7000 core and Y8950 lose (see the family's notes); a shim tick drives the lines as the chip's flags would, commands are held until the program reads them, stop 4F 00 (no board reset: each reset leaks a PinMAME timer): spcteam 38 of 40, all from silence; full sweep 109 of 255, no board reset. xforce has no sound ROM (not dumped): 0 of 40 |
 | ST300 | ST300 | 76 | 17 | 0 | 1979-2026 | Stern, Stern / Idleman | 67 | meteor, viper | ✅ | game-driven (0 of 40 before: not a command board, the game programs the timers itself): the sound script interpreter of the game's interrupt is read in the program (six formats among the 15 programs), every script the program starts is asked for as the game does (its pointer and delay in RAM, the game left running), stopped with the game's own silencing op; ids are script addresses, not commands. meteor 16 of 16, viper 17 of 17, nineball 16 of 16, cheetah 29 of 31; 308 of 317 sounds on the 15 programs, all from silence; the layer is found on all 67 sets in the full set, MODs included. The pack cannot play in VPinball (no command reaches AltSound) |
+| ATARI1 | ATARI1 | 12 | 5 | 3 | 1976-2024 | Atari | 12 | atarians, spcrider | ✅ | game-driven (0 of 40 before: the game streams latch writes, not commands): the game's per-sound RAM bytes are read in its program (down-counters on The Atarians, Time 2000, Airborne Avenger; slots on Space Riders; descriptors on Middle Earth) and set as the game does: atarians 6 of 6, time2000 7 of 7, aavenger 10 of 10, midearth 8 of 8, spcrider 13 of 13, all from silence. mideartp (a bad dump) has none of them. The pack cannot play in VPinball |
+| ATARI2 | ATARI2 | 3 | 3 | 1 | 1979-1979 | Atari | 3 | superman, hercules | ✅ | game-driven (0 of 40 before): one pending count per sound number, the driver's descriptor table read in the program: superman 18 of 18, hercules 20 of 20, roadrunr 16 of 16, all from silence; ids are the game's sound numbers. The pack cannot play in VPinball |
 | ASTRO | ASTRO | 2 | 1 | 0 | ? | Stern | 2 | sam_iii | ✅ | game-driven (0 of 40 before): the tester's program has Meteor's script interpreter; its 6 test sounds, 6 of 6, from silence. sam_iv boots a program of its own with no sound code: no sound layer (error). The pack cannot play in VPinball |
 | SPINB | SPINB | 27 | 16 | 14 | 1985-1996 | Inder (Spain), Spinball (Spain) | 26 | bushido, corsario | ⚠️ | Spinball's own boards fixed (bushido, mach2, jolypark, vrnwrld: 7 sets; 0 of 40 before): both sound CPUs take a byte only while its bit 7 is set, so each command is 8x..FF followed by 00, stop 8F; the MSM6585 boards' step volume, which the games' boot steps down to 0, is set back to 122. bushido 31 of 40, mach2, jolypark, vrnwrld 40 of 40, all from silence. Inder's machines (20 sets, INDER in the logs): stop 00, lapbylap 28 of 40 from silence; the MSM5205 ones (moonlght, pinclown, corsario, atleta) play their background music whenever bit 7 is clear, under every command (read in corsario's program) |
 | ST300V | ST300 | 21 | 6 | 7 | 1980-2024 | Stern, Stern / Idleman | 20 | flight2k | ⚠️ | speech only: the sweep is now 40..7F, the S14001A's 64 words (the manual command is the speech path): flight2k 37 of 40, freefall 40 of 40, all from silence, 0.2 to 0.4 s each, some clipped (0 of 40 before). The effects are the game's own timer programming (as ST300), not extracted |
@@ -134,8 +136,6 @@ are the system zips; 2796 of the 2961 sets are there).
 | S3DFS | WMSS67 | 1 | 1 | 1 | 1978-1978 | Williams | 1 | disco_l1 | ⚠️ | with the S67S idle framing (1 of 40 before): 40 of 40, all from silence, but few distinct (the files repeat with the lowest low bit of the command); the control bit (s67s_ctrl_w) is never set |
 | TABART | TABART | 1 | 1 | 1 | 1986-1986 | Christian Tabart (France) | 1 | hexagone | ⚠️ | doubtful: 31 of 40, 22 not from silence, 5 distinct levels. Read in its sound program: not a command board: it plays on eleven playfield switches it reads itself (YM2203 port B, during the switch-strobe NMI and the four timer interrupts after it), the three chime lines and the outhole, and with the default sound DIPs only its tune (what PinMAME plays from 1 s into the boot); AltSound could not key the switch sounds. Left as is |
 | S3WCS | WMSS67 | 1 | 1 | 1 | 1978-1978 | Williams | 1 | wldcp_l1 | ⚠️ | with the S67S idle framing (0 of 40 before): 16 of 40, all from silence, but all alike (one 2.6 s sound); the control bit (s67s_ctrl_w) is never set |
-| ATARI1 | ATARI1 | 12 | 5 | 3 | 1976-2024 | Atari | 12 | atarians | ❌ | first run (the full set's zip is complete): 0 of 40; the game streams 00 bytes (14498 in the boot): discrete sound driven by lines, not by command numbers |
-| ATARI2 | ATARI2 | 3 | 3 | 1 | 1979-1979 | Atari | 3 | superman | ❌ | 0 of 40: discrete sound (no sound ROM), the game sent no sound byte at boot; the board is driven by lines, not by command numbers |
 | NONE (other) | - | 251 | 167 | 13 | 1974-2025 | Bally, LTD | 212 | - | — | no sound board in PinMAME's sound board interface (sndbrd.c): sound on the CPU board, chimes, or a sound CPU the driver runs by itself (LTD, Bally -17, Recel, Sleic, Juegos Populares...); rom2altsound has nothing to send commands to |
 | ZAC1311 | - | 6 | 3 | 0 | 1978-1978 | Zaccaria | 6 | futurwld | — | no sound board interface: PinMAME has no manual command handler for it, nothing to drive |
 
@@ -185,20 +185,19 @@ row give the before and after of the survey run. In short:
   and Y8950);
 - **the board's level**: Spinball's MSM6585 boards, stepped back up after the boot steps
   them down to 0;
-- **no command at all, the game's own sound layer**: Stern SB-300 and its Astro tester:
+- **no command at all, the game's own sound layer**: Stern SB-300 and its Astro tester, Atari generation 1 and 2:
   the game plays every sound itself, so its program is read for the request its own code
-  makes (a script pointer) and for every sound it asks for; the game is left running in
+  makes (a script pointer, a counter, a slot) and for every sound it asks for; the game is left running in
   attract mode and asked for each one ([game-driven boards](families/common.md#game-driven-boards)).
   The ids are the game's internal sound ids, not commands: these packs are a recording of
   the game's sounds and cannot play in VPinball.
 
 What is left, and why (each family's notes say what was tried):
 
-- **No command to send**: Atari Generation 1 and 2 (the game writes the tone
-  registers), Romstar's Goofy Hoops (the game drives its QSound chip).
+- **No command to send**: Romstar's Goofy Hoops (the game drives its QSound chip).
 - **Game-driven, not everything**: ST300V's effects (the same scripts as ST300, but the
-  speech sweep halts the game CPU that plays them: only the speech words are extracted)
-  and `sam_iv` (its own program has no sound code).
+  speech sweep halts the game CPU that plays them: only the speech words are extracted),
+  `sam_iv` (its own program has no sound code) and `mideartp` (a bad dump).
 - **Not a command board**: Tabart's L'Hexagone (its program plays on the playfield
   switches it reads itself, the chime lines and the outhole, read in its program).
 - **Doubtful**: Inder's MSM5205 machines (their background music plays under every
