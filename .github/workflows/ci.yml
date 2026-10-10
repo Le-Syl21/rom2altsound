@@ -581,8 +581,13 @@ jobs:
       # What a browser download does on macOS: the archive, and everything unpacked from
       # it, carries com.apple.quarantine, and Gatekeeper assesses the program at its first
       # launch. A bare signed binary cannot hold a stapled ticket: Gatekeeper must reach
-      # Apple's servers to find its notarization. Unsigned binaries (manual runs) are
-      # expected to be refused; signed ones must run.
+      # Apple's servers to find its notarization.
+      # Caveat, seen on the runners (macOS 15 Intel, macOS 26 arm64): a program started by
+      # the runner is not stopped by Gatekeeper, quarantined or not; even unsigned
+      # binaries that spctl rejects run. So the runs below prove the binaries work
+      # quarantined, not that a user's Terminal or Finder lets them start: for that, the
+      # signed binaries must also pass Apple's own checks, Gatekeeper's verdict on the
+      # application and the online notarization check of the bare binary.
       - name: Quarantined, as downloaded by a browser (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -619,11 +624,24 @@ jobs:
             --predicate 'process == "syspolicyd" OR subsystem == "com.apple.syspolicy"' 2>/dev/null \
             | grep -i -E 'rom2altsound|notar|quarantine|reject|allow' | tail -n 60 || true
           if [ $failed -ne 0 ]; then
-            if [ "$signed" = yes ]; then
-              echo "::error::the quarantined signed binaries did not run"
-              exit 1
+            echo "::error::the quarantined binaries did not run"
+            exit 1
+          fi
+          if [ "$signed" = yes ]; then
+            # The bare binary: its notarization, asked to Apple's servers.
+            codesign --verify --strict --check-notarization -R=notarized --verbose=2 \
+              q/cli/rom2altsound 2>&1 || { echo "::error::the command line is not notarized"; exit 1; }
+            if [ -d q/rom2altsound.app ]; then
+              verdict=$(spctl -a -vv -t exec q/rom2altsound.app 2>&1 || true)
+              echo "$verdict"
+              if ! echo "$verdict" | grep -q "accepted" || ! echo "$verdict" | grep -q "Notarized Developer ID"; then
+                echo "::error::Gatekeeper does not accept the quarantined application"
+                exit 1
+              fi
+              xcrun stapler validate q/rom2altsound.app || { echo "::error::no stapled ticket"; exit 1; }
             fi
-            echo "::warning::quarantined unsigned binaries were refused (expected: signing only happens at a tag)"
+          else
+            echo "unsigned binaries (signing only happens at a tag): Gatekeeper checks skipped"
           fi
 
       # Windows' equivalent: the Mark of the Web (Zone.Identifier, zone 3 = Internet) a
