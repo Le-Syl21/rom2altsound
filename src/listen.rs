@@ -144,6 +144,7 @@ fn page_data(m: &Value, exists: impl Fn(&str) -> bool) -> Value {
         "mode": m["mode"],
         "volume": volume_line(m),
         "levels_note": m["levels_note"],
+        "borrowed": m["sound_rom_borrowed"]["note"],
         "lufs": m["loudness"]["all"]["lufs"],
         "counts": m["counts"],
         "sounds": sounds,

@@ -116,6 +116,7 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
         cli.names.as_ref().map(|v| v.to_string_lossy().into_owned()),
     );
     opt("--stop", cli.stop.clone());
+    opt("--sound-rom-from", cli.sound_rom_from.clone());
     opt("--solo", cli.solo.clone());
     opt(
         "--sam-volume-test",
@@ -143,6 +144,7 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
         ("--no-chip-check", cli.no_chip_check),
         ("--bsmt-hle", cli.bsmt_hle),
         ("--force-names", cli.force_names),
+        ("--force-sound-rom", cli.force_sound_rom),
     ] {
         if on {
             a.push(flag.into());

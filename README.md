@@ -522,6 +522,28 @@ Without it, PinMAME uses its older emulation of the chip, as VPinball does witho
 file. The summary and `manifest.json` (`bsmt2000`) say which one ran: `lle` (the chip's own
 program, with the file's CRC) or `hle`. `--bsmt-hle` forces the older one.
 
+### A sound ROM nobody dumped (X Force)
+
+Tecnoplay's X Force (`xforce`) has no sound ROM in PinMAME: it was never dumped. Its game
+program and Space Team's (`spcteam`) talk to the same sound board the same way, and Space
+Team's sound program holds music and sample entries that only X Force asks for, so it is
+very likely X Force's own program. If you have `spcteam.zip`, rom2altsound can use its sound
+ROM for X Force:
+
+```sh
+rom2altsound xforce --sound-rom-from spcteam
+```
+
+`spcteam.zip` is looked for next to `xforce.zip` (or give its path). Nothing is written in
+your ROM folders: the combined set is built in rom2altsound's own PinMAME folder. The pack
+says it everywhere: `manifest.json` (`sound_rom_borrowed`), the listening page and a
+`README.txt` read "sound ROM borrowed from spcteam: approximate", and its sounds are named
+after what X Force's game sends them for (coin, start, bumpers, multiball music...). X Force's
+sample ROMs were never dumped either, so its three samples (`40`, `4C`, `4D`) are silent.
+Only known pairs are accepted (`--force-sound-rom` for another one, with no evidence behind
+it); the window program offers it as a tick box when it sees both zips. Details:
+[docs/families/other-makers.md](docs/families/other-makers.md#sndbrd_tecnoplay).
+
 ### Limits
 
 - **AltSound loops whole files only**: it cannot play an intro once and then loop the rest
@@ -1159,6 +1181,29 @@ ROM, dans le dossier `--roms` ou dans `./roms` (un dossier `bsmt2000/` contenant
 Sans lui, PinMAME utilise son ancienne émulation de la puce, comme VPinball sans ce
 fichier. Le résumé et `manifest.json` (`bsmt2000`) disent laquelle a tourné : `lle` (le
 programme de la puce, avec le CRC du fichier) ou `hle`. `--bsmt-hle` impose l'ancienne.
+
+### Une ROM son que personne n'a copiée (X Force)
+
+X Force de Tecnoplay (`xforce`) n'a pas de ROM son dans PinMAME : elle n'a jamais été copiée
+(dumpée). Son programme de jeu et celui de Space Team (`spcteam`) parlent à la même carte son
+de la même façon, et le programme son de Space Team contient des musiques et des échantillons
+que seul X Force demande : c'est très probablement le programme de X Force. Si vous avez
+`spcteam.zip`, rom2altsound peut prendre sa ROM son pour X Force :
+
+```sh
+rom2altsound xforce --sound-rom-from spcteam
+```
+
+`spcteam.zip` est cherché à côté de `xforce.zip` (ou donnez son chemin). Rien n'est écrit dans
+vos dossiers de ROM : le jeu combiné est construit dans le dossier PinMAME de rom2altsound. Le
+pack le dit partout : `manifest.json` (`sound_rom_borrowed`), la page d'écoute et un
+`README.txt` portent « sound ROM borrowed from spcteam: approximate », et ses sons sont nommés
+d'après ce pour quoi le jeu X Force les envoie (pièce, départ, bumpers, musique du multibille...).
+Les ROM d'échantillons de X Force n'ont pas été copiées non plus : ses trois échantillons
+(`40`, `4C`, `4D`) sont muets. Seules les paires connues sont acceptées (`--force-sound-rom`
+pour une autre, sans rien pour l'appuyer) ; le programme à fenêtre le propose en case à cocher
+quand il voit les deux zips. Détails :
+[docs/families/other-makers.md](docs/families/other-makers.md#sndbrd_tecnoplay).
 
 ### Limites
 

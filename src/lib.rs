@@ -7,6 +7,7 @@
 
 mod altsound;
 pub mod batch;
+pub mod borrow;
 mod bsmtfw;
 mod catalog;
 mod dcsrom;
@@ -195,6 +196,17 @@ pub struct Cli {
     /// "All sound off" / "Reset Sound System" from sounds.dat, else an audio CPU reset)
     #[arg(long)]
     stop: Option<String>,
+    /// For a set whose sound ROM was never dumped: borrow the sound ROM of another set you
+    /// have (a set name looked up next to the ROM's zip, or the path to its zip). The
+    /// combined set is built in the private PinMAME directory, never in your ROM folders,
+    /// and the pack is marked approximate (manifest, listening page, README.txt). Only
+    /// known pairs, where both games run the same sound program: xforce from spcteam (see
+    /// --force-sound-rom). Sets that have their own sound ROM ignore it
+    #[arg(long, value_name = "SET")]
+    sound_rom_from: Option<String>,
+    /// Borrow the --sound-rom-from ROM even for a pair not known to share its sound program
+    #[arg(long, requires = "sound_rom_from")]
+    force_sound_rom: bool,
     /// BSMT boards: use PinMAME's older BSMT2000 emulation (HLE) even when the chip's own
     /// program (bsmt2000.zip) is found
     #[arg(long)]
@@ -484,9 +496,16 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
         None => soundsdat::BUILT_IN.to_owned(),
     });
     std::fs::create_dir_all(&job.out).map_err(|e| e.to_string())?;
+    let borrow = borrow_plan(cli, job)?;
+    // A borrowed sound ROM gets a private directory of its own (its nvram and its combined
+    // zip stay apart from the set's own).
+    let private = match &borrow {
+        Some(p) => format!("{}.sound-from-{}", job.rom, p.donor),
+        None => job.rom.clone(),
+    };
     let vpm = match &cli.vpm {
         Some(v) => std::path::absolute(v).map_err(|e| e.to_string())?,
-        None if cli.factory() => work_dir()?.join("vpm-factory").join(&job.rom),
+        None if cli.factory() => work_dir()?.join("vpm-factory").join(&private),
         None => work_dir()?.join("vpm"),
     };
     for d in ["roms", "nvram", "cfg"] {
@@ -540,6 +559,28 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
     for set in std::iter::once(&job.rom).chain(parent.as_ref()) {
         link_rom(&job.roms, &vpm, set)?;
     }
+    let borrowed = match &borrow {
+        Some(p) => {
+            let b = borrow::stage(
+                p,
+                &job.rom,
+                &job.roms.join(format!("{}.zip", job.rom)),
+                &vpm.join("roms").join(format!("{}.zip", job.rom)),
+            )?;
+            for f in &b.files {
+                eprintln!(
+                    "sound ROM borrowed: {} = {}'s {} (CRC32 {}), in {}",
+                    f.name,
+                    b.from,
+                    f.from_name,
+                    f.crc32,
+                    vpm.join("roms").display()
+                );
+            }
+            Some(b)
+        }
+        None => None,
+    };
     let sets: Vec<&str> = std::iter::once(job.rom.as_str())
         .chain(parent.as_deref())
         .collect();
@@ -735,6 +776,60 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             }
         );
     }
+    if let Some(b) = &borrowed {
+        mark_borrowed(cli, job, b)?;
+    }
+    Ok(())
+}
+
+/// `--sound-rom-from` for this ROM: None when not given, or when the set has its own sound
+/// ROM (then it does not apply, said once).
+fn borrow_plan(cli: &Cli, job: &Job) -> Result<Option<borrow::Plan>, String> {
+    let Some(donor) = &cli.sound_rom_from else {
+        return Ok(None);
+    };
+    if sam::sam_set(&job.rom).is_some() {
+        return Ok(None);
+    }
+    let dirs = vec![job.roms.clone(), PathBuf::from("roms"), PathBuf::from(".")];
+    let plan = borrow::plan(
+        &drivers::load(),
+        &job.rom,
+        donor,
+        &dirs,
+        cli.force_sound_rom,
+    )?;
+    if plan.is_none() && !cli.cold_boot_only {
+        eprintln!(
+            "--sound-rom-from {donor}: {} has its own sound ROM, nothing borrowed",
+            job.rom
+        );
+    }
+    Ok(plan)
+}
+
+/// Marks a pack made with a borrowed sound ROM: manifest.json `sound_rom_borrowed`, a
+/// README.txt, and the names read in the game program for a known pair (unless --names).
+fn mark_borrowed(cli: &Cli, job: &Job, b: &borrow::Borrowed) -> Result<(), String> {
+    let mpath = job.out.join("manifest.json");
+    let text = std::fs::read_to_string(&mpath).map_err(|e| format!("{}: {e}", mpath.display()))?;
+    let mut m: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("{}: {e}", mpath.display()))?;
+    m["sound_rom_borrowed"] = serde_json::to_value(b).map_err(|e| e.to_string())?;
+    std::fs::write(&mpath, serde_json::to_string_pretty(&m).unwrap())
+        .map_err(|e| format!("{}: {e}", mpath.display()))?;
+    let readme = job.out.join("README.txt");
+    std::fs::write(&readme, borrow::readme(&job.rom, b))
+        .map_err(|e| format!("{}: {e}", readme.display()))?;
+    println!("  {}", b.note);
+    if cli.names.is_none()
+        && let Some(text) = borrow::known(&job.rom).and_then(|p| p.names)
+    {
+        let n = names::parse(text)?;
+        let from = PathBuf::from(format!("{}-names.csv (built in)", job.rom));
+        let (r, _) = names::apply_dir(&job.out, &n, &from, true, "--force-names")?;
+        println!("  built-in names ({}): {}", job.rom, names::summary(&r));
+    }
     Ok(())
 }
 
@@ -804,6 +899,12 @@ fn cold_boot(cli: &Cli, job: &Job, vpm: &Path) -> Result<serde_json::Value, Stri
     }
     if cli.bsmt_hle {
         child.arg("--bsmt-hle");
+    }
+    if let Some(d) = &cli.sound_rom_from {
+        child.arg("--sound-rom-from").arg(d);
+    }
+    if cli.force_sound_rom {
+        child.arg("--force-sound-rom");
     }
     if let Some(dat) = &cli.sounds_dat {
         child.arg("--sounds-dat").arg(dat);

@@ -442,7 +442,8 @@ e.g. X Force (`xforce`), Space Team (`spcteam`)
 
 - **Hardware**: a 68000 game CPU; a TMS7000 at 4 MHz (`MACHINE_DRIVER_START(tecno)`), a
   Y8950 (OPL with ADPCM; its sample region `REGION_USER1` has no ROM) and a DAC. X Force's
-  sound ROM is not dumped (`sound.bin`, `NO_DUMP`): only Space Team has a sound program.
+  sound ROM is not dumped (`sound.bin`, `NO_DUMP`): only Space Team has a sound program,
+  which X Force can borrow (`--sound-rom-from spcteam`, [X Force](#tecnoplay-xforce) below).
 - **Commands**: the game's 68000 writes a 16-bit word to `016000` (`sound_w`): D0-D7 the
   sound data, D8 the strobe, D9 a reset, D10 the display data clock, D11-D15 auxiliary
   outputs. Read in Space Team's game program: a request (`1D70`) puts the byte on D0-D7
@@ -498,20 +499,39 @@ e.g. X Force (`xforce`), Space Team (`spcteam`)
   wrongly puts it; MAME's `techno.cpp` has it at `0x15800`). Fixed by rom2altsound's
   [vpinball/pinmame#730](https://github.com/vpinball/pinmame/pull/730) (the core,
   as MAME's) and [#731](https://github.com/vpinball/pinmame/pull/731) (the ready
-  bit), both open: with them the game plays by itself, in the harness a whole game sends
+  bit), both open, carried by rom2altsound's PinMAME (the fork's `bsmt2000-lle` branch,
+  6987a2a: upstream ea68ca7, the BSMT2000 LLE and merges of the #729, #730 and #731
+  branches) until they are merged: with them the game plays by itself, in the harness a whole game sends
   74 commands in 36 s (`35`, `95`, `31`, `86`, `9F`, `F1`, `92`, `BF`, `ED`, `85`, `8A`,
   `F9`, `A3`, `AD`, `FB`, `84`), all heard, and the tunes have their melody back.
 - **Sound list**: raw sweep `01`..`FF`.
-- **Stop**: `4F` (stops the sample) then `00` (`BUILTIN_STOPS`); a board reset only when
-  the stop fails (none in the runs below).
+- **Stop**: `4F` (stops the sample) then `00` (`BUILTIN_STOPS`); a board reset when the
+  stop fails, which on this board also resets the Y8950 (`CHIP_RESET`, shim
+  `shim_reset_sound_chips`: the CPU reset alone leaves the chip as it is).
+- **Channel 1 left sounding** (with the corrected core): a tune note or an effect on channel
+  0 also plays its second voice on channel 1, and the next instrument loaded there (`E348`,
+  after the key-off) can be a one-voice instrument whose second voice is all zeros:
+  attack, decay and release rates 0, total level 0 (loudest). PinMAME's Y8950 then holds
+  channel 1 at the level it had at the key-off, for good: an 80 Hz drone (F-number 1A4,
+  block 3, multiple 0), after the attract tune of the boot already. The stop `4F 00` keys
+  nothing off there (everything is already off), nor does a TMS7000 reset; without the chip
+  reset, the sweep stopped at `A0` after 33 commands that left the board sounding (tunes
+  `01`, `02`, `09`, `19`, `29`, `31`, `35`; 26 effects, some of them a sustained note of their
+  own, which only `80` ends). A real OPL does the same with rates of 0; whether the TKY2016
+  does is not known (no recording). With the chip reset each recording starts from a silent
+  chip; inside a recording the drone stays when the command itself leaves it (`09`).
 - **Loops**: audio only: the TMS7000's read map (`snd_readmem`) has no `MRA_RAM` range
   (its RAM is internal), so there is no state to read.
-- **Measured** (survey settings, [board support](../board-support.md)), with PinMAME
-  f45e404 and no shim: `spcteam` 38 of 40, all from silence (33 run to the 5 s cap: the
-  held variants); a full sweep, 109 of 255 (105 files, 4 blips), all from silence, no
-  board reset, the same as with the shim on the older PinMAME: `01`..`3F` and `40`..`7F`,
-  nothing from `80`..`FF`. `xforce` 0 of 40 (no sound ROM). Before: 0 of 40 on xforce,
-  and on spcteam each command played its first notes only.
+- **Measured** (rom2altsound 0.2.6, PinMAME 6987a2a, default settings): `spcteam` 173
+  of 255 commands with sound, 172 files (1 blip: `40`, a 20 ms click), all from silence, 29
+  board resets (the drone above); `01`..`3F` 53 files (34 of the music variants `1x`..`3x`
+  run to the 120 s cap: their melody no longer repeats exactly within the 240 s of the loop
+  search; `35` loops at 71 s), `40`..`7F` none (no sample ROM), `80`..`FF` 119 files (17
+  loops: the `83`..`DF` instruments with a sustained envelope hold their note until the next
+  command; 8 run to the cap, `E3` to `E6` and `F4` among them). Survey settings
+  (`--max-secs 5 --limit 40`): 38 of 40, all from silence, 2 board resets. In 0.2.5
+  (PinMAME f45e404): 109 of 255 (105 files), drums only for the tunes, nothing from
+  `80`..`FF`, `40`..`7F` playing code.
 - **`40`..`7F` were wrong** in that sweep and in the 0.2.5 packs: they were counted as
   sounds because the DAC was written (about 25000 writes per command), not because
   anyone checked what they played. The sample start routine (`E26D`) selects one of
@@ -527,12 +547,39 @@ e.g. X Force (`xforce`), Space Team (`spcteam`)
   undumped like its sound ROM.
   [vpinball/pinmame#729](https://github.com/vpinball/pinmame/pull/729) (open) maps the
   banks; with no dump they read `FF` and `40`..`7F` are silent (rms 0.5 LSB, the
-  mixer's dither; `40` a click under 0.5 ms). The submodule stays on f45e404 until it is
+  mixer's dither; `40` a click under 0.5 ms), carried by rom2altsound's PinMAME until it is
   merged.
-- **Limits and what is missing**: until #730 is in, `80`..`FF` (the effects, which the
-  game sends all the time) give no sound and `01`..`3F` lack their melody (drums only):
-  the 0.2.5 packs have both faults; `40`..`7F` play code as audio until #729 is in. The
-  submodule moves once they are merged.
+- **Limits and what is missing**: the sample ROMs (`40`..`7F` silent); the music variants
+  without a found loop are cut at `--max-secs`; the channel 1 drone above. VPinball plays
+  with the PinMAME it is built with: until #729-#731 are merged and pinned there, the game
+  plays the drums-only tunes and no effects (and on a PinMAME without #731, nothing).
+- <a name="tecnoplay-xforce"></a>**X Force** (`xforce`, `--sound-rom-from spcteam`): its
+  sound ROM (ic12) and sample ROMs (ic8-ic11) were never dumped. Its game program (ic15/ic17,
+  disassembled for its sound layer like Space Team's) uses the same send routine (`1D84`:
+  READY on D0 of `0x15801`, the byte in `$43FE`, `$4400` = 1), the same switch table and
+  timer dispatch and the same RAM layout; only the events differ. Space Team's sound program
+  has content only X Force uses: tunes `36` and `37` (X Force's multiball and ball music;
+  Space Team's game never sends them) and the DAC sample entries cut for `40`, `4C` and `4D`
+  (`E2B8`/`E2D8`), and every byte X Force sends (`00 08 32`..`37 40 4C 4D 95 E2 E3 E4 E9 ED
+  F1 F5 F6 F7 FA FB FC FD FF`) has an entry there, among them the effect sequences `E9`,
+  `F5`, `F6`, `FA`, `FC`, `FD` that Space Team never sends. So it is very likely X Force's
+  own program, or a superset of it. `3F`, which both game programs store as a second byte
+  (`$43FF`), is never sent: it goes out only when `$4400` = 2, and neither program sets it.
+  Run in PinMAME with Space Team's `sound.bin` (no READY forcing), X Force's game sends 45
+  commands in 50 s of attract, coins, start and playfield switches, and every one but the
+  samples `4C`/`4D` keys Y8950 notes. `--sound-rom-from spcteam` builds that combined set
+  in rom2altsound's private PinMAME folder (`vpm-factory/xforce.sound-from-spcteam`; your
+  ROM folders are only read), marks the pack (`manifest.json` `sound_rom_borrowed`, the
+  listening page, `README.txt`: "approximate") and names its sounds from the game program:
+  `95` coin and spinning target, `E3` start, `33` ball music (`32`/`37` with other values
+  of the setting `$41AC`), `36` multiball (four balls on the bridge, switches 51-54), `34`
+  the three barrier targets, `35` attract, `08` game over, `E4`/`E2` bonus count and
+  chopper, and the playfield effects (switch names from MAME's `techno.cpp`, whose input
+  rows map to the game's switch numbers). `00` (tilt) is not in the pack: the sweep starts
+  at `01`. Since the sweep drives the sound board alone, the X Force pack has the same audio
+  as Space Team's (173 of 255, 172 files; survey settings 38 of 40); only the names and the
+  marks differ. Missing: the samples, and any difference between X Force's real sound ROM
+  and Space Team's.
 - **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436
   and older: their libaltsound has no case for generation 0 (none) and joins the bytes two
   by two ([In VPinball](common.md#in-vpinball)), and their PinMAME logged every write of

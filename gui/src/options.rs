@@ -15,6 +15,7 @@ const MAIN: &[&str] = &[
     "max_secs",
     "sounds_dat",
     "names",
+    "sound_rom_from",
     "help",
     "version",
 ];

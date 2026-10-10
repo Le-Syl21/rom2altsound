@@ -1,0 +1,30 @@
+# rom2altsound names
+# rom: xforce
+# What X Force's game program (ic15/ic17) sends each command for, read in its code; the
+# playfield names are MAME's (techno.cpp input ports). See docs/families/other-makers.md.
+ID,NAME
+0x0008,Music: game over
+0x0032,Music: ball in play (setting 2)
+0x0033,Music: ball in play
+0x0034,Music: barrier targets 1-2-3 completed
+0x0035,Music: attract
+0x0036,Music: multiball (four balls on the bridge)
+0x0037,Music: ball in play (other settings)
+0x0040,Sample after the multiball music (no sample ROM: silent)
+0x004C,Sample 4 s after the start (no sample ROM: silent)
+0x004D,Sample after music 34 (no sample ROM: silent)
+0x0095,Coin / spinning target
+0x00E2,Bonus count end / chopper exit
+0x00E3,Start
+0x00E4,Bonus count / chopper entry
+0x00E9,Left and right fixed targets
+0x00ED,Exit canal (outlane)
+0x00F1,Barrier target
+0x00F5,Target bank: first lamp lit
+0x00F6,Left / right kicker
+0x00F7,Top right kicker / mini post
+0x00FA,Right top targets / top left targets
+0x00FB,Bumper / exit canal (lamp lit)
+0x00FC,Inner canal / left rollover / top targets
+0x00FD,Fixed contact
+0x00FF,Special target

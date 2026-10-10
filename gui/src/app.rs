@@ -96,6 +96,8 @@ pub struct App {
     max_secs: f64,
     sounds_dat: String,
     names_csv: String,
+    /// Borrow a compatible set's sound ROM for a ticked set whose own was never dumped.
+    borrow_sound: bool,
     advanced: Vec<AdvOpt>,
     error: Option<String>,
     running: Option<Running>,
@@ -141,6 +143,7 @@ impl App {
             max_secs: DEFAULT_MAX_SECS,
             sounds_dat: String::new(),
             names_csv: String::new(),
+            borrow_sound: false,
             advanced: options::advanced(),
             error: None,
             running: None,
@@ -308,6 +311,18 @@ impl App {
             .collect()
     }
 
+    /// A ticked set whose sound ROM was never dumped and whose known stand-in (its zip next
+    /// to it) can lend its sound ROM: (set, donor).
+    fn borrow_offer(&self) -> Option<(&'static str, &'static str)> {
+        self.chosen().iter().find_map(|r| {
+            let p = rom2altsound::borrow::known(&r.item.name)?;
+            let dir = r.item.path.parent()?;
+            dir.join(format!("{}.zip", p.donor))
+                .is_file()
+                .then_some((p.set, p.donor))
+        })
+    }
+
     /// The command line of the run (without the program name).
     fn command_line(&self) -> Vec<String> {
         let mut a: Vec<String> = self
@@ -334,6 +349,12 @@ impl App {
         if !self.names_csv.trim().is_empty() {
             a.push("--names".into());
             a.push(self.names_csv.trim().to_owned());
+        }
+        if self.borrow_sound
+            && let Some((_, donor)) = self.borrow_offer()
+        {
+            a.push("--sound-rom-from".into());
+            a.push(donor.into());
         }
         a.extend(options::args(&self.advanced));
         a
@@ -719,6 +740,13 @@ impl App {
                         "csv",
                     );
                     ui.end_row();
+                    if let Some((set, donor)) = self.borrow_offer() {
+                        let fill = |s: &str| s.replace("{set}", set).replace("{donor}", donor);
+                        ui.label("");
+                        ui.checkbox(&mut self.borrow_sound, fill(t.borrow_sound))
+                            .on_hover_text(fill(t.borrow_sound_tip));
+                        ui.end_row();
+                    }
                 });
             ui.add_space(6.0);
             egui::CollapsingHeader::new(t.advanced)

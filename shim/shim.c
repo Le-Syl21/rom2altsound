@@ -11,6 +11,8 @@
 #include "wpc/core.h"
 #include "wpc/wmssnd.h"
 #include "cpu/adsp2100/adsp2100.h"
+#include "sound/3812intf.h"
+#include "sound/fmopl.h"
 
 // Rebuild the board interface table exactly as src/wpc/sndbrd.c does (same X-macro list,
 // index = board type >> 8), so that we can look at a board's manual-command handler.
@@ -66,6 +68,23 @@ int shim_reset_audio_cpus(void) {
       n++;
     }
   return n;
+}
+
+// Reset every sound chip of the machine (each chip's reset function, as at a machine reset).
+// For a board whose audio CPU reset leaves a chip sounding: Tecnoplay's Y8950 keeps a voice
+// whose release rate the program set to 0 at its last level, and only a chip reset clears it.
+// The Y8950 has no reset in the sound interface table (sndintrf.c): reset it by hand.
+void shim_reset_sound_chips(void) {
+  int i, n;
+  sound_reset();
+#if HAS_Y8950
+  for (i = 0; i < MAX_SOUND && Machine->drv->sound[i].sound_type; i++)
+    if (Machine->drv->sound[i].sound_type == SOUND_Y8950) {
+      const struct Y8950interface *intf = Machine->drv->sound[i].sound_interface;
+      for (n = 0; n < intf->num; n++)
+        Y8950ResetChip(n);
+    }
+#endif
 }
 
 // libpinmame log callback. Kept in C because it receives a va_list.

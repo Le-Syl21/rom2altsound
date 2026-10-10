@@ -294,6 +294,11 @@ const NOOP_MANCMD: &[&str] = &["SAM"];
 /// Boards reset by a write to their control port (the game's own reset path, which also
 /// reboots the DSP on DCS), instead of a plain CPU reset line.
 const CTRL_RESET: &[&str] = &["DCS", "DCSP2K", "WPCS"];
+/// Boards whose sound chips are reset with the audio CPU: Tecnoplay's program loads a voice
+/// with a release rate of 0 on channel 1 after an effect or a tune note (the second voice of
+/// a one-voice instrument is all zeros), which PinMAME's Y8950 holds at its last level for
+/// good (an 80 Hz drone), and the CPU reset does not touch the chip.
+const CHIP_RESET: &[&str] = &["TECNOPLAY"];
 /// Pinball 2000: the pan of a request, the middle (game.rom `DCSRequest`'s `vol_pan` low
 /// byte; the game's boot requests use it).
 const P2K_PAN_CENTER: u16 = 0x7F;
@@ -2096,6 +2101,9 @@ impl Extractor {
                     }
                 }
             } else if !cpu_reset {
+                if CHIP_RESET.contains(&family.as_str()) {
+                    unsafe { ffi::shim_reset_sound_chips() };
+                }
                 unsafe { ffi::shim_reset_audio_cpus() };
                 cpu_reset = true;
             }
