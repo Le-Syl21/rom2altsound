@@ -114,7 +114,7 @@ def main():
     with open(os.path.join(a.fixture, "expected.json")) as f:
         expected = json.load(f)
     rom = expected["rom"]
-    work = a.work or tempfile.mkdtemp(prefix="rom2altsound-check-")
+    work = os.path.abspath(a.work or tempfile.mkdtemp(prefix="rom2altsound-check-"))
     os.makedirs(work, exist_ok=True)
     out = os.path.join(work, "out")
     pack = os.path.join(out, rom)
