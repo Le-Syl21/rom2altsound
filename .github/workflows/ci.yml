@@ -721,9 +721,12 @@ jobs:
       contents: write
 
     steps:
-      - name: Download all artifacts
+      # Only the release archives: a failed verify job leaves a
+      # verify-packs-* artifact behind, and a rerun would pick it up.
+      - name: Download the release archives
         uses: actions/download-artifact@v8
         with:
+          pattern: rom2altsound-*
           path: ${{ runner.temp }}/artifacts
 
       # A tag with a '-' (v0.1.0-beta.1) is published as a pre-release.
