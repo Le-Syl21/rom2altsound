@@ -40,9 +40,12 @@ Punchy The Clown (`punchy`)
   commands give a sound.
 - **Limits and what is missing**: only the quick survey; loops, volume and the full sweep
   are not verified.
-- **In VPinball**: the game's command is the byte written through `sndbrd_0_data_w`, one
-  write per command; PinMAME's `snd_alt.cpp` has no preprocessing for Alvin G., so each
-  byte is its own id, as in the pack. Not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_ALVG` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `agsocc07`: the game sent `00 00 49 74 43 74`, AltSound looked up `0000 4974
+  4374`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0000 0000 0049 0074 0043`.
 
 ## <a name="sndbrd_alvgs2"></a>SNDBRD_ALVGS2
 
@@ -85,6 +88,9 @@ Poker (`pstlpkr`), Dinosaur Eggs (`dinoeggs`)
   code applies to this board (`FE xx FD`, the stop `00`, `FC`..`FF` left out of the
   sweep) come from the Sega/Stern program, not from Alvin G.'s; with `--volume reference`
   the tool sends `FE 11 FD` to a program that may read it as sounds.
-- **In VPinball**: one byte per command through `sndbrd_0_data_w`, no `snd_alt.cpp`
-  preprocessing for Alvin G.: each byte is its own id, as in the pack. Not tested in
-  VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_ALVG` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `wrldtou3`: the game sent `00 00 15 15 61 E0`, AltSound looked up `0000 1515
+  61E0`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0000 0000 0015 0015 0061 00E0`.

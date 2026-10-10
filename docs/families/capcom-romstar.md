@@ -62,7 +62,9 @@ ids, 1995-2000, Capcom, Illinois Pinball · e.g. Breakshot (`bsv103`), Pinball M
   stays where the boot left it.
 - **In VPinball**: **the pack cannot play**: the game's bytes go from the 68306's DUART
   straight to `send_data_to_8752`, never through `sndbrd_data_w`, so `snd_cmd_log` (and
-  AltSound) never sees them.
+  AltSound) never sees them; measured: abv105 sent no command in 45 s of attract mode with
+  a coin and start. A command is several bytes (`DA 04 07 vv nnnn`), more than an AltSound
+  id holds.
 
 ## <a name="sndbrd_romstar"></a>SNDBRD_ROMSTAR
 
@@ -93,4 +95,5 @@ Romstar · e.g. Goofy Hoops (`ghv101`)
   PinMAME's test code, not the game's sounds. Getting the game's sounds would need its
   own QSound programming, read in the game's code; nothing in PinMAME exposes it as
   commands.
-- **In VPinball**: **the pack cannot play**: the game sends no sound command at all.
+- **In VPinball**: **the pack cannot play**: the game sends no sound command at all
+  (ghv101: none in 45 s of attract mode with a coin and start).

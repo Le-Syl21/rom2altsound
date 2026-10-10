@@ -508,9 +508,17 @@ program, with the file's CRC) or `hle`. `--bsmt-hle` forces the older one.
   played a second time, which recovers them.
 - The volume is the one the game sets at boot (in attract mode); a game that changes its
   volume during play is not followed.
-- **Early Bally** packs (Sounds Plus, Squawk & Talk, -32/-50) do not play in VPinball as
-  they are: PinMAME hands AltSound the solenoid and sound lines' raw writes, not the
-  game's commands (see note 12 under [Supported boards](#supported-boards)).
+- **Early Bally** packs (Sounds Plus, Squawk & Talk, -32/-50) play in VPinball built
+  from its master of 2026-10-07 on (PinMAME and libaltsound now hand AltSound the game's
+  commands); earlier builds get the raw writes of the solenoid and sound lines (see note
+  12 under [Supported boards](#supported-boards)). The Bally 6803 machines (Turbo Cheap
+  Squeak, Sounds Deluxe) still do not.
+- **Older and smaller makers' boards** (System 3 to 9, Stern, Gottlieb 80B and System 3,
+  Zaccaria, Playmatic, Taito, Game Plan, Atari, Hankin, Alvin G. and others): VPinball's
+  AltSound pairs their bytes two by two (libaltsound has no case for their hardware
+  generation), so their packs do not play there as written; Whitestar and two-board
+  System 11 packs carry extra rows for the ids AltSound looks up. Family by family:
+  [In VPinball](docs/families/common.md#in-vpinball).
 - **Pinball 2000** packs do not play in VPinball yet: the game's sound requests do not go
   through PinMAME's sound command path (see note 16 under
   [Supported boards](#supported-boards)).
@@ -1078,10 +1086,19 @@ programme de la puce, avec le CRC du fichier) ou `hle`. `--bsmt-hle` impose l'an
   est rejouée une seconde fois, ce qui les récupère.
 - Le volume est celui que le jeu règle au démarrage (en mode attraction) ; un jeu qui
   change de volume en cours de partie n'est pas suivi.
-- Les packs des **premières Bally** (Sounds Plus, Squawk & Talk, -32/-50) ne se jouent
-  pas tels quels dans VPinball : PinMAME transmet à AltSound les écritures brutes des
-  lignes bobines et son, pas les commandes du jeu (voir la note 12 de
-  [Cartes son prises en charge](#cartes-son-prises-en-charge)).
+- Les packs des **premières Bally** (Sounds Plus, Squawk & Talk, -32/-50) se jouent dans
+  VPinball compilé à partir de son master du 2026-10-07 (PinMAME et libaltsound passent
+  désormais à AltSound les commandes du jeu) ; les versions antérieures reçoivent les
+  écritures brutes des lignes bobines et son (voir la note 12 de
+  [Cartes son prises en charge](#cartes-son-prises-en-charge)). Les machines Bally 6803
+  (Turbo Cheap Squeak, Sounds Deluxe) pas encore.
+- **Cartes plus anciennes et des petits fabricants** (System 3 à 9, Stern, Gottlieb 80B et
+  System 3, Zaccaria, Playmatic, Taito, Game Plan, Atari, Hankin, Alvin G. et d'autres) :
+  l'AltSound de VPinball assemble leurs octets deux par deux (libaltsound n'a pas de cas
+  pour leur génération), si bien que leurs packs ne s'y jouent pas tels quels ; les packs
+  Whitestar et System 11 à deux cartes portent des lignes en plus pour les identifiants
+  qu'AltSound cherche. Famille par famille :
+  [In VPinball](docs/families/common.md#in-vpinball).
 - Les packs **Pinball 2000** ne se jouent pas encore dans VPinball : les requêtes son du
   jeu ne passent pas par le chemin des commandes son de PinMAME (voir la note 16 sous
   [Cartes son prises en charge](#cartes-son-prises-en-charge)).

@@ -102,12 +102,14 @@ sets, 38 games, 28 sound ROM ids, 1978-2022, Williams, Williams / Oliver · e.g.
   silence (bk_l4 3 of 40 and grgar_l1 3 of 40 before the idle framing). No full run.
 - **Limits**: no stop (a board reset after each sound); the ids are the command bits
   (above).
-- **In VPinball**: no generation preprocessing in `snd_alt.cpp` for System 3 to 7: every
-  byte the game writes, the idle bytes included, is an id of its own, with bits 5-7 as
-  the game's solenoid lines leave them. A pack from today's sweep has an id for every
-  byte, but its files are not the right sounds (most are silent or missing); the
-  `frpwr_l2` section gives two-byte ids (`0x001F`) that AltSound never receives. Not
-  tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_S6 / GEN_S7` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `algar_l1`: the game sent `5F 5F 7F 5F 5F 7F 77 7F`, AltSound looked up
+  `5F5F 7F5F 5F7F 777F`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `005F 005F 007F 005F`. Every byte the game writes, the idle bytes
+  included, is logged with bits 5-7 as the solenoid lines leave them; the `frpwr_l2`
+  section gives two-byte ids (`0x001F`) that AltSound would not look up either way.
 
 ## <a name="sndbrd_s3s"></a>SNDBRD_S3S
 
@@ -121,7 +123,12 @@ Williams System 3 sound board · interface `WMSS67` (sub-type 2) · ✅ · 3 set
   (0 of 40 before, with no idle byte between the commands; `00`..`0F` have data bit 4
   low, which only sets the program's flag, see [System 3's programs](#system-3s-programs)).
 - **Limits**: the priority-coded sounds (the flag, then a command) are not swept.
-- **In VPinball**: as `SNDBRD_S67S`. Not tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_S3` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)). Measured
+  on `cntct_l1`: the game sent `5F 5F 7F 5F 5F 7F 6F 7F`, AltSound looked up `5F5F 7F5F
+  5F7F 6F7F`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `005F 005F 007F`.
 
 ## <a name="sndbrd_s3dfs"></a>SNDBRD_S3DFS
 
@@ -137,7 +144,12 @@ Disco Fever's System 3 sound board · interface `WMSS67` (sub-type 16|4|2) · �
   with the lowest low bit of the command (`00`, `02`, `04`... 0.13 s; `01`, `05`, `09`...
   0.35 s; `0F` and `1F` 2.6 s), as a priority decoder would (1 of 40 before).
 - **Limits**: the control bit (above); the program is not read.
-- **In VPinball**: as `SNDBRD_S67S`. Not tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_S3` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)). Measured
+  on `disco_l1`: the game sent `5F 5F 7F 5F 7F`, AltSound looked up `5F5F 7F5F 7F5F`; with
+  one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `005F 005F 007F`.
 
 ## <a name="sndbrd_s3wcs"></a>SNDBRD_S3WCS
 
@@ -150,7 +162,12 @@ World Cup's System 3 sound board · interface `WMSS67` (sub-type 8|4|2) · ⚠�
   the same level): one sound (0 of 40 before).
 - **Limits**: the control bit (bit 5 of the byte the program reads, from `s67s_ctrl_w`),
   which the tool never sets; the program is not read.
-- **In VPinball**: as `SNDBRD_S67S`. Not tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_S3` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)). Measured
+  on `wldcp_l1`: the game sent `5F 5F 7F 5F 7F`, AltSound looked up `5F5F 7F5F 7F5F`; with
+  one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `005F 005F 007F`.
 
 ## <a name="sndbrd_s7s_nd"></a>SNDBRD_S7S_ND
 
@@ -162,4 +179,9 @@ id, 1982, Williams · Thunderball (`thund_p1`, a prototype)
 - **Measured**: thund_p1 34 of 40, all from silence (0 of 40 before; boot `7F 19 7F 26`,
   the commands between idle bytes, [board support](../board-support.md)).
 - **Limits**: no stop (a board reset after each sound).
-- **In VPinball**: as `SNDBRD_S67S`. Not tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_S7` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)). Measured
+  on `thund_p1`: the game sent `7F 19 7F 7F 26 7F`, AltSound looked up `7F19 7F7F 267F`;
+  with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `007F 0019 007F 007F 0026`.

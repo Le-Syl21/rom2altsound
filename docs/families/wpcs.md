@@ -83,8 +83,9 @@ Funhouse (`fh_l9`)
   sum in PinMAME's mix above level 12 (README, note 8); a music that does not loop
   within the search is cut at 2 minutes; ducks are measured over one music. The chips
   pass adds two takes per sound (1976 s of emulation on Twilight Zone).
-- **In VPinball**: the game writes each byte through `sndbrd_data_w`; PinMAME's AltSound
-  preprocessing for `GEN_WPCALPHA_2`, `GEN_WPCDMD` and `GEN_WPCFLIPTRON`
-  (`snd_alt.cpp`, `preprocess_commands`) reads `79 vv ~vv` as the volume and joins
-  `7A xx` into `0x7Axx`, the ids the pack uses. The README says the packs play in
-  VPinball (0.2.2); no WPCS-specific test is recorded.
+- **In VPinball**: **plays as written**: the game writes each byte through
+  `sndbrd_data_w`; libaltsound's case for `GEN_WPCALPHA_2`, `GEN_WPCDMD` and
+  `GEN_WPCFLIPTRON` reads `79 vv ~vv` as the volume and joins `7A xx` into `0x7Axx`, the
+  ids the pack uses ([In VPinball](common.md#in-vpinball)): measured on `taf_l5`, `79 0C
+  F3` taken as the volume, `7A 0F` looked up as `7A0F`, `5F` as `005F`. The README says
+  the packs play in VPinball (0.2.2).

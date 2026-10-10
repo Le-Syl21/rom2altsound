@@ -81,7 +81,8 @@ and names the second `"INDER"` (`board_typestr`).
   mach2 40 of 40, jolypark 40 of 40 (-32 to -8 LUFS), vrnwrld 40 of 40, all from
   silence, no board reset.
 - **In VPinball**: **the pack cannot play**: the game writes its latch directly, never
-  through `sndbrd_data_w`, so AltSound receives nothing.
+  through `sndbrd_data_w`, so AltSound receives nothing (bushido: no command in 45 s of
+  attract mode with a coin and start); its generation (0) has no libaltsound case either.
 
 ### Inder (`"INDER"`)
 
@@ -106,7 +107,10 @@ and names the second `"INDER"` (`board_typestr`).
   start (a stutter, -58 LUFS). The background is the game's own state between commands;
   separating it from the effects needs a release value that neither restarts nor
   interrupts, not found.
-- **In VPinball**: not tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)); `ind250cc` sent no sound command in 45 s of attract
+  mode with a coin and start, so nothing was measured.
 
 ## <a name="sndbrd_nuova"></a>SNDBRD_NUOVA
 
@@ -127,9 +131,11 @@ Prix (`f1gp`), Skill Flight (`skflight`), Cobra (`cobra`), Top Pin (`toppin`)
 - **Loops**: audio, sequencer state (6803 RAM).
 - **Measured**: `f1gp`, 15 of 40, all from silence ([board support](../board-support.md)).
 - **Limits**: only the quick survey.
-- **In VPinball**: the game's writes reach AltSound 4 bits at a time (the Bally lines),
-  not as the byte the pack is keyed by: as for the early Bally boards, the ids are not
-  expected to match. Not tested in VPinball.
+- **In VPinball**: **plays as written**: `nuova.c` runs on `by35.c`, which since
+  vpinball/pinmame#717 logs one byte per command, and the generation is `GEN_BY35`, which
+  libaltsound takes one byte at a time ([In VPinball](common.md#in-vpinball)): measured on
+  `cobra`, `01 70 01 60` looked up as `0001 0070 0001 0060`. VPinball builds before
+  2026-10-07 (libaltsound before f908262) pair them. Not played in VPinball itself.
 
 ## <a name="sndbrd_mrgame"></a>SNDBRD_MRGAME
 
@@ -154,7 +160,9 @@ Cup '90 (`wcup90`)
 - **Measured**: `dakar`, 26 of 40 ([board support](../board-support.md)).
 - **Limits**: only the quick survey; the sweep could stop at `7F`.
 - **In VPinball**: **the pack cannot play**: the game's writes go to `sound_w`, never
-  through `sndbrd_data_w`, so AltSound receives nothing.
+  through `sndbrd_data_w`, so AltSound receives nothing, and `GEN_MRGAME` has no
+  libaltsound case. dakar sent no command to `sound_w` either in 100 s of attract mode
+  with coins and start, so a logging change could not be checked.
 
 ## <a name="sndbrd_jvh"></a>SNDBRD_JVH
 
@@ -178,8 +186,12 @@ Mania (`icemania`), Escape (`escape`), Movie Masters (`movmastr`)
   40, `escape` 40 of 40, all from silence (icemania 1 of 40 before). The game's boot sends
   no byte, so the idle value was found by trying: `3F` and `00` after a command both work.
 - **Limits and what is missing**: no stop command known (a board reset after each sound).
-- **In VPinball**: the game writes its 6-bit command through `sndbrd_0_data_w`; not
-  tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_ZAC1` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `escape`: the game sent `01 00 02 00 01 02 00`, AltSound looked up `0100
+  0200 0102`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0001 0000 0002 0000 0001`.
 
 ## <a name="sndbrd_jvh2"></a>SNDBRD_JVH2
 
@@ -196,7 +208,12 @@ Van Ham (Royal) · e.g. Formula 1 (`formula1`)
 - **Loops**: audio, sequencer state (6809 RAM).
 - **Measured**: `formula1`, 27 of 40, all from silence ([board support](../board-support.md)).
 - **Limits**: only the quick survey.
-- **In VPinball**: the game's byte is the byte the sweep sends; not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_ZAC1` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `formula1`: the game sent `00 23 23 23 1D`, AltSound looked up `0023 2323`;
+  with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0000 0023 0023 0023 001D`.
 
 ## <a name="sndbrd_tabart"></a>SNDBRD_TABART
 
@@ -240,8 +257,13 @@ Christian Tabart L'Hexagone board (Z80 + YM2203 + YM3526) · PinMAME interface `
   switch sounds out would mean closing switches with the game's strobe running, and
   AltSound could not key them anyway: they never pass through a sound command (the
   stream AltSound sees is the line writes, chimes and game state). Left as is.
-- **In VPinball**: AltSound gets the game's line writes (`data` before the `^ 0xC7` of
-  `tabart_data_w`), not the manual handler's pairs; not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)). Measured on `hexagone`: the game sent `50 50 50...`,
+  AltSound looked up `5050`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0050`. AltSound gets the game's line writes (`data` before the `^ 0xC7`
+  of `tabart_data_w`), not the manual handler's pairs.
 
 ## <a name="sndbrd_tabart2"></a>SNDBRD_TABART2
 
@@ -268,8 +290,11 @@ Christian Tabart (France) · e.g. Sahara Love (`sahalove`)
   31, all from silence, 17 levels (before: 40 of 40, 39 not from silence, all at -17.0
   LUFS).
 - **Limits and what is missing**: no stop command known (the board reset is enough).
-- **In VPinball**: AltSound gets the game's raw line writes, not the converted command;
-  not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)); `sahalove` sent no sound command in 45 s of attract
+  mode with a coin and start, so nothing was measured. AltSound would get the game's raw
+  line writes, not the converted command.
 
 ## <a name="sndbrd_tabart3"></a>SNDBRD_TABART3
 
@@ -285,7 +310,11 @@ Christian Tabart (France) · e.g. Le Grand 8 (`grand8`)
 - **Measured**: `grand8` 26 of 31, all from silence (before: as sahalove, one tone)
   ([board support](../board-support.md)).
 - **Limits and what is missing**: as Sahara Love.
-- **In VPinball**: as Sahara Love; not tested.
+- **In VPinball**: the machine runs as `GEN_GTS80`, so libaltsound drops `00` and takes
+  every other byte as an id (grand8: `05 05 05 04 07` among 2350 `00`, looked up as such)
+  ([In VPinball](common.md#in-vpinball)); these are the game's raw line writes, not the
+  converted command, and whether they equal the pack's ids was not determined. Not played
+  in VPinball itself.
 
 ## <a name="sndbrd_hankin"></a>SNDBRD_HANKIN
 
@@ -306,8 +335,12 @@ status ✅ · 5 sets, 5 games, 5 sound ROM ids, 1978-1981, Hankin · e.g. FJ Hol
 - **Loops**: audio, sequencer state (6802 RAM).
 - **Measured**: `fjholden`, 38 of 40 ([board support](../board-support.md)).
 - **Limits**: only the quick survey; the sweep could stop at `0F`.
-- **In VPinball**: the game writes the nibble, which equals the pack's ids `01`..`0F`;
-  not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_HNK` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `empsback`: the game sent `00 ... 01 02 03 04 05`, AltSound looked up `0000
+  ... 0102 0304`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0001 0002 0003 0004`.
 
 ## <a name="sndbrd_grand"></a>SNDBRD_GRAND
 
@@ -325,8 +358,10 @@ Products Inc. · e.g. 301/Bullseye (`bullseye`)
 - **Loops**: audio, sequencer state (6802 RAM).
 - **Measured**: `bullseye`, 39 of 40 ([board support](../board-support.md)).
 - **Limits**: only the quick survey.
-- **In VPinball**: AltSound gets the game's byte before the DIP bit is added: with the
-  DIP off, the same as the pack's ids `01`..`7F`. Not tested in VPinball.
+- **In VPinball**: **plays as written**: the machine runs as `GEN_BY17`, which libaltsound
+  takes one byte at a time ([In VPinball](common.md#in-vpinball)); AltSound gets the
+  game's byte before the DIP bit is added: with the DIP off, the same as the pack's ids
+  `01`..`7F` (bullseye: `13` looked up as `0013`). Not played in VPinball itself.
 
 ## <a name="sndbrd_jeutel"></a>SNDBRD_JEUTEL
 
@@ -344,8 +379,11 @@ e.g. Le King (`leking`), Olympic Games (`olympic`), Papillon (`jpapillon`)
 - **Loops**: audio, sequencer state (Z80 RAM).
 - **Measured**: `leking`, 40 of 40 ([board support](../board-support.md)).
 - **Limits**: only the quick survey.
-- **In VPinball**: AltSound gets every write of the PPI port; whether the game writes one
-  byte per sound is not determined. Not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)); `leking` sent no sound command in 45 s of attract
+  mode with a coin and start, so nothing was measured. AltSound gets every write of the
+  PPI port.
 
 ## <a name="sndbrd_barni"></a>SNDBRD_BARNI
 
@@ -361,8 +399,11 @@ Champion (`champion`)
 - **Loops**: audio, sequencer state (6802 RAM).
 - **Measured**: `redbaron`, 26 of 40, all from silence ([board support](../board-support.md)).
 - **Limits**: only the quick survey.
-- **In VPinball**: AltSound gets the byte as the board receives it (already inverted), the
-  same byte the sweep sends: the ids should match. Not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)); `champion` sent no sound command in 45 s of attract
+  mode with a coin and start, so nothing was measured. AltSound gets the byte as the board
+  receives it (already inverted), the same byte the sweep sends.
 
 ## <a name="sndbrd_techno"></a>SNDBRD_TECHNO
 
@@ -383,8 +424,13 @@ Tecnoplay Scramble board (two 6502 + TMS7000, System 80B-like) · PinMAME interf
 - **Measured**: `scram_tp`, 37 of 40 ([board support](../board-support.md)).
 - **Limits**: only the quick survey; a byte and the same byte with bit 7 changed may be
   the same command.
-- **In VPinball**: AltSound gets the game's two writes per command (with and without the
-  strobe); not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_ZAC2` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `scram_tp`: the game sent `3F BF 28 A8 28 A8`, AltSound looked up `3FBF 28A8
+  28A8`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `003F 00BF 0028 00A8`. The game writes each command twice, with and
+  without the strobe bit.
 
 ## <a name="sndbrd_tecnoplay"></a>SNDBRD_TECNOPLAY
 
@@ -442,9 +488,12 @@ e.g. X Force (`xforce`), Space Team (`spcteam`)
 - **Limits and what is missing**: `80`..`FF` (a note on channel 0, which the game sends
   often) give no sound on their own; the samples' bank lines (port B bits 2-3, `E338`)
   select nothing in PinMAME's flat ROM map, so `41`..`47` play the same sample.
-- **In VPinball**: AltSound gets every low byte the game writes to that port, display
-  clocking included: the stream does not isolate the sound commands. Not tested in
-  VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)). Measured on `spcteam`: the game sent `00 00 00...
+  (236083 in 45 s)`, AltSound looked up `0000`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0000`.
 
 ## <a name="sndbrd_joctronic"></a>SNDBRD_JOCTRONIC
 
@@ -488,7 +537,10 @@ Joctronic · e.g. Punky Willy (`punkywil`), Walkyria (`walkyria`), Pin Ball (`jp
 - **Limits and what is missing**: the earlier note here said the CTC interrupt never came
   in PinMAME: it does, once the game has programmed the CTC; what failed was the range.
   No stop command beyond the restart.
-- **In VPinball**: the game's byte is the byte the sweep sends; not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)); `jpinball` sent no sound command in 45 s of attract
+  mode with a coin and start, so nothing was measured.
 
 ## <a name="sndbrd_rowamet"></a>SNDBRD_ROWAMET
 
@@ -508,4 +560,10 @@ status ✅ · 1 set, 1 game, 1 sound ROM id, year unknown, Rowamet · e.g. Heavy
 - **Measured**: `heavymtl` 38 of 40, all from silence, no board reset (5 of 40 before,
   [board support](../board-support.md)).
 - **Limits and what is missing**: no full run.
-- **In VPinball**: AltSound gets the game's changed bytes; not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_ZAC2` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `heavymtl`: the game sent `00 12 00 12 00 1D`, AltSound looked up `0012 0012
+  001D`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0000 0012 0000 0012`. This run matched only because each pair started on
+  the idle `00`: one byte earlier or later and every lookup is `0x1200`.

@@ -43,8 +43,12 @@ Lap (`lastlap`), Night Fever (`ngtfever`)
 - **Limits and what is missing**: no stop. The cheapest fix, from `play1s_data_w`: `00`
   (or any byte with low nibble 0) as the `PLAY1` stop in `BUILTIN_STOPS`; a fade in
   progress still ends by itself (0.5 s). The sweep could also stop at `1F`.
-- **In VPinball**: AltSound gets the game's byte including the lamp bits 5-7, so the ids
-  of a sound can differ from the sweep's in those bits. Not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)). Measured on `bigtown`: the game sent `00 00 00...`,
+  AltSound looked up `0000`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0000`. AltSound gets the game's byte with the lamp bits 5-7.
 
 ## <a name="sndbrd_play2"></a>SNDBRD_PLAY2
 
@@ -70,8 +74,13 @@ Playmatic, Sonic (Spain) · e.g. Antar (`antar`), Storm (`storm`), Evil Fight
 - **Limits**: the files are pitches, not the game's sounds: the game shapes its sounds by
   changing the frequency and the enable over time, which a single command does not
   reproduce.
-- **In VPinball**: AltSound gets the frequency bytes (the enable goes through
-  `sndbrd_ctrl_w`, which is not logged). Not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)). Measured on `antar`: the game sent `33 33 33...`,
+  AltSound looked up `3333`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0033`. AltSound gets the frequency bytes (the enable goes through
+  `sndbrd_ctrl_w`, which is not logged).
 
 ## <a name="sndbrd_play3"></a>SNDBRD_PLAY3
 
@@ -93,10 +102,14 @@ e.g. Cerberus (`cerberus`), Spain 82 (`spain82`)
 - **DUCK / STOP / CHANNEL**: defaults.
 - **Measured**: `cerberus`, 19 of 40 ([board support](../board-support.md)).
 - **Limits**: only the quick survey.
-- **In VPinball**: the game writes 3-bit values from its lamp port (`(data & 0x70) >> 4`
-  on the older CPU boards) or its lamp column (the other branch of `out2_n`), not the
-  bytes `play3s_man_w` splits into nibbles on Cerberus: the ids are not expected to match.
-  Not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)). Measured on `cerberus`: the game sent `00 00 00...
+  (41868 in 45 s)`, AltSound looked up `0000`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0000`. The game writes 3-bit values from its lamp port, not the bytes
+  `play3s_man_w` splits into nibbles on Cerberus: the ids are not expected to match either
+  way.
 
 ## <a name="sndbrd_play4"></a>SNDBRD_PLAY4
 
@@ -121,7 +134,11 @@ Playmatic, JocMatic · e.g. Meg-Aaton (`megaaton`), Nautilus (`nautilus`), Mad R
 - **DUCK / STOP / CHANNEL**: defaults.
 - **Measured**: `madrace`, 30 of 40 ([board support](../board-support.md)).
 - **Limits**: only the quick survey.
-- **In VPinball**: the game's data byte is the one the sweep sends; not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)); `fldragon` sent no sound command in 45 s of attract
+  mode with a coin and start, so nothing was measured. The game's data byte is the one the
+  sweep sends.
 
 ## <a name="sndbrd_playz"></a>SNDBRD_PLAYZ
 
@@ -153,7 +170,8 @@ Zira (`zira`)
   is not read, so whether the three silent values are commands of their own (or need a
   sequence) is not known.
 - **In VPinball**: **the pack cannot play**: the game's commands go through
-  `sndbrd_ctrl_w`, which does not call `snd_cmd_log`, so AltSound receives nothing.
+  `sndbrd_ctrl_w`, which does not call `snd_cmd_log`, so AltSound receives nothing (zira:
+  no command in 45 s of attract mode with a coin and start).
 
 ## <a name="sndbrd_zsu"></a>SNDBRD_ZSU
 
@@ -177,5 +195,8 @@ Playmatic, Maibesa · e.g. Skill Flight (`sklflite`), Phantom Ship (`phntmshp`),
 - **DUCK / STOP / CHANNEL**: defaults.
 - **Measured**: `sklflite`, 24 of 40, all from silence ([board support](../board-support.md)).
 - **Limits**: only the quick survey.
-- **In VPinball**: the game writes one byte per command through `sndbrd_0_data_w`, the
-  byte the sweep sends: the ids should match. Not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)); `cobrapb` sent no sound command in 45 s of attract
+  mode with a coin and start, so nothing was measured. The game writes one byte per
+  command through `sndbrd_0_data_w`, the byte the sweep sends.

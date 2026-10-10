@@ -95,12 +95,12 @@ Theatre of Magic (`tom_13`), Red & Ted's Road Show (`rs_l6`), Who Dunnit (`wd_12
   1994 software probably lays out those streams differently. AltSound gives a duck back
   at once where the board fades it, and uses only the deepest of overlapping ducks
   ([libaltsound #15](https://github.com/vpinball/libaltsound/issues/15)).
-- **In VPinball**: the game sends each track number as two bytes through
-  `sndbrd_data_w`, and PinMAME's AltSound preprocessing for `GEN_WPCDCS`,
-  `GEN_WPCSECURITY`, `GEN_WPC95DCS` and `GEN_WPC95` (`src/wpc/altsound/snd_alt.cpp`,
-  `preprocess_commands`) joins them into the 16-bit id and filters the `55 xx`
-  specials: the pack's ids (`0x0186`) are those ids. The README says the packs play in
-  VPinball (0.2.2); no DCS pre-WPC95 pack test is recorded.
+- **In VPinball**: **plays as written**: the game sends each track number as two bytes
+  through `sndbrd_data_w`, and libaltsound's case for `GEN_WPCDCS`, `GEN_WPCSECURITY`,
+  `GEN_WPC95DCS` and `GEN_WPC95` joins them into the 16-bit id and filters the `55 xx`
+  specials ([In VPinball](common.md#in-vpinball)): measured on `afv_l4`, `03 E3` looked up
+  as `03E3`, `55 AA 67 98` taken as the volume. The README says the packs play in VPinball
+  (0.2.2); no DCS pre-WPC95 pack test is recorded.
 
 ## <a name="sndbrd_dcs95"></a>SNDBRD_DCS95
 
@@ -134,9 +134,9 @@ DCS-95 sound board (WPC-95) · PinMAME interface `DCS` (`src/wpc/wmssnd.c`) · s
   such a program ends in `error` and its command keeps the plain rows
   ([Ducking](../how-it-works.md#ducking-stops-and-channels-dcs)). Clicks that ignore the
   master volume (cv_20h `03DE`) are flagged only when loud enough to be replayed.
-- **In VPinball**: as SNDBRD_DCS (`GEN_WPC95` is in the same preprocessing branch). The
-  README says the packs play in VPinball; an Attack from Mars pack played there by a user
-  led to the extended files for loops with an intro
+- **In VPinball**: as SNDBRD_DCS (`GEN_WPC95` is in the same case; measured on `afm_03`:
+  `03 D3` looked up as `03D3`). The README says the packs play in VPinball; an Attack from
+  Mars pack played there by a user led to the extended files for loops with an intro
   ([AltSound pack](../how-it-works.md#altsound-pack)).
 
 ## <a name="sndbrd_dcsp2k"></a>SNDBRD_DCSP2K

@@ -32,8 +32,13 @@ sets, 5 games, 3 sound ROM ids, 1976-2024, Atari · e.g. The Atarians (`atarians
 - **Limits**: discrete sound driven by lines, not by command numbers (board-support).
   From the code, a sound is a sequence of register writes the game makes over time; there
   is no command to record. rom2altsound cannot support it with a sweep.
-- **In VPinball**: AltSound receives the frequency/volume writes (`sndbrd_0_data_w`), not
-  sound commands: a pack keyed by command could not be triggered. Not tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)). Measured on `aavenger`: the game sent `02 02 02...`,
+  AltSound looked up `0202`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0002`. These bytes are the frequency/volume writes, not sound commands: a
+  pack keyed by command could not be triggered either way.
 
 ## <a name="sndbrd_atari2"></a>SNDBRD_ATARI2
 
@@ -51,4 +56,9 @@ sets, 3 games, 1 sound ROM id, 1979, Atari · Superman (`superman`), Hercules
   does nothing, no volume decoded, audio loops only, defaults).
 - **Measured**: superman 0 of 40; the game sent no sound byte at boot (board-support).
 - **Limits**: as ATARI1: driven by lines, not by command numbers.
-- **In VPinball**: as ATARI1. Not tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)). Measured on `spcrider`: the game sent `FE FE FE...`,
+  AltSound looked up `FEFE`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `00FE`. As ATARI1, these are tone writes, not commands.

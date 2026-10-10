@@ -61,10 +61,11 @@ Incredible Hulk (`hulk`), Totem (`totem`)
   now: the System 1 board's tones).
 - **Limits and what is missing**: the ids are the four command bits; the game's own bytes
   carry the lamp bit `10` (`01`..`1F`).
-- **In VPinball**: PinMAME's AltSound preprocessing for `GEN_GTS80A` (equal to
-  `GEN_GTS80`, `src/wpc/altsound/snd_alt.cpp`, `preprocess_commands`) drops the `00`
-  bytes and takes every other byte as an id: the game's ids are `01`..`1F` (with the
-  lamp bit), the pack's are the swept bytes. Not tested in VPinball.
+- **In VPinball**: libaltsound's `GEN_GTS80` case drops the `00` bytes (the game writes
+  thousands) and takes every other byte as an id ([In VPinball](common.md#in-vpinball)):
+  measured on `spidermn`, `05 05 05 04` among 5517 `00` looked up as `0005 0005 0005
+  0004`. The game's ids are `01`..`1F` (with the lamp bit), the pack's are the swept
+  bytes: they match where the two are the same byte. Not played in VPinball itself.
 
 ## <a name="sndbrd_gts80sp"></a>SNDBRD_GTS80SP
 
@@ -90,7 +91,8 @@ Gottlieb, Flipprojets · e.g. Alien Star (`alienstr`), El Dorado City of Gold
   (38 of 40 before, from the sweep `01`..`28`).
 - **Limits and what is missing**: only 15 distinct commands exist; the other swept
   bytes repeat them. Loops, ducking and the full sweep are not verified.
-- **In VPinball**: as GTS80S (`GEN_GTS80A` preprocessing). Not tested in VPinball.
+- **In VPinball**: as GTS80S (`GEN_GTS80`; alienstr: `05 05 05 04` looked up as such). Not
+  played in VPinball itself.
 
 ## <a name="sndbrd_gts80ss"></a>SNDBRD_GTS80SS
 
@@ -127,8 +129,9 @@ System 80/80A Sound & Speech Board, without the Votrax chip · PinMAME interface
   from silence (5 of 40 before).
 - **Limits and what is missing**: the commands with a zero low nibble (`10`, `20`, `30`)
   raise no strobe; they are swept but are not commands of their own.
-- **In VPinball**: `GEN_GTS80A` preprocessing (`00` dropped, every other byte an id), so
-  the game's ids are its 5-bit commands. Not tested in VPinball.
+- **In VPinball**: `GEN_GTS80` case (`00` dropped, every other byte an id; amazonh: `05 05
+  05 04` looked up as such), so the game's ids are its 5-bit commands. Not played in
+  VPinball itself.
 
 ## <a name="sndbrd_gts80ss_votrax"></a>SNDBRD_GTS80SS_VOTRAX
 
@@ -147,7 +150,8 @@ Volcano (`vlcno_ax`), Devil's Dare (`dvlsdre`)
 - **Measured** ([board support](../board-support.md)): blckhole 38 of 40, all from
   silence (5 of 40 before the `00` after each command).
 - **Limits and what is missing**: as GTS80SS.
-- **In VPinball**: as GTS80SS. Not tested in VPinball.
+- **In VPinball**: as GTS80SS (blckhole: `05 05 05 04` looked up as such). Not played in
+  VPinball itself.
 
 ## <a name="sndbrd_gts80ss_votrax_old"></a>SNDBRD_GTS80SS_VOTRAX_OLD
 
@@ -161,7 +165,7 @@ Gottlieb · e.g. Mars - God of War prototype (`marsp`)
 - **Measured** ([board support](../board-support.md)): marsp 31 of 40 (29 files, 2
   blips), all from silence, 11 clipped (3 of 40 before).
 - **Limits and what is missing**: as GTS80SS; the clipping is the old Votrax's level.
-- **In VPinball**: as GTS80SS. Not tested in VPinball.
+- **In VPinball**: as GTS80SS. Not played in VPinball itself.
 
 ## <a name="sndbrd_gts80b"></a>SNDBRD_GTS80B
 
@@ -193,9 +197,13 @@ Flipprojets · e.g. Raven (`raven`), Bad Girls (`badgirls`), Rock (`rock`), Spri
 - **DUCK / STOP / CHANNEL**: defaults.
 - **Measured** ([board support](../board-support.md)): badgirls 28 of 40, raven 37 of 40.
 - **Limits and what is missing**: loops, ducking and the full sweep are not verified.
-- **In VPinball**: no AltSound preprocessing for this generation: each byte the game
-  writes is an id, the same byte as the tool's (both go through `gts80b_data_w`), so the
-  ids should match. Not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_GTS80B` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `amazonh2`: the game sent `1A 1A 1A 1B`, AltSound looked up `1A1A 1A1B`;
+  with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `001A 001A 001A 001B`. Each byte the game writes is the same byte as the
+  tool's (both go through `gts80b_data_w`), so with that change the ids would match.
 
 ## <a name="sndbrd_gts3"></a>SNDBRD_GTS3
 
@@ -217,6 +225,10 @@ Operation Thunder (`opthund`)
 - **DUCK / STOP / CHANNEL**: defaults.
 - **Measured** ([board support](../board-support.md)): cueball 40 of 40.
 - **Limits and what is missing**: loops, ducking and the full sweep are not verified.
-- **In VPinball**: no AltSound preprocessing for `GEN_GTS3`: each byte the game writes
-  (`GTS3locals.sound_data`) is an id, the same value the tool sends, so the ids should
-  match. Not tested in VPinball.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_GTS3` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `barbwire`: the game sent `00 FF 00 55 00 FF`, AltSound looked up `00FF 0055
+  00FF`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0000 00FF 0000 0055`. The game writes the value the tool sends
+  (`GTS3locals.sound_data`), so with that change the ids would match.

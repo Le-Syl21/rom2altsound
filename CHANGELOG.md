@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **VPinball playback, measured**: what VPinball's AltSound looks up was read in the code
+  VPinball master builds (its AltSound plugin, libaltsound f908262, libPinMAME at PinMAME
+  2150eab) and measured family by family: one ROM per family in libPinMAME, 45 s of
+  attract mode with coins and start, every command fed to libaltsound as the plugin does
+  (docs/families/common.md, In VPinball; every family's "In VPinball" item rewritten).
+  The plugin drops the board number, and libaltsound pairs the bytes of every hardware
+  generation it has no case for (System 3 to 9, Bally 6803, Stern, Gottlieb 80B/3,
+  Zaccaria, Hankin, Alvin G., Mr. Game and the many generation-0 machines): 59 families
+  are now listed as not playable in `docs/vpx_playback.json` (paired bytes, or commands
+  that never reach AltSound). Fixes proposed upstream as drafts: vpinball/libaltsound#20
+  (one byte per command by default), #21 (board-aware lookup), vpinball/pinmame#722
+  (Bally 6803 command log), #723 (Whirlwind's overlay bytes).
+- **Whitestar packs** (Sega/Stern BSMT2000 and AT91): the games send their sounds as
+  `FD xx` (monopoly, simpprty), which AltSound looks up as `0xFDxx`, and the board plays
+  `FD xx` as `xx` (monopoly `FD 60` = `60`): each one-byte row also gets a row `0xFDxx`
+  with the same file (`whitestar_aliases`). With it, monopoly's `FD 94` finds its file.
+- **System 11 with two sound boards**: AltSound looks a board 1 command up as `0x00xx`,
+  board 0's id: each board 1 row `0x01xx` also gets a row `0x00xx` where board 0 has no
+  row for that byte (`system11_board1_aliases`); bk2k_l4's `98` now finds its file.
 - **Tecnoplay** (TECNOPLAY, Space Team): the TMS7000 sound program (read with PinMAME's
   own disassembler) runs from interrupts that PinMAME's TMS7000 core and Y8950 lose
   (lines looked at only after a change, never acknowledged, Timer 1 not waking the CPU

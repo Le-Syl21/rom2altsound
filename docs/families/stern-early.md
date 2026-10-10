@@ -36,9 +36,13 @@ sound ROM, 1978-2022, Stern · Dracula (`dracula`), Lectronamo (`lectrono`), Wil
   is held as long as its bit is set, so each file is one held tone combination.
 - **Limits**: the files are held tones, cut at `--max-secs` or at their loop (a full run
   with the loop search is not measured).
-- **In VPinball**: AltSound receives the mask bytes the game writes at `A0`, one per
-  change; the pack's ids are masks too, but a tone is a state, not a sound with an end.
-  Not tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_STMPU100` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `dracula`: the game sent `00 00 00...`, AltSound looked up `0000`; with one
+  byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0000`. The bytes are the mask bytes the game writes at `A0`; a tone is a
+  state, not a sound with an end.
 
 ## <a name="sndbrd_st100b"></a>SNDBRD_ST100B
 
@@ -74,7 +78,13 @@ sound ROM, 1979-2026, Stern · Meteor (`meteor`), Galaxy (`galaxy`), Seawitch
 - **Limits**: the game programs the timers itself; the command sweep does not apply
   (board-support). Not determined whether sending `40`..`7F` to a machine without the
   S14001A is harmless.
-- **In VPinball**: AltSound receives timer register numbers, not sounds. Not tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_STMPU200` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `ali`: the game sent `01 00 01 00 06 07 04 05`, AltSound looked up `0100
+  0100 0607 0405`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0001 0000 0001 0000 0006 0007`. These are timer register numbers, not
+  sounds.
 
 ## <a name="sndbrd_st300v"></a>SNDBRD_ST300V
 
@@ -101,8 +111,13 @@ Stern SB-300 with the VS-1000 speech board · interface `ST300`, sub-type 1
 - **Limits**: as ST300 for the effects, which are most of the game's sounds; only the
   speech is extracted. The stop is still a board reset, which does nothing on a board
   without a CPU (the words end by themselves).
-- **In VPinball**: the speech goes through `sndbrd_ctrl_w`, which AltSound does not
-  receive (`snd_cmd_log` is called from `sndbrd_data_w` only). Not tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_STMPU200` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `catacomb`: the game sent `01 00 06 07 04 05 02 03... (46018 in 45 s)`,
+  AltSound looked up `0100 0607 0405 0203`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0001 0000 0006 0007`. The speech goes through `sndbrd_ctrl_w`, which
+  AltSound does not receive (`snd_cmd_log` is called from `sndbrd_data_w` only).
 
 ## <a name="sndbrd_astro"></a>SNDBRD_ASTRO
 
@@ -117,4 +132,9 @@ no sound ROM, date unknown, Stern · S.A.M. III Board Tester (`sam_iii`)
 - **Measured**: sam_iii 0 of 40; the game toggles `00`/`01` (20 bytes at boot): a line,
   not a command (board-support).
 - **Limits**: as ST300.
-- **In VPinball**: as ST300. Not tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_ASTRO` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `sam_iii`: the game sent `00 01 00 01 00 01`, AltSound looked up `0001 0001
+  0100`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0000 0001 0000 0001`.

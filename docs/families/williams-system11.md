@@ -61,16 +61,23 @@ marked as twins but kept ([how it works](../how-it-works.md#limits)). Repeated s
 not sample-identical on 11C (the YM2151 keeps running state), so twins there are rare.
 
 **In VPinball (all System 11 families).** AltSound receives the bytes the game writes
-through `sndbrd_data_w` (`snd_cmd_log`). For `GEN_S11`, `S11X`, `S11B2` and `S11C`,
-`snd_alt.cpp` `preprocess_commands` makes every byte an 8-bit id and ignores a byte
-equal to the one before. The board number plays no part: PinMAME's `alt_sound_handle`
-does not use it, and VPinball's AltSound plugin (its `AltSoundPlugin.cpp`, not part of
-this repository) calls `AltSoundProcessCommand(cmd, 0)`. So on a two-board machine the
-pack's board 1 ids (`0x01xx`) are not what AltSound looks up (`0x00xx`, shared with
-board 0's bytes), while one-board machines' ids (`0xxx`) are the game's bytes. On
-`S11_SNDOVERLAY` games the overlay's solenoid bytes `00`..`1F` are logged as sound
-commands too, since `pia5b_w` calls `sndbrd_1_data_w` before the strobe is withheld.
-Not tested in VPinball.
+through `sndbrd_data_w` (`snd_cmd_log`). For `GEN_S11`, `S11X`, `S11B2`, `S11C` and
+`GEN_WPCALPHA_1`, libaltsound (as `snd_alt.cpp`) makes every byte an 8-bit id and skips a
+byte equal to the one before; `GEN_S9` has no case and its bytes are paired (see
+SNDBRD_S9S). The board number plays no part: VPinball's AltSound plugin calls
+`AltSoundProcessCommand(cmd, 0)` and PinMAME's `alt_sound_handle` does not use it either,
+so on a two-board machine a board 1 command `xx` is looked up as `0x00xx`, the id of board
+0's byte `xx` (measured on bk2k_l4, bcats_l2, jokrz_l3, [In
+VPinball](common.md#in-vpinball)). rom2altsound keeps the `0x01xx` ids and adds a row
+`0x00xx` for each board 1 row where board 0 has none
+(`altsound::system11_board1_aliases`); a board-aware lookup is proposed in
+[vpinball/libaltsound#21](https://github.com/vpinball/libaltsound/pull/21) (draft).
+One-board machines' ids are the game's bytes. On `S11_SNDOVERLAY` (Whirlwind) the
+overlay's solenoid bytes `00`..`1F` are logged as sound commands too, since `pia5b_w`
+calls `sndbrd_1_data_w` before the strobe is withheld (whirl_l3: 37792 board 1 bytes in 40
+s of attract mode, looked up as `001F` and `000F`);
+[vpinball/pinmame#723](https://github.com/vpinball/pinmame/pull/723) (draft) logs only the
+sound commands. No pack has been played in VPinball itself.
 
 ## <a name="sndbrd_s9s"></a>SNDBRD_S9S
 
@@ -100,7 +107,12 @@ Rat Race (`ratrc_l1`, a System 7 machine with the System 9 board, `MACHINE_INIT(
 - **Measured**: sorcr_l2 40 of 40 in the quick survey ([board support](../board-support.md)).
   No full run is recorded.
 - **Limits**: none known beyond the common ones; only one ROM tried.
-- **In VPinball**: one board, so the ids are the game's bytes (see above). Not tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  `GEN_S9` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)). Measured
+  on `comet_l4`: the game sent `00 00 13 CD CD CD 71 2F`, AltSound looked up `0000 13CD
+  CDCD 712F`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0000 0000 0013 00CD`. `GEN_S9` is not in libaltsound's System 11 case.
 
 ## <a name="sndbrd_s11s"></a>SNDBRD_S11S
 
@@ -168,7 +180,16 @@ e.g. High Speed (`hs_l4`), Pin-Bot (`pb_l5`), Black Knight 2000 (`bk2k_l4`), Whi
   229.6 s wall. Quick survey: bk2k_l4 40 of 40 (36 files, 4 blips, both boards swept),
   whirl_l3 40 of 40 ([board support](../board-support.md)).
 - **Limits**: the ids of board 1 do not match what AltSound looks up (see above).
-- **In VPinball**: see "The System 11 game side". Not tested.
+- **In VPinball**: board 0's ids are the game's bytes (`GEN_S11X`, 8-bit ids); board 1's
+  commands are looked up as `0x00xx`, board 0's ids (bcats_l2: board 1's `00 55 AA FF`
+  handshake as `0000 0055 00AA 00FF`; bk2k_l4: board 1's `98` as `0098`). **The pack has a
+  row `0x00xx` for each board 1 row `0x01xx` where board 0 has none**
+  (`altsound::system11_board1_aliases`; bk2k_l4's `98` then found its file); where both
+  boards have a sound for a byte, board 0's plays. A board-aware lookup is proposed in
+  [vpinball/libaltsound#21](https://github.com/vpinball/libaltsound/pull/21) (draft).
+  Whirlwind's overlay bytes are looked up too (whirl_l3: `001F` 25 times and `000F` in 40
+  s of attract mode); [vpinball/pinmame#723](https://github.com/vpinball/pinmame/pull/723)
+  (draft) stops logging them.
 
 ## <a name="sndbrd_s11cs"></a>SNDBRD_S11CS
 
@@ -195,10 +216,13 @@ e.g. Diner (`diner_l4`), Pool Sharks (`pool_l7`), Bugs Bunny's Birthday Ball (`b
 - **Measured**: diner_l4 30 of 40, all from silence, in the quick survey (the first run
   of this board alone; [board support](../board-support.md)).
 - **Limits**: only diner_l4 tried; the Bally 6803 and WPC prototype sets were not.
-- **In VPinball**: one board: the ids are the game's bytes, with `snd_alt.cpp`'s
-  System 11 handling for `GEN_S11C` (a repeated byte ignored). The Bally and WPC
-  generations get other preprocessing (none for `GEN_BY6803`; `GEN_WPCALPHA_1` is in the
-  System 11 group). Not tested.
+- **In VPinball**: on `GEN_S11C` and `GEN_WPCALPHA_1` machines, **plays as written**
+  (8-bit ids, a byte equal to the one before is skipped). The Bally/Midway 6803 machines
+  with this board (atlantis, trucksp3, `GEN_BY6803A`) do not: libaltsound pairs their
+  bytes (atlantis: `64 7E 90 90` looked up as `647E 9090`); with
+  [vpinball/pinmame#722](https://github.com/vpinball/pinmame/pull/722) and
+  [vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), `0064 007E
+  0090`. Not played in VPinball itself.
 
 ## <a name="sndbrd_s11bs_s11js"></a>SNDBRD_S11BS+SNDBRD_S11JS
 
@@ -226,5 +250,6 @@ System 11B with the Jokerz! board · interfaces `WMSS11` + `WMSS11J` (`wmssnd.c`
 - **Measured**: jokrz_l6 40 of 40 (38 files, 2 blips) on both boards, quick survey
   ([board support](../board-support.md)).
 - **Limits**: the stop of board 1 is not measured.
-- **In VPinball**: as the other two-board machines: board 1's ids are not looked up as
-  `0x01xx`. Not tested.
+- **In VPinball**: as SNDBRD_S11XS+SNDBRD_S11CS (`GEN_S11B2`; jokrz_l3: board 1's
+  handshake looked up as `0000 0055`): board 1 rows get their `0x00xx` alias where board 0
+  has none.

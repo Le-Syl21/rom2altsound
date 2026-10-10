@@ -21,6 +21,12 @@ ducking and the full sweep are only verified for the families of the README's ta
 
 How each family is driven (hardware, commands, stop, volume, loops, what is missing): [sound board families](families/README.md).
 
+The status says whether rom2altsound gets the sounds out, not whether VPinball plays the
+pack: on many of these boards VPinball's AltSound looks the sounds up under other ids than
+the commands (libaltsound pairs the bytes of every hardware generation it has no case for).
+What it looks up, measured family by family: [In VPinball](families/common.md#in-vpinball);
+the families whose packs do not play there are flagged on the site (`docs/vpx_playback.json`).
+
 - ✅ sounds come out, distinct, each from silence;
 - ⚠️ partial: few commands give a sound, or doubtful: most files do not start from
   silence (something keeps playing between commands) or are all the same;

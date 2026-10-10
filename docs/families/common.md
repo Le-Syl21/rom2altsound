@@ -191,15 +191,61 @@ sample is the twin of an earlier one; every command keeps its own file and rows 
 
 ## In VPinball
 
-VPinball's AltSound plays a pack by the command ids PinMAME hands it: the bytes the game
-writes through `sndbrd_data_w` (`snd_cmd_log`). PinMAME's own AltSound
-(`src/wpc/altsound/snd_alt.cpp`, `preprocess_commands`) combines bytes into ids for a
-few hardware generations (WPC, System 11, Data East, Whitestar, Gottlieb System 80A) and
-takes every byte as its own id elsewhere; VPinball's libaltsound plugin was not
-checked here and may preprocess differently. The pack's ids are what rom2altsound sent
-through `manCmd_w`. They match only where the game's command for a sound is the byte
-the tool sent, in one write. Each family section says what is known; unless it says
-otherwise, no pack of that family has been tried in VPinball.
+What VPinball's AltSound looks up, read in the code it builds (VPinball master, which pins
+PinMAME 2150eab and libaltsound f908262 since 2026-10-07) and measured:
+
+1. **PinMAME** logs a sound command with `snd_cmd_log(board, byte)`, which
+   `sndbrd_data_w` calls for every write of a sound board's data (unless the main board
+   logs the commands itself, `sndbrd_logData`: by35.c since vpinball/pinmame#717).
+   libPinMAME turns each one into an `OnAudioCmd` message (board, byte), once the game is
+   running and its controller registered.
+2. **VPinball's AltSound plugin** (`plugins/altsound/AltSoundPlugin.cpp`) starts
+   libaltsound when the game's controller appears, passes the game's generation
+   (`core_gameData->gen`, through `GetMachineState`) to `AltSoundSetHardwareGen`, and
+   calls `AltSoundProcessCommand(cmd, 0)` for every message: **the board number is
+   dropped**.
+3. **libaltsound** (`altsound_preprocess_commands`, the same cases as PinMAME's
+   `src/wpc/altsound/snd_alt.cpp`) builds the id it looks up (`getSample`, an exact match
+   on the CSV's ID):
+
+| generation | id looked up |
+|---|---|
+| `GEN_WPCDCS`, `WPCSECURITY`, `WPC95DCS`, `WPC95` | two bytes, `0x0186`; `55 AA vv ~vv` (volume) and the other `55 xx` filtered |
+| `GEN_WPCALPHA_2`, `WPCDMD`, `WPCFLIPTRON` | one byte; `7A xx` as `0x7Axx`; `79 vv ~vv` volume |
+| `GEN_WPCALPHA_1`, `S11`, `S11X`, `S11B2`, `S11C` | one byte; a byte equal to the one before is skipped |
+| `GEN_DE`, `DEDMD16`, `DEDMD32`, `DEDMD64` | one byte; `FF` and a lone `00` skipped |
+| `GEN_WS`, `WS_1`, `WS_2` | `FC`..`FF xx` as `0xFCxx`..; `FE 10`..`2F` volume; other bytes paired |
+| `GEN_GTS80` | one byte; `00` filtered |
+| `GEN_BY17`, `BY35` | one byte (since libaltsound#16) |
+| every other generation, 0 included | **no case: the bytes are paired**, `(previous << 8) \| byte` on every second byte, which pair depending on how many bytes came since AltSound started |
+
+The last line covers System 3 to 9, the Bally 6803 machines, Stern MPU-100/200, Gottlieb
+System 1, 80B and 3, Zaccaria (and the machines on its generations: Jac van Ham,
+Rowamet, Tecnoplay's Scramble), Hankin, Alvin G., Mr. Game, Capcom, and every machine
+whose generation is 0 (Atari, Game Plan, Playmatic, Taito, Inder/Spinball, Tabart,
+Jeutel, Barni, Joctronic...): a pack keyed by the command byte does not play there as
+written. One byte per command for them is proposed in
+[vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20) (draft).
+
+**Measured.** One ROM per family ran in libPinMAME (PinMAME 2150eab) for 45 s of attract
+mode, with coins and start (keys 3, 5, then 1), its commands fed to libaltsound
+(f908262) exactly as the plugin does, with a test pack holding every id
+`0x0000`..`0x01FF` and libaltsound's debug log giving each id it looked up. The commands
+were also replayed through libaltsound offline (the same ids as live). Each family
+section gives what its game sent and what AltSound looked up. A run in which the game
+sent no command (many older games are silent in attract mode, and coins do not always
+register) only tells the generation.
+
+**What rom2altsound writes for it.** The pack's ids are what the tool sent through
+`manCmd_w`. Where AltSound looks a sound up under another fixed id, the pack has that id
+too (`altsound::Aliases`, rows with the same file): on Whitestar (BSMT2000 and AT91, not
+Data East), `0xFDxx` for each one-byte row, since the games send their sounds as `FD xx`
+([SNDBRD_DE2S](data-east-sega-stern.md#sndbrd_de2s)); on System 11 machines with two
+sound boards, `0x00xx` for each board 1 row where board 0 has no row for that byte
+([System 11](williams-system11.md)). Where the ids are paired, no fixed id can be written:
+the families concerned are listed as not playable in `docs/vpx_playback.json` and on the
+site. Unless a section says otherwise, no pack of a family has been played in VPinball
+itself: what is measured is the id AltSound looks up.
 
 ## The quick survey
 

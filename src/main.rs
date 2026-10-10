@@ -627,7 +627,13 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
     }
     let mut extended = Vec::new();
     if !cli.no_altsound {
-        let r = altsound::write_pack(&job.out, &x.results, cli.merge_twins, cli.intro_loop_secs)?;
+        let r = altsound::write_pack(
+            &job.out,
+            &x.results,
+            cli.merge_twins,
+            cli.intro_loop_secs,
+            x.pack_aliases(),
+        )?;
         extended = r.extended.clone();
         println!(
             "  altsound: {} row(s), {} loop(s) with loop points ({} with an intro of their own, extended to {:.0} s), {} twin(s){}, {} file(s) referenced",
@@ -643,6 +649,11 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             },
             r.files_referenced
         );
+        if let (n @ 1.., Some(kind)) = (r.aliases, r.aliases_kind) {
+            println!(
+                "  altsound: {n} alias row(s) ({kind}), the ids AltSound looks up in VPinball"
+            );
+        }
         if let Some(c) = &r.chips {
             println!(
                 "  altsound (chips): voice chip -> CHANNEL 1 {} row(s) ({} callouts), {} row(s) duck the music (DUCK {}), {} STOP, {} on the music channel (they end the music)",

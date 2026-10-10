@@ -1,5 +1,5 @@
 {
-  "_comment": "Board families (catalog labels) whose packs cannot play in VPinball today, and why, in one line. Only confirmed families belong here (the 'In VPinball' items of docs/families/*.md are read from PinMAME's snd_alt.cpp, not from VPinball's PinMAME plugin or libaltsound). build_site.py copies it into catalog.json: vpx_not_playable (label -> reason) and vpx_playable: false on each entry of these families.",
+  "_comment": "Board families (catalog labels) whose packs cannot play in VPinball today, and why, in one line. Read in the code VPinball master builds (its AltSound plugin, libaltsound f908262, libPinMAME at PinMAME 2150eab) and measured with them (docs/families/common.md, In VPinball): only families where it is shown belong here; a family where some games play (BY45, BY61, S11CS: their 6803 games do not) stays out. build_site.py copies it into catalog.json: vpx_not_playable (label -> reason) and vpx_playable: false on each entry of these families.",
   "reasons": {
     "sam": {
       "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used, because AltSound does not receive this board's sound commands today: SAM games play their calls in their own code.",
@@ -8,10 +8,85 @@
     "p2k": {
       "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used, because AltSound does not receive this board's sound commands today: Pinball 2000's requests go from the PC to the board outside PinMAME's sound command path.",
       "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé, car AltSound ne reçoit pas aujourd'hui les commandes son de cette carte : les requêtes du Pinball 2000 vont du PC à la carte hors du chemin des commandes son de PinMAME."
+    },
+    "paired": {
+      "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used as written: libaltsound has no case for this board's hardware generation and joins the bytes it receives two by two into one id, so the pack's one-byte ids are not the ones it looks up (a fix is proposed in vpinball/libaltsound#20).",
+      "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé tel quel : libaltsound n'a pas de cas pour la génération de cette carte et assemble les octets reçus deux par deux en un identifiant, si bien que les identifiants d'un octet du pack ne sont pas ceux qu'il cherche (un correctif est proposé dans vpinball/libaltsound#20)."
+    },
+    "by6803": {
+      "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used as written: PinMAME logs every write of the game's port 1 (the command, then its high nibble) and libaltsound joins them two by two, so the pack's ids are not the ones it looks up (fixes are proposed in vpinball/pinmame#722 and vpinball/libaltsound#20).",
+      "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé tel quel : PinMAME transmet chaque écriture du port 1 du jeu (la commande, puis son quartet haut) et libaltsound les assemble deux par deux, si bien que les identifiants du pack ne sont pas ceux qu'il cherche (des correctifs sont proposés dans vpinball/pinmame#722 et vpinball/libaltsound#20)."
+    },
+    "unlogged": {
+      "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used, because AltSound does not receive this board's sound commands: the game reaches the board without going through PinMAME's sound command log.",
+      "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé, car AltSound ne reçoit pas les commandes son de cette carte : le jeu s'adresse à la carte sans passer par le journal des commandes son de PinMAME."
+    },
+    "spinb": {
+      "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used as written: the Spinball machines write the board's latch without going through PinMAME's sound command log, and on the Inder machines libaltsound joins the bytes two by two (no case for their hardware generation; a fix is proposed in vpinball/libaltsound#20).",
+      "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé tel quel : les machines Spinball écrivent le verrou de la carte sans passer par le journal des commandes son de PinMAME, et sur les machines Inder libaltsound assemble les octets deux par deux (pas de cas pour leur génération ; un correctif est proposé dans vpinball/libaltsound#20)."
     }
   },
   "families": {
+    "ALVGS1": "paired",
+    "ALVGS2": "paired",
+    "ASTRO": "paired",
+    "ATARI1": "paired",
+    "ATARI2": "paired",
+    "BARNI": "paired",
+    "BY45BP": "paired",
+    "BYSD": "by6803",
+    "BYTCS": "by6803",
+    "CAPCOMS": "unlogged",
+    "DCSP2K": "p2k",
+    "GPMSU1": "paired",
+    "GPMSU3": "paired",
+    "GPSSU1": "paired",
+    "GPSSU2": "paired",
+    "GPSSU3": "paired",
+    "GPSSU4": "paired",
+    "GTS3": "paired",
+    "GTS80B": "paired",
+    "HANKIN": "paired",
+    "JEUTEL": "paired",
+    "JOCTRONIC": "paired",
+    "JVH": "paired",
+    "JVH2": "paired",
+    "MRGAME": "unlogged",
     "NONE (Stern SAM)": "sam",
-    "DCSP2K": "p2k"
+    "PLAY1": "paired",
+    "PLAY2": "paired",
+    "PLAY3": "paired",
+    "PLAY4": "paired",
+    "PLAYZ": "unlogged",
+    "ROMSTAR": "unlogged",
+    "ROWAMET": "paired",
+    "S3DFS": "paired",
+    "S3S": "paired",
+    "S3WCS": "paired",
+    "S67S": "paired",
+    "S7S_ND": "paired",
+    "S9S": "paired",
+    "SPINB": "spinb",
+    "ST100": "paired",
+    "ST100B": "paired",
+    "ST300": "paired",
+    "ST300V": "paired",
+    "TABART": "paired",
+    "TABART2": "paired",
+    "TAITO_SINTETIZADOR": "paired",
+    "TAITO_SINTETIZADORPP": "paired",
+    "TAITO_SINTEVOX": "paired",
+    "TAITO_SINTEVOXPP": "paired",
+    "TECHNO": "paired",
+    "TECNOPLAY": "paired",
+    "ZAC11178": "paired",
+    "ZAC11178_13181": "paired",
+    "ZAC1125": "paired",
+    "ZAC1311": "unlogged",
+    "ZAC13136": "paired",
+    "ZAC13181x3": "paired",
+    "ZAC1346": "paired",
+    "ZAC1370": "paired",
+    "ZSU": "paired"
   }
 }

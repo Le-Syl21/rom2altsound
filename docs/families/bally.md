@@ -33,13 +33,23 @@ lines the game shares with its solenoids (`src/wpc/by35.c` `pia1b_w`:
 write the command on port 1 (`M6803_PORT1` → `sndbrd_0_data_w`) and the strobe on port 2
 (`port2_w`).
 
-**In VPinball (every family here)**: AltSound receives the `sndbrd_data_w` writes, i.e.
-on the by35.c games every write of the shared lines, 4 bits at a time (solenoids
-included), which libaltsound pairs two by two; the packs are keyed by the command byte.
-They do not match: these packs do not play in VPinball as they are (README note 12,
-CHANGELOG 0.2.1; a fix is proposed upstream in vpinball/pinmame#717 and
-vpinball/libaltsound#16). On the 6803 games, what reaches AltSound per command is not
-determined from the code. No pack of these families has been tried in VPinball.
+**In VPinball (every family here)**: on the MPU-17/MPU-35 games (by35.c), PinMAME logs one
+byte per command since vpinball/pinmame#717, the one the board reads, and libaltsound
+takes `GEN_BY17`/`GEN_BY35` one byte at a time since vpinball/libaltsound#16; VPinball has
+both since its master of 2026-10-07 (PinMAME 2150eab, libaltsound f908262). Measured there
+([In VPinball](common.md#in-vpinball)): sexygirl `19 1C 1F 1E` looked up as `0019 001C
+001F 001E`, blakpyra `10 15 16`, bmx `14 0B`, flashgvf `10 05 04`, centaur, mysteria,
+cosflash the same: **the packs play as written**. Earlier VPinball builds got every write
+of the shared lines, 4 bits at a time, paired two by two, and do not play them (README
+note 12). **The 6803 games do not** (by6803.c, `GEN_BY6803`/`GEN_BY6803A`: all of BYTCS
+and BYSD, and eballchp, eballch2, beatclck, beatclc2, blackbl2, ladyluck): PinMAME logs
+every write of port 1, the command then its high nibble (`61 06`), and libaltsound has no
+case for these generations and pairs the bytes: beatclck `08 00 15 01 61 06` looked up as
+`0008 0015 0161 0661`, blackblt `6E 06` as `6E06`. With
+[vpinball/pinmame#722](https://github.com/vpinball/pinmame/pull/722) and
+[vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20) (drafts): `0008
+0015 0061`, `006E`. Bowling machines (`GEN_BOWLING`) are paired too. No pack of these
+families has been played in VPinball itself.
 
 ## <a name="sndbrd_by32"></a>SNDBRD_BY32
 
@@ -288,7 +298,13 @@ Cheap Squeak behind the Baby Pac-Man video board · interface `BY45`, sub-type 1
 - **Everything else**: as `BY45`: sweep `01`..`FF`, stop `00` (framed the same way).
 - **Measured** (survey settings, board-support): babypac 32 of 40, granny 28 of 40, all
   from silence.
-- **In VPinball**: AltSound receives each nibble write (two per command). Not tested.
+- **In VPinball**: **the pack does not play as written**: libaltsound has no case for
+  generation 0 (none) and joins the bytes two by two ([In
+  VPinball](common.md#in-vpinball)). Measured on `babypac`: the game sent `08 01 03 01 04
+  01`, AltSound looked up `0801 0301 0401`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), draft) it
+  would look up `0008 0001 0003 0001`. PinMAME logs each nibble write (two per command,
+  the high nibble second), so even then the ids would be the nibbles.
 
 ## <a name="sndbrd_bytcs"></a>SNDBRD_BYTCS
 

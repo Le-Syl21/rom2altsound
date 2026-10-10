@@ -55,11 +55,11 @@ Data East alphanumeric sound board (YM2151 + MSM5205) · PinMAME interface `DE`
   the 5 s cap: music and long cues.
 - **Limits and what is missing**: no full run; the stop and its reset cost about 5 s per
   command.
-- **In VPinball**: AltSound gets the byte `pia5b_w` writes; for `GEN_DE` and the DMD
-  generations `snd_alt.cpp` `preprocess_commands` takes every byte but `00` and `FF` as an
-  8-bit command, `00`/`FF` starting a 16-bit one. The pack's ids are single bytes
-  `01`..`FF`, so they match the game's one-byte commands; `FF` and the 16-bit commands
-  would not. Not tested in VPinball.
+- **In VPinball**: **plays as written**: AltSound gets the byte `pia5b_w` writes;
+  libaltsound's case for `GEN_DE` and the DMD generations takes every byte but `00` and
+  `FF` as an 8-bit id (`FF` is skipped, `00 00` is `0x0000`). Measured on `bttf_a20`: `00
+  00 41 88` looked up as `0000 0041 0088` ([In VPinball](common.md#in-vpinball)); the
+  pack's ids are the single bytes `01`..`FF`. Not played in VPinball itself.
 
 ## <a name="sndbrd_de2s"></a>SNDBRD_DE2S
 
@@ -131,11 +131,16 @@ Monopoly (`monopole`)
   ADPCM state carries over between commands (gnr_300 `67`); a few sounds ignore the master
   volume (apollo13 `5F`, xfiles `1E`, `1F`); the factory volume is the attract-mode one
   ([Limits](../how-it-works.md#limits)).
-- **In VPinball**: AltSound gets the same latch byte. `snd_alt.cpp` takes Whitestar's
-  `FC`..`FF` as the first byte of a two-byte command, `FE 10`..`2F` as the volume, and
-  `0000`/`F0xx` as "stop music"; Data East bytes but `00`/`FF` are 8-bit commands. The
-  pack's ids are the single bytes `01`..`FB`, so they match the game's one-byte commands.
-  Not tested in VPinball.
+- **In VPinball**: Data East (`GEN_DE`, `GEN_DEDMD16/32/64`): **plays as written**, one
+  byte per id (aar_101: `23 FF 7A FF BF FF` looked up as `0023 007A 00BF`). Whitestar
+  (`GEN_WS`, `WS_1`, `WS_2`): libaltsound joins `FC`..`FF` with the next byte, takes `FE
+  10`..`2F` as the volume and pairs the other bytes, and the games send their sounds as
+  `FD xx` (monopoly: `FD 94`, simpprty: `FD 42`, `FE BC`), looked up as `0xFD94`; the
+  board plays `FD xx` as `xx` (monopoly: `FD 60` and `60` give the same file, `FD 94` and
+  `94` the same length), so **the pack also has a row `0xFDxx` for each one-byte row**
+  (`altsound::whitestar_aliases`): with it, monopoly's `FD 94` found its file. `FE xx`
+  above the volume range is another sound (monopoly `FE BC` plays nothing where `BC` does)
+  and is not swept. Not played in VPinball itself.
 
 ## <a name="sndbrd_de3s"></a>SNDBRD_DE3S
 
@@ -187,6 +192,8 @@ Whitestar "CPU/Sound Board II" with an Atmel AT91 (ARM7) · PinMAME interface `A
   same level, so this costs nothing there (other games not checked). Inserting a `00`
   between the refresh and the command was tried and dropped: the files came out at
   another level.
-- **In VPinball**: the game's bytes reach AltSound unchanged (`se.c` writes the same
-  queue), and `snd_alt.cpp` joins `FC`..`FF xx` into one 16-bit id, which is how sounds.dat
-  and the pack name them (`0xFC01`). Not tested in VPinball.
+- **In VPinball**: **plays as written**: the game's bytes reach AltSound unchanged (`se.c`
+  writes the same queue), and libaltsound's Whitestar case joins `FC`..`FF xx` into one
+  16-bit id, which is how sounds.dat and the pack name them (`0xFC01`); measured on
+  `elvisf`: `FD 0C` looked up as `FD0C`. A set without a sounds.dat section gets the
+  `0xFDxx` rows as on SNDBRD_DE2S. Not played in VPinball itself.

@@ -1582,6 +1582,23 @@ impl Extractor {
         }
     }
 
+    /// The extra pack rows for the ids AltSound looks up in VPinball: on a Whitestar
+    /// machine (Sega/Stern, not Data East) with a BSMT2000 or AT91 board, whose games send
+    /// a sound `xx` as `FD xx`; on a System 11 machine with two sound boards, whose board 1
+    /// commands AltSound takes without their board (see `crate::altsound::Aliases`).
+    pub fn pack_aliases(&self) -> crate::altsound::Aliases {
+        if !self.data_east && self.families.iter().any(|f| f == "BSMT" || f == "AT91") {
+            crate::altsound::Aliases::Whitestar
+        } else if self.mask == 3
+            && self.families[0] == "WMSS11"
+            && self.families[1].starts_with("WMSS11")
+        {
+            crate::altsound::Aliases::System11Board1
+        } else {
+            crate::altsound::Aliases::None
+        }
+    }
+
     fn is_de_board(&self, board: c_int) -> bool {
         self.data_east && self.families[board as usize] == "BSMT"
     }

@@ -109,6 +109,10 @@ pub struct PackReport {
     pub twins: usize,
     pub merged_twins: bool,
     pub files_referenced: usize,
+    /// Rows added under the id AltSound looks up for the game's command (`Aliases`).
+    pub aliases: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aliases_kind: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dcs: Option<DcsPack>,
     /// WPCS and System 11: how the chips pass (`SoundInfo::mix`) was mapped onto the pack.
@@ -271,6 +275,73 @@ pub fn csv_name(name: &str, id: &str) -> String {
     } else {
         cleaned
     }
+}
+
+/// Extra rows for machines whose commands AltSound looks up under another id than the
+/// tool's (what VPinball's AltSound plugin and libaltsound do with them, see
+/// docs/families/common.md, In VPinball).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Aliases {
+    None,
+    /// `0xFDxx` for each one-byte row (`whitestar_aliases`).
+    Whitestar,
+    /// `0x00xx` for each board 1 row `0x01xx` (`system11_board1_aliases`).
+    System11Board1,
+}
+
+impl Aliases {
+    fn kind(self) -> Option<&'static str> {
+        match self {
+            Aliases::None => None,
+            Aliases::Whitestar => Some("whitestar FD xx"),
+            Aliases::System11Board1 => Some("system 11 board 1 as 0x00xx"),
+        }
+    }
+}
+
+/// System 11 with two sound boards: VPinball's AltSound plugin passes the command byte
+/// without its board (`AltSoundProcessCommand(cmd, 0)`) and libaltsound's System 11 case
+/// takes every byte as an 8-bit id, so a board 1 command `xx` is looked up as `0x00xx`,
+/// the id of board 0's byte `xx`; the pack's `0x01xx` rows are never looked up. Each board 1
+/// row also gets a row `0x00xx` with the same file when board 0 has no row for `xx` (where
+/// both boards have a sound for `xx`, AltSound cannot tell them apart and board 0's stays).
+/// Returns how many rows were added.
+pub fn system11_board1_aliases(rows: &mut Vec<Row>) -> usize {
+    let ids: std::collections::BTreeSet<u32> = rows.iter().map(|r| r.id).collect();
+    let aliases: Vec<Row> = rows
+        .iter()
+        .filter(|r| (0x0101..=0x01FF).contains(&r.id) && !ids.contains(&(r.id & 0xFF)))
+        .map(|r| Row {
+            id: r.id & 0xFF,
+            ..r.clone()
+        })
+        .collect();
+    let n = aliases.len();
+    rows.extend(aliases);
+    n
+}
+
+/// Whitestar (Sega/Stern BSMT2000 and AT91 boards): the game sends a sound `xx` as the two
+/// bytes `FD xx` (attract and game of monopoly and simpprty: `FD 94`, `FD 42`), which the
+/// board plays as the byte `xx` alone (monopoly: `FD 60` and `60` give the same file, `FD
+/// 94` and `94` the same length). libaltsound's Whitestar case joins `FC`..`FF` with the
+/// next byte, so AltSound looks these sounds up as `0xFDxx`, not as the `0x00xx` of the
+/// sweep. Each one-byte row (`01`..`FB`) also gets a row `0xFDxx` with the same file,
+/// unless the pack already has one (the sounds.dat sections list `FD xx` themselves).
+/// Returns how many rows were added.
+pub fn whitestar_aliases(rows: &mut Vec<Row>) -> usize {
+    let ids: std::collections::BTreeSet<u32> = rows.iter().map(|r| r.id).collect();
+    let aliases: Vec<Row> = rows
+        .iter()
+        .filter(|r| (0x01..=0xFB).contains(&r.id) && !ids.contains(&(0xFD00 | r.id)))
+        .map(|r| Row {
+            id: 0xFD00 | r.id,
+            ..r.clone()
+        })
+        .collect();
+    let n = aliases.len();
+    rows.extend(aliases);
+    n
 }
 
 /// The `altsound.csv` text (header + rows).
@@ -858,6 +929,7 @@ pub fn write_pack(
     sounds: &[SoundInfo],
     merge_twins: bool,
     intro_loop_secs: f64,
+    aliases: Aliases,
 ) -> Result<PackReport, String> {
     let err = |p: &Path, e: io::Error| format!("{}: {e}", p.display());
     let mut report = PackReport {
@@ -993,6 +1065,13 @@ pub fn write_pack(
             }
         }
     }
+
+    report.aliases = match aliases {
+        Aliases::None => 0,
+        Aliases::Whitestar => whitestar_aliases(&mut rows),
+        Aliases::System11Board1 => system11_board1_aliases(&mut rows),
+    };
+    report.aliases_kind = aliases.kind();
 
     let ini = match (&report.dcs, &report.chips) {
         (Some(d), _) => altsound_ini_dcs(&d.callout_profiles, &d.sfx_profiles),
@@ -1295,6 +1374,49 @@ mod tests {
         assert_eq!(classify("SFX: Whack", false), Kind::Sfx);
         assert_eq!(classify("\"Hey look\"", false), Kind::Callout);
         assert_eq!(classify("VOX: Jackpot", false), Kind::Callout);
+    }
+
+    #[test]
+    fn whitestar_aliases_add_fd_rows() {
+        let row = |id: u32| {
+            Row::plain(
+                id,
+                Kind::Sfx,
+                false,
+                false,
+                format!("s{id:X}"),
+                format!("{id:X}.wav"),
+            )
+        };
+        let mut rows = vec![
+            row(0x0000),
+            row(0x0042),
+            row(0x0060),
+            row(0x00FC),
+            row(0xFD60),
+        ];
+        assert_eq!(whitestar_aliases(&mut rows), 1);
+        let added = rows.last().unwrap();
+        assert_eq!((added.id, added.fname.as_str()), (0xFD42, "42.wav"));
+        assert_eq!(rows.iter().filter(|r| r.id == 0xFD60).count(), 1);
+    }
+
+    #[test]
+    fn system11_board1_aliases_where_board0_is_free() {
+        let row = |id: u32| {
+            Row::plain(
+                id,
+                Kind::Sfx,
+                false,
+                false,
+                format!("s{id:X}"),
+                format!("{id:X}.wav"),
+            )
+        };
+        let mut rows = vec![row(0x0005), row(0x0105), row(0x0193), row(0x0100)];
+        assert_eq!(system11_board1_aliases(&mut rows), 1);
+        let added = rows.last().unwrap();
+        assert_eq!((added.id, added.fname.as_str()), (0x0093, "193.wav"));
     }
 
     #[test]
