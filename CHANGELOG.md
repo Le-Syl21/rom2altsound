@@ -8,7 +8,11 @@
   shim and PinMAME's CMake build (whose hard-coded 14.0 build.rs now replaces), C/C++
   calls to newer APIs without an availability check fail the build
   (`-Werror=unguarded-availability`), the bundle's `LSMinimumSystemVersion` follows, and
-  the verify jobs fail if a binary's `minos` is above the announced minimum.
+  the verify jobs fail if a binary's `minos` is above the announced minimum or if it
+  imports libc++ symbols that only newer macOS versions export. libpinmame.cpp's only
+  `std::format` call (whose libc++ instantiation needs the floating point `to_chars` of
+  macOS 13.3) is answered on macOS by a plain overload from a generated wrapper; the
+  PinMAME source stays untouched.
 
 - **Upstream merges (2026-10-10)**: toxie merged rom2altsound's PinMAME pull requests
   #719 (Tecnoplay: every sound command delivered, `00` included), #720 (Y8950: BRDY no

@@ -586,8 +586,18 @@ jobs:
             [ -e "$bin" ] || continue
             echo "::group::$bin"
             vtool -show-build "$bin"
-            otool -l "$bin" | grep -A1 -E 'LC_LOAD_(WEAK_)?DYLIB' | grep -v -- '--' || true
+            otool -l "$bin" | awk '/cmd LC_LOAD_(WEAK_)?DYLIB/{c=$2} $1=="name" && c{print c, $2; c=""}'
+            # libc++ is the system's: its imports must exist on the oldest macOS. The C++
+            # code is compiled with -Werror=unguarded-availability; this catches what got
+            # through anyway (symbols libc++ only exports from macOS 11 to 13.4).
+            imports=$(nm -m -u "$bin" | grep 'from libc++' || true)
+            echo "$(printf '%s\n' "$imports" | grep -c . || true) libc++ imports, $(nm -m -u "$bin" | grep -c 'weak' || true) weak imports"
+            newer=$(printf '%s\n' "$imports" | grep -E '__libcpp_verbose_abort|to_charsEPcS0_[def]|__libcpp_atomic_wait|__cxx_atomic_notify|__cxx_atomic_wait|__hash_memory|__libcpp_tzdb|3pmr' || true)
             echo "::endgroup::"
+            if [ -n "$newer" ]; then
+              echo "::error::$bin imports libc++ symbols newer than macOS $MACOS_MIN:"
+              printf '%s\n' "$newer"; fail=1
+            fi
             minos=$(otool -l "$bin" | awk '/LC_BUILD_VERSION/{b=1} b && $1=="minos"{print $2; exit}')
             echo "$bin: minos $minos (announced: $MACOS_MIN)"
             if [ -z "$minos" ]; then
