@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.4 (2026-10-10)
 
 - **VPinball playback, measured**: what VPinball's AltSound looks up was read in the code
   VPinball master builds (its AltSound plugin, libaltsound f908262, libPinMAME at PinMAME
