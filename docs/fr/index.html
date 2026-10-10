@@ -82,9 +82,12 @@ l'initialisation de la machine la démarre, avec un lien vers les notes de la fa
 <li><strong>rom2altsound</strong> : le résultat du <a href="https://github.com/Le-Syl21/rom2altsound/blob/main/docs/board-support.md">relevé des cartes</a>
 pour la famille : <em>Fonctionne</em> (les sons sortent, distincts, chacun depuis le silence),
 <em>Partiel</em>, <em>Pas encore de son</em>, <em>Pas de carte son</em>. Un second badge, <em>pack AltSound
-non joué dans VPX</em>, marque les familles dont VPinball ne peut pas utiliser les packs AltSound
-aujourd'hui, faute de recevoir leurs commandes son dans AltSound : le jeu lui-même a toujours son propre
-son ; son infobulle dit pourquoi.</li>
+non joué dans VPX</em>, marque les familles dont VPinball ne peut pas utiliser les packs AltSound,
+faute de recevoir dans AltSound leurs commandes son sous les identifiants du pack : le jeu lui-même a
+toujours son propre son ; son infobulle dit pourquoi. Un badge plus discret, <em>pack joué par VPX après
+10.8.1-5436</em>, marque les familles dont la version publiée de VPinball ne joue pas les packs, mais que
+ses versions de développement (master) jouent depuis octobre 2026 (libaltsound y prend leurs commandes
+un octet à la fois).</li>
 <li><strong>Jeux de ROM</strong> : combien des jeux de ROM PinMAME de l'entrée étaient complets dans la
 collection de référence d'où le catalogue est tiré (2804 zips VPinMAME), sur le total.</li>
 <li><strong>Sons</strong> : lu dans les ROM sans les faire tourner, là où leur organisation est connue : les
