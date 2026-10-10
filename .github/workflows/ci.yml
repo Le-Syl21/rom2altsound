@@ -44,10 +44,11 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
 
       - name: Check formatting
-        run: cargo fmt --check
+        run: cargo fmt --all --check
 
+      # Both programs: the command line and the window (gui/).
       - name: Clippy
-        run: cargo clippy --release --all-targets -- -D warnings
+        run: cargo clippy --release --workspace --all-targets -- -D warnings
 
   build:
     needs: lint
@@ -99,16 +100,26 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
+      # The window program (gui/): the same library, already built above.
+      - name: Build the window program
+        run: cargo build --release --target ${{ matrix.target }} -p rom2altsound-gui
+
       # Same --target as the build, so that PinMAME is not compiled a second
       # time into target/release. The x86_64 macOS binary is cross-built on an
       # arm64 runner: not run here.
       - name: Run tests
         if: matrix.target != 'x86_64-apple-darwin'
-        run: cargo test --release --target ${{ matrix.target }}
+        run: cargo test --release --target ${{ matrix.target }} --workspace
 
       - name: Smoke test (--version)
         if: matrix.target != 'x86_64-apple-darwin'
         run: target/${{ matrix.target }}/release/rom2altsound --version
+
+      # With arguments the window program is the command line (its extraction processes
+      # are itself). Not on Windows: a windows-subsystem program has no console output.
+      - name: Smoke test, window program (--version)
+        if: matrix.target != 'x86_64-apple-darwin' && runner.os != 'Windows'
+        run: target/${{ matrix.target }}/release/rom2altsound-gui --version
 
       # --- Packaging (unsigned; signing happens in jobs of their own, behind
       # the `signing` environment). ---
@@ -129,6 +140,40 @@ jobs:
           name: rom2altsound-${{ matrix.label }}
           path: rom2altsound-${{ matrix.label }}.*
 
+      # The window program goes in archives of its own, so that the command line
+      # download stays small: rom2altsound-gui-<platform>.
+      - name: Package the window program (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir pkg-gui
+          cp target/${{ matrix.target }}/release/rom2altsound-gui README.md LICENSE pkg-gui/
+          tar czf rom2altsound-gui-${{ matrix.label }}.tar.gz -C pkg-gui rom2altsound-gui README.md LICENSE
+
+      # macOS: an application bundle, rom2altsound.app (the executable inside it is
+      # rom2altsound-gui, which also runs the extraction processes).
+      - name: Package the window program (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          app=pkg-gui/rom2altsound.app
+          mkdir -p "$app/Contents/MacOS"
+          cp target/${{ matrix.target }}/release/rom2altsound-gui "$app/Contents/MacOS/"
+          version=$(cargo pkgid -p rom2altsound-gui)
+          version="${version##*[@#]}"
+          sed "s/@VERSION@/$version/g" gui/macos/Info.plist > "$app/Contents/Info.plist"
+          plutil -lint "$app/Contents/Info.plist"
+          cp README.md LICENSE pkg-gui/
+          ditto -c -k pkg-gui rom2altsound-gui-${{ matrix.label }}.zip
+
+      - name: Package the window program (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path target/${{ matrix.target }}/release/rom2altsound-gui.exe, README.md, LICENSE -DestinationPath rom2altsound-gui-${{ matrix.label }}.zip
+
+      - name: Upload the window program
+        uses: actions/upload-artifact@v7
+        with:
+          name: rom2altsound-gui-${{ matrix.label }}
+          path: rom2altsound-gui-${{ matrix.label }}.*
+
   # Apple signing + notarization. Behind `signing`: the Apple secrets are
   # environment secrets, and a Developer ID signature commits the owner's
   # identity, so it never goes out without explicit approval.
@@ -142,6 +187,12 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: rom2altsound-macos-*
+          path: dl
+
+      - name: Download the macOS window program artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: rom2altsound-gui-macos-*
           path: dl
 
       - name: Import Apple Developer ID certificate
@@ -228,6 +279,7 @@ jobs:
 
           SIGN_ID="Developer ID Application: Sylvain Gargasson ($APPLE_TEAM_ID)"
           artifacts=(rom2altsound-macos-arm64 rom2altsound-macos-x86_64)
+          gui_artifacts=(rom2altsound-gui-macos-arm64 rom2altsound-gui-macos-x86_64)
 
           # 1) Sign and verify, then zip for notarization.
           for art in "${artifacts[@]}"; do
@@ -242,22 +294,41 @@ jobs:
             ditto -c -k --keepParent "$work/rom2altsound" "$RUNNER_TEMP/$art.zip"
             echo "::endgroup::"
           done
+          # The window program: the application bundle is signed as a whole.
+          for art in "${gui_artifacts[@]}"; do
+            echo "::group::sign $art"
+            work="$RUNNER_TEMP/$art"
+            mkdir -p "$work"
+            ditto -x -k "dl/$art/$art.zip" "$work"
+            codesign --force --options runtime \
+              --sign "$SIGN_ID" \
+              --timestamp "$work/rom2altsound.app"
+            codesign --verify --deep --strict --verbose=2 "$work/rom2altsound.app"
+            ditto -c -k --keepParent "$work/rom2altsound.app" "$RUNNER_TEMP/$art.zip"
+            echo "::endgroup::"
+          done
 
           # 2) Notarize in parallel, then collect the exit codes one by one.
+          all=("${artifacts[@]}" "${gui_artifacts[@]}")
           pids=()
-          for art in "${artifacts[@]}"; do
+          for art in "${all[@]}"; do
             notarize "$RUNNER_TEMP/$art.zip" "$art" &
             pids+=("$!")
           done
           failed=0
           for i in "${!pids[@]}"; do
-            wait "${pids[$i]}" || { echo "::error::${artifacts[$i]}: notarization failed"; failed=1; }
+            wait "${pids[$i]}" || { echo "::error::${all[$i]}: notarization failed"; failed=1; }
           done
           [ $failed -eq 0 ] || exit 1
 
-          # 3) Repackage the signed binaries under their original names.
+          # 3) Repackage the signed binaries under their original names (the bundles
+          # with their notarization ticket stapled, for a first launch offline).
           for art in "${artifacts[@]}"; do
             tar czf "$art.tar.gz" -C "$RUNNER_TEMP/$art" rom2altsound README.md LICENSE
+          done
+          for art in "${gui_artifacts[@]}"; do
+            xcrun stapler staple "$RUNNER_TEMP/$art/rom2altsound.app"
+            ditto -c -k "$RUNNER_TEMP/$art" "$art.zip"
           done
 
       - name: Re-upload the signed arm64 artifact
@@ -272,6 +343,20 @@ jobs:
         with:
           name: rom2altsound-macos-x86_64
           path: rom2altsound-macos-x86_64.tar.gz
+          overwrite: true
+
+      - name: Re-upload the signed arm64 window program
+        uses: actions/upload-artifact@v7
+        with:
+          name: rom2altsound-gui-macos-arm64
+          path: rom2altsound-gui-macos-arm64.zip
+          overwrite: true
+
+      - name: Re-upload the signed x86_64 window program
+        uses: actions/upload-artifact@v7
+        with:
+          name: rom2altsound-gui-macos-x86_64
+          path: rom2altsound-gui-macos-x86_64.zip
           overwrite: true
 
   # Authenticode-sign the Windows binary with ssign: the Linux runner signs it
@@ -294,42 +379,60 @@ jobs:
           name: rom2altsound-windows-x86_64
           path: dl
 
+      - name: Download the Windows window program artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: rom2altsound-gui-windows-x86_64
+          path: dl-gui
+
       - name: Sign with ssign (via Certum)
         env:
           CERTUM_EMAIL: ${{ secrets.CERTUM_EMAIL }}
           CERTUM_OTP: ${{ secrets.CERTUM_OTP }}
         run: |
-          cd dl
-          unzip -o rom2altsound-windows-x86_64.zip
+          (cd dl && unzip -o rom2altsound-windows-x86_64.zip)
+          (cd dl-gui && unzip -o rom2altsound-gui-windows-x86_64.zip)
+          # Both programs in one session.
           ssign --verbose \
             -n "rom2altsound" -u "https://github.com/${{ github.repository }}" \
-            rom2altsound.exe
+            dl/rom2altsound.exe dl-gui/rom2altsound-gui.exe
           sudo apt-get update -qq && sudo apt-get install -y osslsigncode
           # Check the facts, not the presence of a sentence: "Calculated message
           # digest" also appears when the digest does NOT match, and says nothing
           # about timestamping.
-          out=$(osslsigncode verify rom2altsound.exe 2>&1) || true
-          echo "$out"
-          if echo "$out" | grep -q "MISMATCH"; then
-            echo "::error::invalid Authenticode digest (Windows would see it as tampered with)"
-            exit 1
-          fi
-          if echo "$out" | grep -q "Timestamp is not available"; then
-            echo "::error::signature is not timestamped (invalid as soon as the certificate expires)"
-            exit 1
-          fi
-          if ! echo "$out" | grep -q "Signature verification: ok"; then
-            echo "::error::signature verification failed"
-            exit 1
-          fi
-          rm -f rom2altsound-windows-x86_64.zip
-          zip -j rom2altsound-windows-x86_64.zip rom2altsound.exe README.md LICENSE
+          for exe in dl/rom2altsound.exe dl-gui/rom2altsound-gui.exe; do
+            out=$(osslsigncode verify "$exe" 2>&1) || true
+            echo "$out"
+            if echo "$out" | grep -q "MISMATCH"; then
+              echo "::error::$exe: invalid Authenticode digest (Windows would see it as tampered with)"
+              exit 1
+            fi
+            if echo "$out" | grep -q "Timestamp is not available"; then
+              echo "::error::$exe: signature is not timestamped (invalid as soon as the certificate expires)"
+              exit 1
+            fi
+            if ! echo "$out" | grep -q "Signature verification: ok"; then
+              echo "::error::$exe: signature verification failed"
+              exit 1
+            fi
+          done
+          (cd dl && rm -f rom2altsound-windows-x86_64.zip \
+            && zip -j rom2altsound-windows-x86_64.zip rom2altsound.exe README.md LICENSE)
+          (cd dl-gui && rm -f rom2altsound-gui-windows-x86_64.zip \
+            && zip -j rom2altsound-gui-windows-x86_64.zip rom2altsound-gui.exe README.md LICENSE)
 
       - name: Re-upload the signed artifact
         uses: actions/upload-artifact@v7
         with:
           name: rom2altsound-windows-x86_64
           path: dl/rom2altsound-windows-x86_64.zip
+          overwrite: true
+
+      - name: Re-upload the signed window program
+        uses: actions/upload-artifact@v7
+        with:
+          name: rom2altsound-gui-windows-x86_64
+          path: dl-gui/rom2altsound-gui-windows-x86_64.zip
           overwrite: true
 
   release:
@@ -357,13 +460,16 @@ jobs:
           cat > "$notes" <<'EOF'
           Turn a pinball ROM's sound board into an AltSound pack.
 
-          | system | file |
-          |---|---|
-          | Linux x86_64 | `rom2altsound-linux-x86_64.tar.gz` |
-          | Linux aarch64 | `rom2altsound-linux-aarch64.tar.gz` |
-          | Windows x86_64 (signed) | `rom2altsound-windows-x86_64.zip` |
-          | macOS Apple Silicon (signed, notarized) | `rom2altsound-macos-arm64.tar.gz` |
-          | macOS Intel (signed, notarized) | `rom2altsound-macos-x86_64.tar.gz` |
+          | system | command line | window (GUI) |
+          |---|---|---|
+          | Linux x86_64 | `rom2altsound-linux-x86_64.tar.gz` | `rom2altsound-gui-linux-x86_64.tar.gz` |
+          | Linux aarch64 | `rom2altsound-linux-aarch64.tar.gz` | `rom2altsound-gui-linux-aarch64.tar.gz` |
+          | Windows x86_64 (signed) | `rom2altsound-windows-x86_64.zip` | `rom2altsound-gui-windows-x86_64.zip` |
+          | macOS Apple Silicon (signed, notarized) | `rom2altsound-macos-arm64.tar.gz` | `rom2altsound-gui-macos-arm64.zip` |
+          | macOS Intel (signed, notarized) | `rom2altsound-macos-x86_64.tar.gz` | `rom2altsound-gui-macos-x86_64.zip` |
+
+          The window program is a separate download (the command line one stays small); it
+          does everything the command line does.
 
           Usage, supported boards and limits: see the README.
           Help and feedback: https://discord.gg/T37DYHmt2j (channel #rom2altsound)

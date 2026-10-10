@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+- **A window program, `rom2altsound-gui`** (a separate download, `rom2altsound-gui-<system>`,
+  so that the command line one stays small; on macOS an application, `rom2altsound.app`):
+  drop ROM zips or a ROM folder on it, see what each zip holds (complete, with its
+  parent, damaged, misnamed, fixable), its sound board, rom2altsound's support level and
+  whether VPinball plays the pack; pick the output folder and the options in plain words
+  (every other command line option under "Advanced options", read from the command
+  line's own definitions); then follow each ROM's progress, cancel, open the listening
+  pages and folders. English and French. It drives the same extraction engine (each ROM
+  in a process of its own), and with arguments it is the command line.
+- The crate is now a library plus the two programs (a workspace with `gui/`); a plain
+  `cargo build` builds the command line only, whose output is unchanged. A ROM's process
+  writes machine-readable progress (JSON lines) when `ROM2ALTSOUND_PROGRESS` names a file;
+  a cancelled run kills each ROM's processes (its factory cold boot included).
+- `cargo install --git …` now names the program: `rom2altsound` or `rom2altsound-gui`.
+- **Test rigs** (Docker, for machines without a display): `tools/gui-test/` runs the
+  window under Xvfb with software OpenGL and drives it through egui_mcp (add ROMs,
+  start, cancel, run to the end, screenshots); `tools/html-test/` opens the listening
+  pages and the catalog site in headless Chromium and Firefox (official Playwright image)
+  and reports JavaScript errors, failed requests and WAV files the browser cannot decode.
+- Release workflow: GUI archives for every system, signed like the command line
+  (Authenticode on Windows; Developer ID, notarized and stapled on macOS).
+
 ## 0.2.4 (2026-10-10)
 
 - **VPinball playback, measured**: what VPinball's AltSound looks up was read in the code

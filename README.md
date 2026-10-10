@@ -53,14 +53,50 @@ level and loop yourself, sound by sound. rom2altsound does it all in one go:
 **Release binaries** (Linux x86_64/aarch64, Windows x86_64, macOS arm64/x86_64): download
 the archive for your system from the
 [releases page](https://github.com/Le-Syl21/rom2altsound/releases), unpack it and run
-`rom2altsound` from a terminal. The Windows and macOS binaries are signed.
+`rom2altsound` from a terminal. The Windows and macOS binaries are signed. Prefer a
+window to a terminal? Take the `rom2altsound-gui-…` archive instead (see
+[The window program](#the-window-program)).
 
 **With Cargo** (needs Rust, CMake and a C/C++ compiler; PinMAME is built along the way,
 which takes a few minutes):
 
 ```
-cargo install --git https://github.com/Le-Syl21/rom2altsound
+cargo install --git https://github.com/Le-Syl21/rom2altsound rom2altsound
+cargo install --git https://github.com/Le-Syl21/rom2altsound rom2altsound-gui   # the window
 ```
+
+### The window program
+
+`rom2altsound-gui` does what the command line does, in a window: no terminal, no option
+to remember. It is a separate download (`rom2altsound-gui-<system>` on the
+[releases page](https://github.com/Le-Syl21/rom2altsound/releases); on macOS an
+application, `rom2altsound.app`), so that the command line one stays small.
+
+![The ROM list: each zip checked](docs/img/gui-roms.png)
+
+1. **ROMs**: drop ROM zips or a whole ROM folder on the window (or pick them, or type a
+   path). Each zip is checked as `rom2altsound roms` checks it: is the game complete
+   (or complete with its parent's zip next to it), damaged, misnamed; its sound board;
+   how far rom2altsound gets with that board; and whether VPinball plays the pack today.
+   Hover a word for the explanation. The complete games are ticked.
+2. **Where the packs go**: each ROM gets its folder in it (proposed: an `altsound`
+   folder next to the ROMs).
+3. **Options**, in plain words: the volume of the files (the game's factory volume, or
+   the loudest that does not distort), how many ROMs at the same time, the longest
+   sound, your own sounds.dat or names.csv. **Advanced options** lists every other option
+   of the command line, with its help.
+
+**Make the packs** shows each ROM's progress (its stage, and the command being recorded
+out of how many) and the overall one; **Cancel** stops everything at once. **Details**
+holds what each ROM printed. At the end, **Listen** opens a pack's listening page in
+your browser, **Open folder** its folder, and **Page of every ROM** the page linking them.
+
+![Recording](docs/img/gui-running.png)
+![Done](docs/img/gui-done.png)
+
+The window follows the system language (English or French) and has a switch for it.
+It runs the very same extraction as the command line (each ROM in a process of its
+own); given arguments, `rom2altsound-gui` *is* the command line.
 
 ### Usage
 
@@ -602,13 +638,50 @@ par son. rom2altsound fait tout d'un coup :
 téléchargez l'archive pour votre système sur la
 [page des versions](https://github.com/Le-Syl21/rom2altsound/releases), décompressez-la
 et lancez `rom2altsound` depuis un terminal. Les binaires Windows et macOS sont signés.
+Vous préférez une fenêtre à un terminal ? Prenez plutôt l'archive `rom2altsound-gui-…`
+(voir [Le programme à fenêtre](#le-programme-à-fenêtre)).
 
 **Avec Cargo** (il faut Rust, CMake et un compilateur C/C++ ; PinMAME est compilé au
 passage, ce qui prend quelques minutes) :
 
 ```
-cargo install --git https://github.com/Le-Syl21/rom2altsound
+cargo install --git https://github.com/Le-Syl21/rom2altsound rom2altsound
+cargo install --git https://github.com/Le-Syl21/rom2altsound rom2altsound-gui   # la fenêtre
 ```
+
+### Le programme à fenêtre
+
+`rom2altsound-gui` fait ce que fait la ligne de commande, dans une fenêtre : pas de
+terminal, pas d'option à retenir. Il se télécharge à part (`rom2altsound-gui-<système>`
+sur la [page des versions](https://github.com/Le-Syl21/rom2altsound/releases) ; sur
+macOS une application, `rom2altsound.app`), pour que celui de la ligne de commande reste
+léger.
+
+![La liste des ROMs, en français](docs/img/gui-fr.png)
+
+1. **ROMs** : déposez des zips de ROM ou tout un dossier de ROMs sur la fenêtre (ou
+   choisissez-les, ou tapez un chemin). Chaque zip est vérifié comme le fait
+   `rom2altsound roms` : le jeu est-il complet (ou complet avec le zip de son parent à
+   côté), abîmé, mal nommé ; sa carte son ; jusqu'où rom2altsound va avec cette carte ;
+   et si VPinball joue le pack aujourd'hui. Survolez un mot pour l'explication. Les jeux
+   complets sont cochés.
+2. **Où vont les packs** : chaque ROM y a son dossier (proposé : un dossier `altsound`
+   à côté des ROMs).
+3. **Options**, en mots simples : le volume des fichiers (celui que le jeu règle en
+   usine, ou le plus fort qui ne sature pas), combien de ROMs en même temps, le son le
+   plus long, votre propre sounds.dat ou names.csv. **Options avancées** liste toutes les
+   autres options de la ligne de commande, avec leur aide.
+
+**Créer les packs** montre l'avancement de chaque ROM (son étape, et la commande en
+cours d'enregistrement sur combien) et l'avancement total ; **Annuler** arrête tout
+d'un coup. **Détails** contient ce que chaque ROM a affiché. À la fin, **Écouter** ouvre
+la page d'écoute d'un pack dans votre navigateur, **Ouvrir le dossier** son dossier, et
+**Page de toutes les ROMs** la page qui les relie.
+
+La fenêtre suit la langue du système (français ou anglais) et a un sélecteur pour en
+changer. Elle lance exactement la même extraction que la ligne de commande (chaque ROM
+dans un processus à elle) ; avec des arguments, `rom2altsound-gui` *est* la ligne de
+commande.
 
 ### Utilisation
 
