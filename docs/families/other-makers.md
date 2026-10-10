@@ -489,9 +489,22 @@ e.g. X Force (`xforce`), Space Team (`spcteam`)
   board reset, the same as with the shim on the older PinMAME: `01`..`3F` and `40`..`7F`,
   nothing from `80`..`FF`. `xforce` 0 of 40 (no sound ROM). Before: 0 of 40 on xforce,
   and on spcteam each command played its first notes only.
+- **`40`..`7F` were wrong** in that sweep and in the 0.2.5 packs: they were counted as
+  sounds because the DAC was written (about 25000 writes per command), not because
+  anyone checked what they played. The sample start routine (`E26D`) selects one of
+  four 32K sample ROMs (ic8-ic11) at `4000`-`BFFF` through port B bits 2-3 (table `E338`:
+  `01 05 09 0D`), and the program ROM (ic12, the only sound dump, first half all `FF`)
+  answers at `C000`-`FFFF` only; MAME's `techno.cpp` has the same map from the schematic
+  and notes that no machine has those ROMs. PinMAME mapped `sound.bin` flat, so these
+  commands played the sound program's own code as audio, then `FF`. Space Team's game
+  program never sends `40`..`7F` (every byte it writes to the sound latch, `$43FE`, is
+  read in its code), so the sockets were probably empty.
+  [vpinball/pinmame#729](https://github.com/vpinball/pinmame/pull/729) (open) maps the
+  banks; with no dump they read `FF` and `40`..`7F` are silent (rms 0.5 LSB, the
+  mixer's dither; `40` a click under 0.5 ms). The submodule stays on f45e404 until it is
+  merged.
 - **Limits and what is missing**: `80`..`FF` (a note on channel 0, which the game sends
-  often) give no sound on their own; the samples' bank lines (port B bits 2-3, `E338`)
-  select nothing in PinMAME's flat ROM map, so `41`..`47` play the same sample.
+  often) give no sound on their own; `40`..`7F` play code as audio until #729 is in.
 - **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436
   and older: their libaltsound has no case for generation 0 (none) and joins the bytes two
   by two ([In VPinball](common.md#in-vpinball)), and their PinMAME logged every write of

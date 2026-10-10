@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Tecnoplay `40`..`7F` were wrong** (DAC samples, Space Team): counted as sounds in
+  0.2.5 because the DAC was written, they played the sound program's own code. The
+  samples sit in four banked ROMs (ic8-ic11) that were never dumped and that the game
+  never asks for. [vpinball/pinmame#729](https://github.com/vpinball/pinmame/pull/729)
+  (open) maps the banks and makes them silent; the submodule moves once it is merged.
+  The "60 Hz square wave after a sample" reported on #721 was our test harness reading
+  PinMAME's mono output as stereo, not PinMAME.
+
 ## 0.2.5 (2026-10-10)
 
 - **Older Macs**: the macOS binaries (command line and `rom2altsound.app`) now run on
