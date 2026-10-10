@@ -3,10 +3,9 @@
 `SNDBRD_CAPCOMS` (Capcom's MPEG sound board) and `SNDBRD_ROMSTAR` (Romstar's Goofy Hoops,
 QSound). Both are sub-types of one PinMAME interface, `"TMS320AV120"`
 (`src/wpc/capcoms.c`, `capcomsIntf`), whose manual handler does two different things by
-sub-type. rom2altsound drives them with the [common method](common.md): the interface is
-named nowhere in `sweep`, `BUILTIN_STOPS` or `volume::full_scale`, so a sounds.dat section
-if the game has one, else the raw sweep `01`..`FF`; a board reset as the stop
-(`shim_reset_audio_cpus`); no volume command; default pack columns.
+sub-type. rom2altsound drives Capcom's with the [common method](common.md) (see its
+section for the command it sends); Romstar's takes no command and is
+[game-driven](common.md#game-driven-boards): the game's own sound routines are called.
 
 ## <a name="sndbrd_capcoms"></a>SNDBRD_CAPCOMS
 
@@ -69,31 +68,49 @@ ids, 1995-2000, Capcom, Illinois Pinball · e.g. Breakshot (`bsv103`), Pinball M
 ## <a name="sndbrd_romstar"></a>SNDBRD_ROMSTAR
 
 Romstar Goofy Hoops (QSound, no sound CPU) · PinMAME interface `TMS320AV120`
-(`src/wpc/capcoms.c`, sub-type 1) · status ⚠️ · 1 set, 1 game, 1 sound ROM id, 1994,
-Romstar · e.g. Goofy Hoops (`ghv101`)
+(`src/wpc/capcoms.c`, sub-type 1) · status ✅ (game-driven) · 1 set, 1 game, 1 sound ROM
+id, 1994, Romstar · e.g. Goofy Hoops (`ghv101`)
 
 - **Hardware**: a 68306 game CPU only (no audio CPU) and a Capcom QSound chip, which the
   game's code drives directly (`src/wpc/capcom.c`, `MACHINE_INIT(romstar)` and the QSound
   handlers around `qsound_cmd_w`).
-- **Commands**: the game writes the QSound registers itself; nothing goes through
+- **Commands**: none: the game writes the QSound registers itself; nothing goes through
   `sndbrd_data_w`. `sndbrd_0_init` is called only "needed for sound commander to work"
   (comment in `MACHINE_INIT(romstar)`). The manual handler (`capcoms_sndCmd_w`, sub-type
   1, commented "for testing Goofy Hoops' Q-Sound chip") does not send a command: it
-  programs a QSound voice itself, start address `(data & 1) ? 0x8000 : 0` in bank
-  `(data & 0x7F) >> 1`, a fixed pitch, length `0x7FFF`, no loop, pan from bits 0 and 7, and
-  starts it.
-- **Sound list**: raw sweep `01`..`FF`: each byte plays a fixed 32 KB window of the QSound
-  sample ROM at a fixed pitch, not one of the game's sounds.
-- **Stop, boot and resets**: the stop is a board reset, but there is no audio CPU to
-  reset (`shim_reset_audio_cpus` resets nothing) and the QSound voice is not stopped.
-- **Volume**: the voice volume the handler sets (`0x2000`); no volume command.
-- **Loops**: audio only (no sound CPU).
-- **DUCK / STOP / CHANNEL**: defaults.
-- **Measured**: `ghv101`, 40 of 40 but doubtful: every file runs to the 5 s cap and none
-  starts from silence ([board support](../board-support.md)).
-- **Limits and what is missing**: what comes out are slices of the sample ROM played by
-  PinMAME's test code, not the game's sounds. Getting the game's sounds would need its
-  own QSound programming, read in the game's code; nothing in PinMAME exposes it as
-  commands.
+  programs a QSound voice itself, a fixed 32 KB window of the sample ROM at a fixed pitch.
+  The sweep of that handler (40 of 40 before, all run to the 5 s cap, none from silence)
+  gave slices of the sample ROM, not the game's sounds; it is no longer used.
+- **The game's sound layer** (`src/gamesound.rs`, `romstar`; the method:
+  [game-driven boards](common.md#game-driven-boards)). The program (at `10000000`,
+  PinMAME's `REGION_USER1`, kept byte-swapped in the host's order) has a sequencer: sound
+  effects are byte sequences (a priority byte, then events: a delay and an op, `FD`
+  volume, `FE` pan, a sample number with its length, `F8` end), music a song structure of
+  channel sequences. The game plays them with `play_sfx(sequence, pan, channel)`
+  (`100B44FA`) and `play_song(song)` (`100B441A`), both with stack arguments the routine
+  pops itself, as its own `SINGLE SOUND TEST` does (an address in the song range
+  `100B6200`..`100B6340` goes to the song player, any other to the effect player on
+  channel `12`, pan `120`, the middle).
+- **Sound list**: every sequence and song the program passes to these routines or to the
+  wrappers that call them (`100B457A`, the "play all" path, effects on channel `11`): the
+  last immediate it loads before the call, and the entries of the table a loop before a
+  call walks (the "play all" list of 49 effects at `100BE718`), each checked against the
+  sequencer's grammar or the song range. Id: **the sequence's or song's address**
+  (`0x100B5E42`, the sound test's "FREE THROW SHOWDOWN TUNE").
+- **Request**: a call of the game's routine (`Send::Call`, shim.c `shim_m68k_call`): the
+  shim writes a few instructions below the stack pointer (save the registers, push the
+  arguments as the game does, `JSR`, restore, `RTE`) and enters them as an exception,
+  when the 68306 is in supervisor mode with its interrupts unmasked, outside the sound
+  code, and with the sound system's lock word (`0AA8`) at 0. Writing the sequencer's RAM
+  handles directly would start a sound, but nothing short of the game's routines keys the
+  QSound voices off. **Stop**: the sound system reset (`100B4FF0`), what the sound test
+  calls when it is left.
+- **Volume**: the game's own (its `vol_w` writes set PinMAME's QSound mixer level; no
+  volume command): the files are quiet, -60 to -24 LUFS.
+- **Measured** (`--max-secs 5`, no loop search): ghv101 72 of 72 (63 effects, 9 songs),
+  all from silence; 14 files run to the 5 s cap (most songs, and a few held effects).
+- **Limits**: sounds whose sequence the game computes (a structure's field, a register
+  set long before the call) are not in the list. The attract mode plays sounds of its own
+  during the boot (8 s of 15); none came during the recordings (every file from silence).
 - **In VPinball**: **the pack cannot play**: the game sends no sound command at all
   (ghv101: none in 45 s of attract mode with a coin and start).

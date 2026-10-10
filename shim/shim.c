@@ -1004,3 +1004,59 @@ void shim_game_pokes(int cpu, const unsigned *addr, const unsigned char *data, i
   for (i = 0; i < n; i++)
     cpunum_write_byte(cpu, addr[i], data[i]);
 }
+
+// Capcom's drivers (Romstar's Goofy Hoops) load the game's program in REGION_USER1, then
+// copy it to the CPU's address space: the program as the CPU sees it, from 0x10000000.
+const unsigned char *shim_user1_region(unsigned *len) {
+  *len = (unsigned)memory_region_length(REGION_USER1);
+  return memory_region(REGION_USER1);
+}
+
+#include "cpu/m68000/m68000.h"
+
+// Calls the game's own code on a 68000-family game CPU (Romstar's 68306): `code` (a routine
+// that saves the registers, calls the game's routine, restores them and ends with RTE) is
+// written 1 KB below the stack pointer (stack space the game is not using) and entered as an
+// exception would be: SR and PC pushed on the supervisor stack, PC on the routine, the
+// interrupts left as they were (the game's own calls run with them on: its QSound writes
+// wait on a timeout the timer interrupt counts down); its RTE resumes the game where it was. Only taken in a state where the
+// game's own code could have made the call: supervisor mode, interrupt mask 0 (not inside an
+// interrupt), the program counter outside [busy_lo, busy_hi) (the game's sound code) and the
+// 16-bit lock word at `lock` 0 (the sound system's own lock). Returns 1 when entered, 0 when
+// the CPU is not in such a state (try again later), -1 when the CPU is not a 68000.
+int shim_m68k_call(int cpu, const unsigned char *code, int len, unsigned lock, unsigned busy_lo,
+                   unsigned busy_hi) {
+  unsigned sr, pc, sp, at;
+  int i;
+  if (cpu < 0 || cpu >= MAX_CPU)
+    return -1;
+  switch (Machine->drv->cpu[cpu].cpu_type) {
+#if HAS_M68000
+  case CPU_M68000:
+#endif
+#if HAS_M68306
+  case CPU_M68306:
+#endif
+    break;
+  default:
+    return -1;
+  }
+  sr = cpunum_get_reg(cpu, M68K_SR);
+  pc = cpunum_get_reg(cpu, M68K_PC);
+  sp = cpunum_get_reg(cpu, M68K_SP);
+  if (!(sr & 0x2000) || (sr & 0x0700) || (pc >= busy_lo && pc < busy_hi))
+    return 0;
+  if (lock && (cpunum_read_byte(cpu, lock) | cpunum_read_byte(cpu, lock + 1)))
+    return 0;
+  at = (sp - 0x400) & ~1u;
+  for (i = 0; i < len; i++)
+    cpunum_write_byte(cpu, at + i, code[i]);
+  sp -= 6;
+  cpunum_write_byte(cpu, sp, (sr >> 8) & 0xff);
+  cpunum_write_byte(cpu, sp + 1, sr & 0xff);
+  for (i = 0; i < 4; i++)
+    cpunum_write_byte(cpu, sp + 2 + i, (pc >> (24 - 8 * i)) & 0xff);
+  cpunum_set_reg(cpu, M68K_SP, sp);
+  cpunum_set_reg(cpu, M68K_PC, at);
+  return 1;
+}

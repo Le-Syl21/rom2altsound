@@ -92,7 +92,7 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_ZSU`](playmatic.md#sndbrd_zsu) | ✅ | 6 | 6 | Skill Flight; Cobra; Phantom Ship |
 | [`SNDBRD_PLAY3`](playmatic.md#sndbrd_play3) | ✅ | 2 | 2 | Cerberus; Spain 82 |
 | [`SNDBRD_PLAYZ`](playmatic.md#sndbrd_playz) | ✅ | 1 | 1 | Zira |
-| [`SNDBRD_ROMSTAR`](capcom-romstar.md#sndbrd_romstar) | ⚠️ | 1 | 1 | Goofy Hoops |
+| [`SNDBRD_ROMSTAR`](capcom-romstar.md#sndbrd_romstar) | ✅ | 1 | 1 | Goofy Hoops |
 | [`SNDBRD_CAPCOMS`](capcom-romstar.md#sndbrd_capcoms) | ✅ | 17 | 6 | Breakshot; Airborne; Flipper Football |
 | [`SNDBRD_NUOVA`](other-makers.md#sndbrd_nuova) | ✅ | 6 | 6 | F1 Grand Prix; Skill Flight; Cobra |
 | [`SNDBRD_HANKIN`](other-makers.md#sndbrd_hankin) | ✅ | 5 | 5 | FJ Holden; Orbit 1; Howzat |

@@ -7,8 +7,8 @@ pipeline seen from the board's side, with the code that implements each step.
 
 Stern SAM is the exception to everything here: it has no sound board and is read from
 the ROM image without emulation (see [Stern SAM](stern-sam.md#sndbrd_none_sam)). The
-boards that take no sound command at all (Stern SB-300, Stern's Astro tester, Atari) are the
-other one: the game itself is asked for its sounds, see
+boards that take no sound command at all (Stern SB-300, Atari, Stern's Astro tester,
+Romstar) are the other one: the game itself is asked for its sounds, see
 [Game-driven boards](#game-driven-boards).
 
 ## Which family a game belongs to
@@ -252,23 +252,26 @@ itself: what is measured is the id AltSound looks up.
 
 ## Game-driven boards
 
-On four families the game CPU makes every sound itself, by writing the sound chip's
+On five families the game CPU makes every sound itself, by writing the sound chip's
 registers over time, and sends no sound command: Stern's SB-300
 ([ST300](stern-early.md#sndbrd_st300)) and its board tester
 ([ASTRO](stern-early.md#sndbrd_astro)), Atari's generation 1 and 2
-([ATARI1](atari.md#sndbrd_atari1), [ATARI2](atari.md#sndbrd_atari2)). There is nothing to sweep: a byte
+([ATARI1](atari.md#sndbrd_atari1), [ATARI2](atari.md#sndbrd_atari2)) and Romstar's Goofy
+Hoops ([ROMSTAR](capcom-romstar.md#sndbrd_romstar)). There is nothing to sweep: a byte
 sent to these boards is a register value, not a sound. What every one of these programs
 has is a sound layer: a routine that plays a sound and a request the rest of the game uses
 to ask for one. `src/gamesound.rs` reads that layer in the game's program image (the game
-CPU's memory region):
+CPU's memory region, Romstar's `REGION_USER1`):
 
-- **The request**: what the game's own code writes to start a sound: a script pointer and
-  a delay byte in RAM (Stern); a counter, a slot or a pending count per sound (Atari).
+- **The request**: what the game's own code writes or calls to start a sound: a script
+  pointer and a delay byte in RAM (Stern), a counter, a slot or a pending count per sound
+  (Atari), the game's own play routines (Romstar).
 - **The catalog**: every sound the program asks for, found where the program refers to it
   (thread instructions, direct loads, tables), each checked against the format the sound
   routine reads; or the game's own sound table where it has one (Atari generation 2).
 - **The stop**: what the game does to silence its sounds (Stern: the script op that
-  silences the board; Atari: every counter or slot back to 0).
+  silences the board; Atari: every counter or slot back to 0; Romstar: the sound system
+  reset its sound test calls).
 
 The extraction then differs from the method above in four places
 (`Extractor::end_boot`, `gamesound::game_driven`):
@@ -279,10 +282,16 @@ The extraction then differs from the method above in four places
   quiet succeeded at once.
 - **Sending**: a request is written into the game's RAM through the game CPU's own memory
   map, all its bytes between two frames (`Send::Pokes`, shim.c `shim_game_pokes`, which
-  calls PinMAME's `cpunum_write_byte`), so the game never sees half of one.
+  calls PinMAME's `cpunum_write_byte`), so the game never sees half of one. On Romstar the
+  game's routine is called (`Send::Call`, shim.c `shim_m68k_call`): a few instructions
+  written in the stack space below the stack pointer save the registers, push the
+  arguments as the game does, call the routine, restore the registers and return with
+  `RTE`; the shim enters them as an exception would, when the 68306 is in supervisor mode
+  with its interrupts unmasked, outside the game's sound code, and with the sound
+  system's lock word at 0 (the state in which the game's own code makes the call).
 - **The ids** are the game's own internal sound ids: a script address (Stern), a counter
   and its length or a slot number (Atari generation 1), a sound number (Atari generation
-  2). They are written in `altsound.csv` as they are, but
+  2), a sequence address (Romstar). They are written in `altsound.csv` as they are, but
   they are not sound commands: AltSound never receives them (no command reaches it on
   these machines), so **the packs cannot play in VPinball**. They are a recording of every
   sound of the game, for listening, measurement and archive, and for the loudness of each

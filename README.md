@@ -262,6 +262,7 @@ What rom2altsound gets out of each sound board family:
 | Bally Sounds Plus -56, with speech (1980-1981) ¹² | ✅ ¹³ | ⚠️ ¹³ | ✅ ⁴ | ❌ | ❌ | ❌ |
 | Bally Squawk & Talk -61 (1981-1982) ¹² | ✅ ¹⁴ | ❌ ¹⁴ | ⚠️ ¹⁴ | ❌ | ❌ | ❌ |
 | Bally -32 / -50 (1978-1980) ¹² | ✅ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| No sound command: Stern SB-300 (1979-1982), Atari (1976-1979), Romstar's Goofy Hoops (1994) ¹⁷ | ✅ ¹⁷ | ⚠️ ¹⁷ | ✅ ¹⁷ | ❌ | ❌ | ❌ |
 
 Every sound board family of PinMAME, with its number of games and a quick survey of
 one ROM per family of the full VPinMAME set (22 more families give sounds): [board
@@ -387,6 +388,21 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
     so AltSound receives none. A version's zip holds only its update files:
     `rom2altsound roms --fix-names` builds a complete set with MAME's `rfmpb.zip` /
     `swe1pb.zip` (see [ROM verification](docs/how-it-works.md#rom-verification)).
+17. **No sound command: the game's own sounds.** On these boards the game's CPU plays every
+    sound itself (it writes the timers, the tone latches or the QSound chip, step by step)
+    and sends no command: there is nothing to sweep. rom2altsound reads the game's sound
+    layer in its program instead: the request its code makes for a sound (Stern: a script
+    pointer in RAM; Atari: a counter, a slot or a pending count per sound; Goofy Hoops: its
+    play routines, called) and every sound the program asks for. The game is left running
+    in attract mode and asked for each sound as its own code does; the stop is the game's
+    own. Verified on the 15 Stern SB-300 programs (308 sounds, MOD sets included) and its
+    Astro board tester, on the five Atari generation 1 games and the three generation 2
+    ones, and on Goofy Hoops (63 effects, 9 songs): every file from silence. The ids are
+    the game's internal sound ids (a script address, a sound number, a sequence address),
+    not commands; loops come from the audio only; the volume is the one the game plays
+    at. **These packs do not play in VPinball**: no command reaches AltSound on these
+    machines. They are a recording of the game's sounds, to listen to, measure and keep
+    (see [game-driven boards](docs/families/common.md#game-driven-boards)).
 
 ### Volume
 
@@ -852,6 +868,7 @@ Ce que rom2altsound sait tirer de chaque famille de carte son :
 | Bally Sounds Plus -56, avec voix (1980-1981) ¹² | ✅ ¹³ | ⚠️ ¹³ | ✅ ⁴ | ❌ | ❌ | ❌ |
 | Bally Squawk & Talk -61 (1981-1982) ¹² | ✅ ¹⁴ | ❌ ¹⁴ | ⚠️ ¹⁴ | ❌ | ❌ | ❌ |
 | Bally -32 / -50 (1978-1980) ¹² | ✅ ¹⁵ | ❌ | ✅ ⁴ | ❌ | ❌ | ❌ |
+| Sans commande son : Stern SB-300 (1979-1982), Atari (1976-1979), Goofy Hoops de Romstar (1994) ¹⁷ | ✅ ¹⁷ | ⚠️ ¹⁷ | ✅ ¹⁷ | ❌ | ❌ | ❌ |
 
 Toutes les familles de cartes son de PinMAME, avec leur nombre de jeux et un survol rapide
 d'une ROM par famille du jeu complet de ROM VPinMAME (22 autres familles donnent des sons) :
@@ -992,6 +1009,23 @@ reste joué en parallèle.
     contient que ses fichiers de mise à jour : `rom2altsound roms --fix-names` construit un
     jeu complet avec le `rfmpb.zip` / `swe1pb.zip` de MAME (voir
     [vérification des ROM](docs/how-it-works.md#rom-verification), en anglais).
+17. **Sans commande son : les sons du jeu lui-même.** Sur ces cartes, le processeur du jeu
+    joue chaque son lui-même (il écrit les minuteries, les verrous de tonalité ou la puce
+    QSound, pas à pas) et n'envoie aucune commande : il n'y a rien à balayer. rom2altsound
+    lit à la place la couche son du jeu dans son programme : la demande que son code fait
+    pour un son (Stern : un pointeur de script en RAM ; Atari : un compteur, un
+    emplacement ou un compte en attente par son ; Goofy Hoops : ses routines de lecture,
+    appelées) et chaque son que le programme demande. Le jeu reste en marche en mode
+    attraction, et chaque son lui est demandé comme son propre code le fait ; l'arrêt est
+    celui du jeu. Vérifié sur les 15 programmes Stern SB-300 (308 sons, jeux MOD compris)
+    et son testeur de cartes Astro, sur les cinq jeux Atari de génération 1 et les trois
+    de génération 2, et sur Goofy Hoops (63 effets, 9 musiques) : chaque fichier part du
+    silence. Les identifiants sont les identifiants de son internes du jeu (une adresse
+    de script, un numéro de son, une adresse de séquence), pas des commandes ; les boucles
+    ne viennent que de l'audio ; le volume est celui auquel le jeu joue. **Ces packs ne se
+    jouent pas dans VPinball** : aucune commande n'atteint AltSound sur ces machines. Ce
+    sont des enregistrements des sons du jeu, à écouter, mesurer et conserver (voir
+    [cartes pilotées par le jeu](docs/families/common.md#game-driven-boards), en anglais).
 
 ### Volume
 

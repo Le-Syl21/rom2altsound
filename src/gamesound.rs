@@ -1,8 +1,9 @@
 //! Game-driven sound: the boards that take no sound command.
 //!
-//! On Stern's SB-300 (`ST300`), Atari's generation 1 and 2 boards (`ATARI1`, `ATARI2`) and
-//! Stern's Astro board tester (`ASTRO`), the game CPU makes every sound itself: it writes
-//! the sound chip's registers over time (timers, tone latches). There is no command byte between the game and its board, so
+//! On Stern's SB-300 (`ST300`), Atari's generation 1 and 2 boards (`ATARI1`, `ATARI2`),
+//! Stern's Astro board tester (`ASTRO`) and Romstar's Goofy Hoops (`ROMSTAR`), the game CPU
+//! makes every sound itself: it writes the sound chip's registers over time (timers, tone
+//! latches, QSound voices). There is no command byte between the game and its board, so
 //! the sweep of the other boards has nothing to send. The game's own program has a sound
 //! layer, though: a routine that starts a sound and a request the rest of the game uses to
 //! ask for one (a pointer to a sound script, a sound number in a RAM byte...). This module
@@ -27,11 +28,30 @@ pub struct Poke {
 /// The most bytes one request writes (they all go in before the CPU runs again).
 pub const MAX_POKES: usize = 24;
 
+/// A call of the game's own code (68000 family): `code` is a routine that saves the
+/// registers, calls the game's routine with its arguments, restores them and returns from
+/// exception (`RTE`): the shim enters it as an exception would (`shim_m68k_call`), when the
+/// CPU is in supervisor mode with its interrupts unmasked (not inside an interrupt), its
+/// program counter is outside `busy_pc` (the game's own sound code) and the word at `lock`
+/// (the sound system's lock) is 0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Call {
+    pub code: [u8; MAX_CALL],
+    pub len: u8,
+    pub lock: u32,
+    pub busy_pc: (u32, u32),
+}
+
+/// The longest routine a `Call` carries.
+pub const MAX_CALL: usize = 48;
+
 /// How the game asks for a sound (or stops them).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Request {
     /// Bytes written into the game's RAM (its sound request).
     Pokes(Vec<Poke>),
+    /// The game's own routine, called.
+    Call(Call),
 }
 
 /// A sound of the game: its id and how the game asks for it.
@@ -65,6 +85,7 @@ pub fn game_driven(typestr: &str, subtype: i32) -> bool {
     match typestr {
         "ST300" => subtype == 0,
         "ASTRO" | "ATARI1" | "ATARI2" => true,
+        "TMS320AV120" => subtype == 1,
         _ => false,
     }
 }
@@ -76,6 +97,7 @@ pub fn find(typestr: &str, image: &[u8]) -> Result<Layer, String> {
         "ST300" | "ASTRO" => st300::find(image),
         "ATARI1" => atari::gen1(image),
         "ATARI2" => atari::gen2(image),
+        "TMS320AV120" => romstar::find(image),
         _ => Err(format!("no reader for the {typestr} game's sound layer")),
     }
 }
@@ -960,6 +982,242 @@ mod atari {
     }
 }
 
+/// Romstar's Goofy Hoops (1994): a 68306 that drives a QSound chip itself.
+///
+/// The game's program (loaded at `10000000`, PinMAME's `REGION_USER1`) has a sound
+/// sequencer: sound effects are byte sequences (a priority byte, then events: a delay and an
+/// op, `FD` volume, `FE` pan, a sample number with its length, `F8` end), music a song
+/// structure of channel sequences. The game plays them with two routines, as its own sound
+/// test does (`SINGLE SOUND TEST`: an address in the song range goes to the song player,
+/// any other to the effect player on channel `12`, pan `120`, the middle):
+/// - `play_sfx(sequence, pan, channel)` (`B44FA`), `play_song(song)` (`B441A`), both
+///   callee-cleaned stack arguments;
+/// - the sound system reset (`B4FF0`, what the sound test calls when it is left), the stop.
+///
+/// The catalog is every sequence and song the program passes to these routines (or to the
+/// wrappers that call them): the last immediate it loads before the call (`PEA`, `MOVE.L
+/// #`, `MOVEA.L #`, `LEA`), or the entries of a table a loop before the call walks (the
+/// "play all" list of effects at `BE718`), each checked as a sequence of the sequencer's
+/// grammar (an effect) or as an address in the song range. The
+/// requests are calls of the game's own routines (`Request::Call`): writing the sequencer's
+/// handles directly could not stop a song, which needs the QSound voices keyed off.
+mod romstar {
+    use super::*;
+
+    /// Where the program sits in the CPU's address space.
+    const BASE: u32 = 0x1000_0000;
+    /// The first program ROM pair: code, effects and songs.
+    const LEN: usize = 0x10_0000;
+
+    /// An effect sequence at `a` (an offset in the image): its priority byte, a first delay
+    /// of 0, then events up to `F8` (end) or `FF` (loop) within 64 events.
+    pub(super) fn effect(m: &[u8], a: usize) -> bool {
+        if a + 0x200 > LEN || m.get(a + 1) != Some(&0) {
+            return false;
+        }
+        let mut i = a + 1;
+        for _ in 0..64 {
+            let op = m[i + 1];
+            i += 2;
+            match op {
+                0x00..=0xEF => {
+                    // A sample: its length, two more bytes when 0.
+                    i += if m[i] == 0 { 3 } else { 1 };
+                }
+                0xF8 | 0xFF => return true,
+                0xFD | 0xFE => i += 1,
+                0xFA => i += 2,
+                0xF7 | 0xF9 => i += 4,
+                0xF0..=0xF5 | 0xFB => {}
+                _ => return false,
+            }
+        }
+        false
+    }
+
+    fn be32(m: &[u8], a: usize) -> u32 {
+        u32::from_be_bytes([m[a], m[a + 1], m[a + 2], m[a + 3]])
+    }
+
+    /// The opcode words that load a 32-bit immediate in the code: `PEA (xxx).L`,
+    /// `MOVE.L #,-(A7)`, `MOVE.L #,Dn`, `MOVEA.L #,An`, `LEA (xxx).L,An`.
+    fn loads_immediate(op: u16) -> bool {
+        op == 0x4879
+            || op == 0x2F3C
+            || op & 0xF1FF == 0x203C
+            || op & 0xF1FF == 0x207C
+            || op & 0xF1FF == 0x41F9
+    }
+
+    /// The routine `JSR (abs).L`, the words to push before it, as a call with saved registers.
+    pub(super) fn call(routine: u32, args: &[Arg], lock: u32, busy: (u32, u32)) -> Call {
+        let mut code: Vec<u8> = vec![0x48, 0xE7, 0xFF, 0xFE]; // MOVEM.L D0-D7/A0-A6,-(A7)
+        for a in args {
+            match *a {
+                Arg::Word(w) => {
+                    code.extend([0x3F, 0x3C]); // MOVE.W #w,-(A7)
+                    code.extend(w.to_be_bytes());
+                }
+                Arg::Long(l) => {
+                    code.extend([0x2F, 0x3C]); // MOVE.L #l,-(A7)
+                    code.extend(l.to_be_bytes());
+                }
+            }
+        }
+        code.extend([0x4E, 0xB9]); // JSR (abs).L
+        code.extend(routine.to_be_bytes());
+        code.extend([0x4C, 0xDF, 0x7F, 0xFF, 0x4E, 0x73]); // MOVEM.L (A7)+,D0-D7/A0-A6; RTE
+        let mut c = Call {
+            code: [0; MAX_CALL],
+            len: code.len() as u8,
+            lock,
+            busy_pc: busy,
+        };
+        c.code[..code.len()].copy_from_slice(&code);
+        c
+    }
+
+    pub(super) enum Arg {
+        Word(u16),
+        Long(u32),
+    }
+
+    /// PinMAME keeps a 16-bit big-endian region in the host's order: on a little-endian
+    /// host each pair of bytes is swapped. The program is read in the CPU's order.
+    pub fn find(region: &[u8]) -> Result<Layer, String> {
+        if region.len() < LEN {
+            return Err("program image smaller than its first ROM pair".into());
+        }
+        let mut m = region[..LEN].to_vec();
+        if cfg!(target_endian = "little") {
+            for w in m.as_chunks_mut::<2>().0 {
+                w.swap(0, 1);
+            }
+        }
+        let m = &m[..];
+        let at = |p: &str| find_pat(m, &pat(p), 0, LEN).filter(|a| a % 2 == 0);
+        // play_sfx: `MOVE.W $A(A7),-(A7); MOVE.L 6(A7),-(A7); JSR priority; TST.W D0;
+        // BEQ; MOVE.W $A(A7),D0; JSR stop_channel`.
+        let sfx = at("3F 2F 00 0A 2F 2F 00 06 4E B9 ?? ?? ?? ?? 4A 40 67 ?? 30 2F 00 0A 4E B9");
+        // play_song: `JSR stop_music; JSR stop_voices; MOVE.W #1,tick; CLR.W`.
+        let song = at("4E B9 ?? ?? ?? ?? 4E B9 ?? ?? ?? ?? 31 FC 00 01 ?? ?? 42 78");
+        // The reset: `MOVEM.L; MOVE.W #1,lock; CLR.L`.
+        let reset = at("48 E7 C0 80 31 FC 00 01 ?? ?? 42 B8");
+        // The sound test's song range: `CMPI.L #lo,D0; BCS; CMPI.L #hi,D0; BHI`.
+        let range = at("0C 80 ?? ?? ?? ?? 65 ?? 0C 80 ?? ?? ?? ?? 62");
+        let (Some(sfx), Some(song), Some(reset), Some(range)) = (sfx, song, reset, range) else {
+            return Err(format!(
+                "Goofy Hoops' sound routines not all found (effects {sfx:?}, songs {song:?}, reset {reset:?}, song range {range:?})"
+            ));
+        };
+        let lock = u32::from(be16(m, reset + 8));
+        let (lo, hi) = (be32(m, range + 2), be32(m, range + 10));
+        let lowest = sfx.min(song).min(reset) as u32;
+        let highest = sfx.max(song).max(reset) as u32;
+        let busy = (
+            BASE + lowest.saturating_sub(0x1000),
+            BASE + highest + 0x1000,
+        );
+        let addr = |off: usize| BASE + off as u32;
+        let is_song = |v: u32| (lo..=hi).contains(&v);
+        let in_image = |v: u32| (BASE..BASE + LEN as u32).contains(&v);
+        let candidate = |v: u32| in_image(v) && (is_song(v) || effect(m, (v - BASE) as usize));
+        // The calls: every `JSR (abs).L`, by target. The sound routines are the two players
+        // and the wrappers that call one of them within their first 24 bytes (`B457A`: an
+        // effect on channel 11).
+        let mut calls: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+        for i in (0..LEN - 6).step_by(2) {
+            if be16(m, i) == 0x4EB9 {
+                calls.entry(be32(m, i + 2)).or_default().push(i);
+            }
+        }
+        let players = [addr(sfx), addr(song)];
+        let calls_player = |t: u32| {
+            in_image(t) && {
+                let o = (t - BASE) as usize;
+                (o..o + 24)
+                    .step_by(2)
+                    .any(|k| be16(m, k) == 0x4EB9 && players.contains(&be32(m, k + 2)))
+            }
+        };
+        let api: Vec<u32> = calls
+            .keys()
+            .copied()
+            .filter(|&t| players.contains(&t) || calls_player(t))
+            .collect();
+        // What the program passes them: the last immediate it loads before the call (back
+        // to the previous call or return), and the tables a loop before the call walks
+        // (`MOVEA.L #table,An` ... `MOVE.L (An)+,-(A7)`: the "play all" list at `BE718`).
+        let mut refs: BTreeMap<u32, Vec<String>> = BTreeMap::new();
+        for t in &api {
+            for &c in &calls[t] {
+                for k in (1..=24).filter_map(|n| c.checked_sub(2 * n)) {
+                    let op = be16(m, k);
+                    if op == 0x4EB9 || op == 0x4E75 || op & 0xFF00 == 0x6100 {
+                        break;
+                    }
+                    if loads_immediate(op) && candidate(be32(m, k + 2)) {
+                        refs.entry(be32(m, k + 2))
+                            .or_default()
+                            .push(format!("{:08X}", addr(k)));
+                    }
+                }
+                for k in (c.saturating_sub(24)..c).step_by(2) {
+                    if be16(m, k) & 0xF1FF != 0x207C {
+                        continue;
+                    }
+                    let table = be32(m, k + 2);
+                    let mut e = table;
+                    while in_image(e) && (e - BASE) as usize + 4 <= LEN {
+                        let v = be32(m, (e - BASE) as usize);
+                        if !candidate(v) {
+                            break;
+                        }
+                        refs.entry(v)
+                            .or_default()
+                            .push(format!("table {table:08X} entry {}", (e - table) / 4));
+                        e += 4;
+                    }
+                }
+            }
+        }
+        if refs.is_empty() {
+            return Err("no sound sequence referred to in the program".into());
+        }
+        let busy_call = |routine: usize, args: &[Arg]| call(addr(routine), args, lock, busy);
+        let sounds: Vec<GameSound> = refs
+            .iter()
+            .map(|(&v, why)| GameSound {
+                id: v,
+                refs: format!(
+                    "{} {}",
+                    if is_song(v) { "song" } else { "effect" },
+                    why.join(", ")
+                ),
+                start: Request::Call(if is_song(v) {
+                    busy_call(song, &[Arg::Long(v)])
+                } else {
+                    busy_call(sfx, &[Arg::Word(0x12), Arg::Word(0x120), Arg::Long(v)])
+                }),
+            })
+            .collect();
+        let songs = sounds.iter().filter(|s| is_song(s.id)).count();
+        Ok(Layer {
+            what: format!(
+                "Goofy Hoops' sound sequencer: effects played with play_sfx at {:08X} (channel 12, pan 120, as the sound test does), songs ({lo:08X}..{hi:08X}) with play_song at {:08X}, each a call of the game's routine; {} effects and {songs} songs the program refers to; stop: the sound system reset at {:08X}; lock word {lock:04X}",
+                addr(sfx),
+                addr(song),
+                sounds.len() - songs,
+                addr(reset)
+            ),
+            id_is: "the address of the effect sequence or song in the game's program (what the game passes to its play routine)".into(),
+            id_digits: 8,
+            sounds,
+            stop: Request::Call(busy_call(reset, &[])),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1012,7 +1270,9 @@ mod tests {
             ])
         );
         // The stop points at the script's own silencing op.
-        let Request::Pokes(stop) = &l.stop;
+        let Request::Pokes(stop) = &l.stop else {
+            panic!("pokes expected")
+        };
         assert_eq!(
             stop[1..],
             [
@@ -1024,6 +1284,40 @@ mod tests {
                     addr: 0x6E,
                     val: 0x8D
                 }
+            ]
+        );
+    }
+
+    /// Goofy Hoops: an effect sequence as the game stores it (priority, volume, pan, the
+    /// sample with its length, end), and a song channel (an instrument pointer first).
+    #[test]
+    fn romstar_effects_are_read_as_the_sequencer_reads_them() {
+        let mut m = vec![0u8; 0x400];
+        m[..12].copy_from_slice(&[
+            0x10, 0x00, 0xFD, 0x20, 0x00, 0xFE, 0xF9, 0x00, 0x58, 0x55, 0x55, 0xF8,
+        ]);
+        assert!(romstar::effect(&m, 0));
+        m[16..22].copy_from_slice(&[0x10, 0x0B, 0x5D, 0xE8, 0x00, 0xFD]);
+        assert!(!romstar::effect(&m, 16));
+    }
+
+    /// The routine a `Call` carries: registers saved, the arguments pushed as the game
+    /// pushes them, the call, registers restored, `RTE`.
+    #[test]
+    fn romstar_calls_push_the_arguments_as_the_game_does() {
+        use romstar::Arg;
+        let c = romstar::call(
+            0x100B_44FA,
+            &[Arg::Word(0x12), Arg::Word(0x120), Arg::Long(0x100B_5E42)],
+            0x0AA8,
+            (0x100B_34FA, 0x100B_5FF0),
+        );
+        assert_eq!(
+            c.code[..c.len as usize],
+            [
+                0x48, 0xE7, 0xFF, 0xFE, 0x3F, 0x3C, 0x00, 0x12, 0x3F, 0x3C, 0x01, 0x20, 0x2F, 0x3C,
+                0x10, 0x0B, 0x5E, 0x42, 0x4E, 0xB9, 0x10, 0x0B, 0x44, 0xFA, 0x4C, 0xDF, 0x7F, 0xFF,
+                0x4E, 0x73
             ]
         );
     }

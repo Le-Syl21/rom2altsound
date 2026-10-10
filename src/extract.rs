@@ -464,12 +464,19 @@ enum Send {
     /// Game-driven sound (`gamesound`): the first `n` bytes written into the game CPU's
     /// memory map in one frame, the game's own sound request.
     Pokes([Poke; gamesound::MAX_POKES], u8),
+    /// Game-driven sound: one of the game's own routines, called (`shim_m68k_call`), taken
+    /// again at the next frame while the game's CPU is not in a state to take it.
+    Call(gamesound::Call),
 }
+
+/// How many frames a `Send::Call` waits for the game's CPU before it is given up (10 s).
+const CALL_MAX_WAIT_FRAMES: u32 = 600;
 
 /// A game-driven request as sends.
 fn requests(r: &Request) -> Vec<Send> {
     match r {
         Request::Pokes(p) => pokes(p),
+        Request::Call(c) => vec![Send::Call(*c)],
     }
 }
 
@@ -1454,6 +1461,8 @@ pub struct Extractor {
     /// Game-driven sound: the game's sound layer, read once booted (the game CPU then keeps
     /// running, `gamesound`).
     game: Option<gamesound::Layer>,
+    /// Frames the `Send::Call` at the front of `sender` has waited.
+    call_waits: u32,
     pub done: bool,
     pub error: Option<String>,
 }
@@ -1542,6 +1551,7 @@ impl Extractor {
             p2k: None,
             p2k_log: Vec::new(),
             game: None,
+            call_waits: 0,
             done: false,
             error: None,
         }
@@ -2021,6 +2031,31 @@ impl Extractor {
                     self.reset_boards();
                     None
                 }
+                Send::Call(c) => {
+                    let done = unsafe {
+                        ffi::shim_m68k_call(
+                            ffi::shim_game_cpu(),
+                            c.code.as_ptr(),
+                            c_int::from(c.len),
+                            c.lock,
+                            c.busy_pc.0,
+                            c.busy_pc.1,
+                        )
+                    };
+                    if done == 0 && self.call_waits < CALL_MAX_WAIT_FRAMES {
+                        // Not now (inside an interrupt or the game's sound code): next frame.
+                        self.call_waits += 1;
+                        self.sender.push_front(s);
+                        return;
+                    }
+                    if done != 1 {
+                        eprintln!(
+                            "  warning: the game's routine could not be called (the CPU never left its interrupts or sound code for {CALL_MAX_WAIT_FRAMES} frames)"
+                        );
+                    }
+                    self.call_waits = 0;
+                    Some(0)
+                }
                 Send::Pokes(p, n) => {
                     let p = &p[..n as usize];
                     let addr: Vec<c_uint> = p.iter().map(|p| p.addr).collect();
@@ -2267,6 +2302,7 @@ impl Extractor {
     /// Sends the stop command and waits for silence.
     fn send_stop(&mut self) {
         self.sender.clear();
+        self.call_waits = 0;
         self.sender.extend(self.stop.iter().copied());
         let resets = self.stop.iter().any(|s| matches!(s, Send::Reset));
         self.phase = Phase::Quiet(self.quiet(resets));
@@ -2941,7 +2977,11 @@ impl Extractor {
             );
         if game_driven {
             let typestr = ffi::cstr(unsafe { ffi::sndbrd_typestr(0) }).unwrap_or_default();
-            let image = ffi::cpu_region(unsafe { ffi::shim_game_cpu() }).unwrap_or_default();
+            let image = if typestr == "TMS320AV120" {
+                ffi::user1_region().unwrap_or_default()
+            } else {
+                ffi::cpu_region(unsafe { ffi::shim_game_cpu() }).unwrap_or_default()
+            };
             match gamesound::find(&typestr, image) {
                 Ok(layer) => {
                     eprintln!(
@@ -4940,6 +4980,10 @@ impl Extractor {
                 Send::Ctrl(b, v) => format!("ctrl_w({b},{v:02X})"),
                 Send::Reset => "board reset".into(),
                 Send::Wait(ms) => format!("wait {ms} ms"),
+                Send::Call(c) => format!(
+                    "game routine call ({} bytes of code, lock {:X})",
+                    c.len, c.lock
+                ),
                 Send::Pokes(p, n) => format!(
                     "game RAM {}",
                     p[..*n as usize]

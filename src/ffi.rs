@@ -132,6 +132,15 @@ unsafe extern "C" {
     pub fn shim_cpu_region(cpu: c_int, len: *mut c_uint) -> *const u8;
     pub fn shim_game_cpu() -> c_int;
     pub fn shim_game_pokes(cpu: c_int, addr: *const c_uint, data: *const u8, n: c_int);
+    pub fn shim_m68k_call(
+        cpu: c_int,
+        code: *const u8,
+        len: c_int,
+        lock: c_uint,
+        busy_lo: c_uint,
+        busy_hi: c_uint,
+    ) -> c_int;
+    pub fn shim_user1_region(len: *mut c_uint) -> *const u8;
     pub fn shim_tecnoplay_hook(board: c_int) -> c_int;
     pub fn shim_tecnoplay_cmd(board: c_int, data: c_int);
     pub fn shim_board_type(board: c_int) -> c_int;
@@ -201,6 +210,15 @@ pub fn sound_region() -> Option<&'static [u8]> {
 pub fn cpu_region(cpu: c_int) -> Option<&'static [u8]> {
     let mut len: c_uint = 0;
     let p = unsafe { shim_cpu_region(cpu, &mut len) };
+    (!p.is_null() && len > 0).then(|| unsafe { std::slice::from_raw_parts(p, len as usize) })
+}
+
+/// PinMAME's first user region (`REGION_USER1`), where Capcom's drivers load the game's
+/// program before copying it to the CPU's address space. Only valid while the emulation
+/// runs.
+pub fn user1_region() -> Option<&'static [u8]> {
+    let mut len: c_uint = 0;
+    let p = unsafe { shim_user1_region(&mut len) };
     (!p.is_null() && len > 0).then(|| unsafe { std::slice::from_raw_parts(p, len as usize) })
 }
 

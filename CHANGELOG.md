@@ -45,6 +45,13 @@
   7 of 7, aavenger 10 of 10, midearth 8 of 8, spcrider 13 of 13, superman 18 of 18,
   hercules 20 of 20, roadrunr 16 of 16, all from silence (0 of 40 before). Ids: a counter
   and its length, a slot or a sound number.
+- **Romstar's Goofy Hoops, game-driven**: its 68306 drives the QSound chip itself; the
+  sweep only reached PinMAME's test handler (slices of the sample ROM, none from silence).
+  The game's own `play_sfx` and `play_song` are now called, as its sound test does (a few
+  instructions entered on the 68306 as an exception, when it is out of its interrupts and
+  sound code: `shim_m68k_call`), with every effect sequence and song the program passes
+  them; the stop is its sound system reset. ghv101 72 of 72 (63 effects, 9 songs), all
+  from silence; ids are the sequences' addresses.
 
 ## 0.2.4 (2026-10-10)
 
