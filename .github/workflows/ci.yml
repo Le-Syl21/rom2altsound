@@ -8,6 +8,13 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: >-
+          Test the binaries of a published release (e.g. v0.2.4) instead of building:
+          only the verify jobs run
+        required: false
+        default: ''
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,6 +22,7 @@ env:
 
 jobs:
   lint:
+    if: github.event_name != 'workflow_dispatch' || inputs.release_tag == ''
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -45,6 +53,11 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --all --check
+
+      # The synthetic test ROM set (tests/fixtures/s67s) is generated: the committed
+      # files must be what its script makes.
+      - name: Check the synthetic test ROM set
+        run: python3 tests/fixtures/s67s/make_testrom.py --check
 
       # Both programs: the command line and the window (gui/).
       - name: Clippy
@@ -435,8 +448,204 @@ jobs:
           path: dl-gui/rom2altsound-gui-windows-x86_64.zip
           overwrite: true
 
+  # Every binary, as a user downloads it, on its own system: unpack the archive, then
+  # extract the synthetic test ROM set (tests/fixtures/s67s: a sound program written for
+  # these tests, no original ROM code) with the command line and with the window program
+  # (given arguments, it is the command line), and check the pack (tests/check_pack.py).
+  # At a tag it runs after signing, on the signed binaries; on a manual run, on the
+  # unsigned ones, or on a published release's (input release_tag).
+  verify:
+    needs: [build, sign-apple, sign-windows]
+    if: >-
+      !cancelled()
+      && (needs.build.result == 'success'
+          || (needs.build.result == 'skipped' && github.event_name == 'workflow_dispatch' && inputs.release_tag != ''))
+      && (needs.sign-apple.result == 'success' || needs.sign-apple.result == 'skipped')
+      && (needs.sign-windows.result == 'success' || needs.sign-windows.result == 'skipped')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            label: linux-x86_64
+          - os: ubuntu-24.04-arm
+            label: linux-aarch64
+          - os: windows-latest
+            label: windows-x86_64
+          - os: macos-latest
+            label: macos-arm64
+          # A real Intel Mac: the x86_64 binary is cross-built on arm64, where it would
+          # only run under Rosetta.
+          - os: macos-15-intel
+            label: macos-x86_64
+    runs-on: ${{ matrix.os }}
+    name: verify ${{ matrix.label }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      LABEL: ${{ matrix.label }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || '' }}
+    steps:
+      # The test files only (no submodule, no build).
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: tests
+
+      - name: Download this run's archives
+        if: env.RELEASE_TAG == ''
+        uses: actions/download-artifact@v8
+        with:
+          pattern: rom2altsound*-${{ matrix.label }}
+          path: dl
+          merge-multiple: true
+
+      # Release assets come over HTTPS without a quarantine attribute, like curl; the
+      # macOS steps below add it the way a browser does.
+      - name: Download the release's archives
+        if: env.RELEASE_TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$RELEASE_TAG" -R "${{ github.repository }}" -D dl \
+            -p "rom2altsound-$LABEL.*" -p "rom2altsound-gui-$LABEL.*"
+
+      - name: Unpack
+        run: |
+          ls -l dl
+          mkdir cli gui
+          case "$LABEL" in
+            windows-*)
+              pwsh -c "Expand-Archive dl/rom2altsound-$LABEL.zip cli"
+              if [ -f "dl/rom2altsound-gui-$LABEL.zip" ]; then
+                pwsh -c "Expand-Archive dl/rom2altsound-gui-$LABEL.zip gui"
+              fi
+              echo "CLI=cli/rom2altsound.exe" >> "$GITHUB_ENV"
+              echo "GUI=gui/rom2altsound-gui.exe" >> "$GITHUB_ENV"
+              echo "PYTHON=python" >> "$GITHUB_ENV" ;;
+            macos-*)
+              tar xzf "dl/rom2altsound-$LABEL.tar.gz" -C cli
+              if [ -f "dl/rom2altsound-gui-$LABEL.zip" ]; then
+                ditto -x -k "dl/rom2altsound-gui-$LABEL.zip" gui
+              fi
+              echo "CLI=cli/rom2altsound" >> "$GITHUB_ENV"
+              echo "GUI=gui/rom2altsound.app/Contents/MacOS/rom2altsound-gui" >> "$GITHUB_ENV"
+              echo "PYTHON=python3" >> "$GITHUB_ENV" ;;
+            *)
+              tar xzf "dl/rom2altsound-$LABEL.tar.gz" -C cli
+              if [ -f "dl/rom2altsound-gui-$LABEL.tar.gz" ]; then
+                tar xzf "dl/rom2altsound-gui-$LABEL.tar.gz" -C gui
+              fi
+              echo "CLI=cli/rom2altsound" >> "$GITHUB_ENV"
+              echo "GUI=gui/rom2altsound-gui" >> "$GITHUB_ENV"
+              echo "PYTHON=python3" >> "$GITHUB_ENV" ;;
+          esac
+
+      # What the binary is: architecture, the libraries it links, the oldest macOS it
+      # accepts (LC_BUILD_VERSION minos), its signature and Gatekeeper's verdict.
+      - name: Describe the binaries (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          sw_vers
+          uname -m
+          spctl --status || true
+          for bin in "$CLI" "$GUI"; do
+            [ -e "$bin" ] || continue
+            echo "::group::$bin"
+            file "$bin"
+            otool -L "$bin"
+            otool -l "$bin" | grep -A4 LC_BUILD_VERSION || true
+            codesign -dvv "$bin" 2>&1 || true
+            codesign --verify --strict --verbose=2 "$bin" 2>&1 || true
+            echo "::endgroup::"
+          done
+          if [ -d gui/rom2altsound.app ]; then
+            spctl -a -vv -t exec gui/rom2altsound.app 2>&1 || true
+            xcrun stapler validate gui/rom2altsound.app 2>&1 || true
+          fi
+          spctl -a -vv -t exec "$CLI" 2>&1 || true
+
+      - name: Extract the test ROM, command line
+        run: |
+          "$CLI" --version
+          "$PYTHON" tests/check_pack.py --bin "$CLI" --work work-cli
+
+      - name: Extract the test ROM, window program as the command line
+        run: |
+          if [ ! -e "$GUI" ]; then
+            echo "::warning::no window program in this release"
+            exit 0
+          fi
+          "$PYTHON" tests/check_pack.py --bin "$GUI" --zip-arg --work work-gui
+
+      # What a browser download does on macOS: the archive, and everything unpacked from
+      # it, carries com.apple.quarantine, and Gatekeeper assesses the program at its first
+      # launch. A bare signed binary cannot hold a stapled ticket: Gatekeeper must reach
+      # Apple's servers to find its notarization. Unsigned binaries (manual runs) are
+      # expected to be refused; signed ones must run.
+      - name: Quarantined, as downloaded by a browser (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          signed=no
+          if [ -n "$RELEASE_TAG" ] || [[ "$GITHUB_REF" == refs/tags/v* ]]; then signed=yes; fi
+          # Gatekeeper on, as on a user's Mac (the runner image may have it off).
+          sudo spctl --master-enable 2>&1 || sudo spctl --global-enable 2>&1 || true
+          spctl --status || true
+          rm -rf q && mkdir q
+          cp -R cli q/cli
+          [ -d gui/rom2altsound.app ] && cp -R gui/rom2altsound.app q/
+          q="0081;$(printf %x "$(date +%s)");Safari;"
+          xattr -w com.apple.quarantine "$q" q/cli/rom2altsound
+          [ -d q/rom2altsound.app ] && xattr -r -w com.apple.quarantine "$q" q/rom2altsound.app
+          xattr -l q/cli/rom2altsound
+          failed=0
+          echo "::group::quarantined command line"
+          if q/cli/rom2altsound --version; then
+            python3 tests/check_pack.py --bin q/cli/rom2altsound --work work-q-cli || failed=1
+          else
+            echo "quarantined command line refused, exit status $?"
+            failed=1
+          fi
+          echo "::endgroup::"
+          if [ -d q/rom2altsound.app ]; then
+            echo "::group::quarantined application"
+            spctl -a -vv -t exec q/rom2altsound.app 2>&1 || true
+            python3 tests/check_pack.py --bin q/rom2altsound.app/Contents/MacOS/rom2altsound-gui \
+              --zip-arg --work work-q-gui || failed=1
+            echo "::endgroup::"
+          fi
+          # What Gatekeeper said (the last minutes of its log).
+          log show --last 10m --style compact \
+            --predicate 'process == "syspolicyd" OR subsystem == "com.apple.syspolicy"' 2>/dev/null \
+            | grep -i -E 'rom2altsound|notar|quarantine|reject|allow' | tail -n 60 || true
+          if [ $failed -ne 0 ]; then
+            if [ "$signed" = yes ]; then
+              echo "::error::the quarantined signed binaries did not run"
+              exit 1
+            fi
+            echo "::warning::quarantined unsigned binaries were refused (expected: signing only happens at a tag)"
+          fi
+
+      # Windows' equivalent: the Mark of the Web (Zone.Identifier, zone 3 = Internet) a
+      # browser puts on a download.
+      - name: Marked as downloaded from the Internet (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          rm -rf q && mkdir q && cp cli/rom2altsound.exe q/
+          pwsh -c 'Set-Content -Path q/rom2altsound.exe -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3"'
+          pwsh -c 'Get-Content -Path q/rom2altsound.exe -Stream Zone.Identifier'
+          python tests/check_pack.py --bin q/rom2altsound.exe --work work-q-cli
+
+      - name: Keep the packs when a check fails
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: verify-packs-${{ matrix.label }}
+          path: work-*/out
+          if-no-files-found: ignore
+
   release:
-    needs: [build, sign-windows, sign-apple]
+    needs: [build, sign-windows, sign-apple, verify]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:

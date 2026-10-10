@@ -1,0 +1,31 @@
+{
+  "rom": "flash_l1",
+  "comment": "Written by make_testrom.py: the sounds an extraction of flash_l1.zip must hold",
+  "sounds": [
+    {
+      "id": 0,
+      "frequency_hz": 439.1,
+      "seconds": 0.4999
+    },
+    {
+      "id": 1,
+      "frequency_hz": 662.88,
+      "seconds": 1.0002
+    },
+    {
+      "id": 2,
+      "frequency_hz": 882.53,
+      "seconds": 1.5002
+    },
+    {
+      "id": 3,
+      "frequency_hz": 330.22,
+      "seconds": 2.0002
+    },
+    {
+      "id": 4,
+      "frequency_hz": 992.11,
+      "seconds": 0.2999
+    }
+  ]
+}

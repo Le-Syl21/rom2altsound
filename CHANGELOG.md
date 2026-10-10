@@ -52,6 +52,15 @@
   sound code: `shim_m68k_call`), with every effect sequence and song the program passes
   them; the stop is its sound system reset. ghv101 72 of 72 (63 effects, 9 songs), all
   from silence; ids are the sequences' addresses.
+- **Every released binary extracts sounds on its own system before a release**: a
+  synthetic test ROM set (`tests/fixtures/s67s/flash_l1.zip`, a sound program written
+  for the tests by `make_testrom.py`, no original ROM code) is extracted by each archive,
+  command line and window program, on Linux x86_64 and aarch64, Windows and macOS arm64
+  and Intel (a real Intel runner), after signing at a tag, and the pack is checked
+  (`tests/check_pack.py`: files, rows, every WAV's length and frequency). On macOS the
+  binaries are also run with the quarantine attribute a browser sets, on Windows with the
+  Mark of the Web. A manual run can test a published release's archives
+  (`release_tag` input). `cargo test` runs the same check on the built binary.
 
 ## 0.2.4 (2026-10-10)
 
