@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.6 (2026-10-10)
 
 - **Tecnoplay (Space Team, X Force): the tunes have their melody and the effects play.**
   Disassembling Space Team's whole sound program found three wrong instructions in PinMAME's
