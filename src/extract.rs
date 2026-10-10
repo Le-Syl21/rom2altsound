@@ -174,9 +174,7 @@ fn ac_couples_dac(family: &str) -> bool {
 ///   does not change that (see the family's notes).
 /// - TECNOPLAY: `4F`, which stops the DAC sample (Space Team's program, `E26D` -> `DC38`:
 ///   the Y8950's timer A off), then `00`, a command the game sends too (back to the
-///   silent sound 0, `E0EB`), sent as a command through the shim (`shim_tecnoplay_cmd`).
-///   No board reset: PinMAME's TMS7000 allocates a timer at every reset
-///   (`tms7000_reset`) and the machine runs out of them after about 250 (a crash).
+///   silent sound 0, `E0EB`). PinMAME delivers `00` as a command since its PR #719.
 /// - ROWAMET: `00`, which heavymtl's game sends after each command (boot: `12 00 12 00`...):
 ///   38 of 40 from silence and no board reset, where the reset left 5 of 40.
 /// - BYSD (Bally Sounds Deluxe): `00`, which the games send at boot: specforc's first 40
@@ -1989,10 +1987,6 @@ impl Extractor {
                     unsafe { ffi::shim_nibble_cmd(board, byte) };
                     Some(board)
                 }
-                Send::Byte(board, byte) if self.families[(board & 1) as usize] == "TECNOPLAY" => {
-                    unsafe { ffi::shim_tecnoplay_cmd(board, byte) };
-                    Some(board)
-                }
                 Send::Byte(board, byte) => {
                     unsafe { ffi::sndbrd_manCmd(board, byte) };
                     Some(board)
@@ -3073,18 +3067,6 @@ impl Extractor {
                     // the PIA's flags before the low nibble: the high one comes after the
                     // third read.
                     unsafe { ffi::shim_nibble_after(3) };
-                }
-            }
-            if self.families[b as usize] == "TECNOPLAY" {
-                // The TMS7000's interrupts, which PinMAME loses (shim.c `shim_tecnoplay_hook`).
-                if unsafe { ffi::shim_tecnoplay_hook(b) } != 0 {
-                    eprintln!(
-                        "  board {b} (TECNOPLAY): the sound CPU's interrupt lines driven as the chip's flags (50 kHz tick)"
-                    );
-                } else {
-                    eprintln!(
-                        "  board {b} (TECNOPLAY): no TMS7000 and Y8950 found, interrupts left as PinMAME runs them"
-                    );
                 }
             }
             let family = &self.families[b as usize];

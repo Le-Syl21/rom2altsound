@@ -141,8 +141,6 @@ unsafe extern "C" {
         busy_hi: c_uint,
     ) -> c_int;
     pub fn shim_user1_region(len: *mut c_uint) -> *const u8;
-    pub fn shim_tecnoplay_hook(board: c_int) -> c_int;
-    pub fn shim_tecnoplay_cmd(board: c_int, data: c_int);
     pub fn shim_board_type(board: c_int) -> c_int;
     pub fn shim_nibble_hook(board: c_int) -> c_int;
     pub fn shim_nibble_cmd(board: c_int, data: c_int);

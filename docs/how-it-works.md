@@ -34,8 +34,9 @@ machine per process.
 
 `build.rs` builds PinMAME's static library from the `vendor/pinmame` submodule with the
 `cmake` crate. The submodule points at a fork (Le-Syl21/pinmame, branch `bsmt2000-lle`):
-upstream master plus the BSMT2000 low level emulation and the Cheap Squeak / Turbo Cheap
-Squeak manual commands (see "Per family" and "BSMT2000: the chip's own program"). `cmake/libpinmame/CMakeLists.txt` expects to be at the root of the source
+upstream master (f45e404, with vpinball/pinmame#719 to #723) plus the BSMT2000 low level
+emulation (see "BSMT2000: the chip's own program"); the Cheap Squeak / Turbo Cheap Squeak
+manual commands it used to carry are upstream since #713. `cmake/libpinmame/CMakeLists.txt` expects to be at the root of the source
 tree (PinMAME's CI copies it there), so a patched copy is generated in Cargo's `OUT_DIR`
 with every tree-relative path made absolute; nothing is written into the submodule. Every
 patch must match, so a PinMAME update that moves things fails the build instead of
