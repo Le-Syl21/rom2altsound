@@ -619,6 +619,26 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
     if let Some(presses) = cli.sam_volume_test {
         return volume_test(cli, job, vpm, presses);
     }
+    if cli.boot_only {
+        std::fs::create_dir_all(&job.out).map_err(|e| e.to_string())?;
+        let (cold, warm, note) = factory(cli, job, vpm);
+        let report = json!({
+            "measurement": crate::measurement(cli),
+            "rom": job.rom,
+            "boards": ["SAM (software mixer, PCM1755 DAC)"],
+            "factory": cold,
+            "factory_volume": {
+                "boot": warm,
+                "attenuation": warm.as_ref().map(|b| json!({"left": b.left, "right": b.right})),
+                "note": note,
+            },
+            "note": "--boot-only: the warm boot from the factory nvram; factory_volume.attenuation is the PCM1755 attenuation the game wrote",
+        });
+        let path = job.out.join(crate::FACTORY_BOOT_REPORT);
+        std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap())
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        return Ok(());
+    }
     let wall = Instant::now();
     for (set, what) in [
         (cli.only.is_some(), "--only"),
@@ -789,6 +809,38 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
             row_item.push(i);
         }
     }
+
+    // Coverage: per call of the ROM's call table, whether every sample it picks from has a
+    // file (language 0).
+    let (mut calls_all, mut calls_some, mut calls_none) = (0usize, 0usize, 0usize);
+    for c in cat.calls.iter().filter(|c| !c.samples.is_empty()) {
+        let have = c
+            .samples
+            .iter()
+            .filter(|&&s| file_of.contains_key(&(s, 0)))
+            .count();
+        match have {
+            0 => calls_none += 1,
+            n if n == c.samples.len() => calls_all += 1,
+            _ => calls_some += 1,
+        }
+    }
+    let calls_expected = calls_all + calls_some + calls_none;
+    let coverage = json!({
+        "sources": [{"source": "rom call table", "commands": calls_expected}],
+        "expected": calls_expected,
+        "tried": calls_expected,
+        "with_sound": calls_all + calls_some,
+        "written": calls_all,
+        "not_written": {
+            "some_samples_without_a_stream": calls_some,
+            "no_sample_with_a_stream": calls_none,
+        },
+        "streams": cat.sounds.len(),
+        "music_scripts": cat.music.len(),
+        "stub_scripts": cat.stubs,
+        "note": "static decode: expected = the calls of the ROM's call table that pick at least one sample; written = the calls every sample of which has a file (language 0); the music scripts are files of their own",
+    });
 
     // Per file: the calls that reach it and how the pack plays it.
     let mut pack_of: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
@@ -1005,6 +1057,7 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
         })
     });
     let manifest = json!({
+        "measurement": crate::measurement(cli),
         "rom": job.rom,
         "parent": Value::Null,
         "mode": match (cli.factory(), gain_db) {
@@ -1064,8 +1117,10 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
             "clipped": clipped,
             "blips": 0,
         },
+        "coverage": coverage,
         "loudness": {
             "measured_as": "DC-blocked mono file duplicated to 2 identical channels (VPX playback); the first language's sounds and every music file",
+            "in_game": "static decode: the files are the decoded samples at the factory DAC attenuation; the game's own bus levels (script volume ramps) and its mix are not applied, so this is not the level PinMAME plays in a game",
             "all": all,
             "excluding_loops": once,
             "median_file_lufs": median,

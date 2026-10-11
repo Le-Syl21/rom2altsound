@@ -16,7 +16,7 @@
 //! exact cycle of its loop is confirmed (`looping`, and on DCS the track program's own period
 //! from `dcsrom::track_run`); the file is then its intro and one loop body.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ffi::{c_int, c_uint};
 use std::path::PathBuf;
 
@@ -230,6 +230,13 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     // game.rom `DCSQuietAllTracks`: 55AE, then the mask of the six channels in the high byte.
     ("DCSP2K", &[0x55, 0xAE, 0x3F, 0x00]),
 ];
+/// Commands after which the board plays nothing more in emulation, whatever is sent then
+/// (a board reset included), by set name prefix: they go last, after every other pass
+/// (`Pass::Last`). lotr `FC85` (sounds.dat "thunk sound") and `FC96` ("thwak"): the AT91
+/// stays silent from either on (`FD02`, the killer, `FD30` in one run: `FD30` silent, also
+/// after a board reset and with `--throttled`). The others are found by `dead_boards`.
+const BOARD_KILLERS: &[(&str, &[u8])] = &[("lotr", &[0xFC, 0x85]), ("lotr", &[0xFC, 0x96])];
+
 /// Capcom: the last sample number swept (Big Bang Bar's sounds.dat names `0298`; Pinball
 /// Magic plays `0100` and not `0200`).
 const CAPCOMS_LAST: u16 = 0x03FF;
@@ -398,6 +405,9 @@ pub struct Options {
     pub chip_check: bool,
     /// Which BSMT2000 emulation PinMAME will pick (reported if the machine has the chip).
     pub bsmt: crate::bsmtfw::Status,
+    /// The tool and the settings the figures depend on (`crate::measurement`), stored in
+    /// the manifest so that a consumer can tell stale data.
+    pub measurement: serde_json::Value,
 }
 
 /// Which master volume the sound boards play at.
@@ -556,6 +566,9 @@ enum Pass {
     Chips,
     /// DCS, `--check-ducking`: the music with one command per duck depth on top.
     DuckCheck,
+    /// The commands after which the board plays nothing more (`BOARD_KILLERS`), once
+    /// every other pass is done (as the main pass: their results end the list).
+    Last,
 }
 
 #[derive(Clone)]
@@ -1191,6 +1204,56 @@ pub struct Counts {
     pub ignores_master_volume: usize,
 }
 
+/// One source of the main command list.
+#[derive(Serialize, Clone)]
+pub struct CoverageSource {
+    /// "sounds.dat", "sweep" (the board's command space), "rom track catalog" (DCS),
+    /// "game sound layer" (game-driven boards), "--only".
+    pub source: &'static str,
+    /// Commands that source gives (before the union; a swept command the section names
+    /// counts in both).
+    pub commands: usize,
+}
+
+/// What became of every command of the main list (`counts` also counts the later passes'
+/// retries).
+#[derive(Serialize)]
+pub struct Coverage {
+    pub sources: Vec<CoverageSource>,
+    /// Commands in the list: the union of the sources.
+    pub expected: usize,
+    pub tried: usize,
+    /// Played something (blips included).
+    pub with_sound: usize,
+    pub written: usize,
+    /// Why the others have no file: "silent" (nothing came out, after the retry), "blip"
+    /// (under 20 ms once trimmed), "stop_command" / "volume_command" (the board's stop or a
+    /// volume command, silent as expected), "undumped_sample_rom" (Tecnoplay `40`..`7F`),
+    /// "empty_after_trimming", "not_tried" (--limit), "board_dead" (after the board went
+    /// silent for good, `board_dead`).
+    pub not_written: BTreeMap<&'static str, usize>,
+    /// Boards that went silent for good during the extraction (`Extractor::dead_boards`):
+    /// their later commands are counted as `board_dead`, not as silent.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub board_dead: Vec<DeadBoard>,
+    pub note: &'static str,
+}
+
+/// A board that stopped playing in emulation (`Extractor::dead_boards`).
+#[derive(Serialize, Clone)]
+pub struct DeadBoard {
+    pub board: c_int,
+    #[serde(skip)]
+    pub from_index: usize,
+    /// The first command of the silent run that ends the main pass (the likely cause), the
+    /// last command that played, and the commands from `from_id` on.
+    pub from_id: String,
+    pub last_sound: String,
+    pub silent_after: usize,
+}
+
+const COVERAGE_NOTE: &str = "expected = every command of the list played (sounds.dat's section, the board's swept command space, the DCS ROM's track catalog or the game's own sound layer, as sources says); written + the not_written classes = expected";
+
 #[derive(Serialize)]
 pub struct LoudnessReport {
     pub measured_as: &'static str,
@@ -1212,6 +1275,8 @@ pub struct LoudnessReport {
 
 #[derive(Serialize)]
 struct Manifest<'a> {
+    /// The tool and the settings the figures depend on.
+    measurement: &'a serde_json::Value,
     rom: &'a str,
     parent: Option<&'a str>,
     mode: &'static str,
@@ -1277,6 +1342,8 @@ struct Manifest<'a> {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     sweep: Vec<SweepResult>,
     counts: Counts,
+    /// The main list: where it came from and what became of each command.
+    coverage: Coverage,
     loudness: LoudnessReport,
     stop: String,
     board_resets: u32,
@@ -1435,6 +1502,11 @@ pub struct Extractor {
     queue: VecDeque<Cmd>,
     /// The main pass's commands, by result index.
     main_cmds: Vec<Cmd>,
+    /// Where the main list came from: (source, commands it gave), for the coverage.
+    sources: Vec<(&'static str, usize)>,
+    /// How many commands at the end of `main_cmds` are played after every other pass
+    /// (`BOARD_KILLERS`).
+    held: usize,
     mask: u8,
     boards: Vec<String>,
     stop: Vec<Send>,
@@ -1550,6 +1622,8 @@ impl Extractor {
             wait_until: None,
             queue: VecDeque::new(),
             main_cmds: Vec::new(),
+            sources: Vec::new(),
+            held: 0,
             mask: 0,
             boards: Vec::new(),
             stop: Vec::new(),
@@ -1853,6 +1927,28 @@ impl Extractor {
             });
         }
         r
+    }
+
+    /// A Spinball game whose program steps the board's volume (jolypark, vrnwrld).
+    fn spinb_step_volume(&self) -> bool {
+        SPINB_STEP_SETS.iter().any(|p| {
+            self.opts.rom.starts_with(p)
+                || self
+                    .opts
+                    .parent
+                    .as_deref()
+                    .is_some_and(|x| x.starts_with(p))
+        })
+    }
+
+    /// The sound boards' PinMAME type strings.
+    pub fn board_names(&self) -> &[String] {
+        &self.boards
+    }
+
+    /// Factory mode: the cold boot's report.
+    pub fn factory_report(&self) -> Option<&serde_json::Value> {
+        self.opts.factory.as_ref()
     }
 
     pub fn is_factory(&self) -> bool {
@@ -2599,6 +2695,11 @@ impl Extractor {
                         _ => "--dcs-volume".into(),
                     };
                     (hex(&bytes), from)
+                } else if family == "SPINB" && self.spinb_step_volume() {
+                    (
+                        SPINB_POWER_ON.into(),
+                        "not the game's own level: the game's boot steps the volume down (127 C4 on jolypark) and the tool steps it back up to PinMAME's power-on level, so that the sounds are not 30 to 40 dB down; in attract mode PinMAME plays jolypark's background music 32.5 dB below its file (rom2altsound 0.3, docs/families/other-makers.md)".into(),
+                    )
                 } else if let Some(full) = volume::full_scale(&family) {
                     (full.to_string(), "the board's only level".into())
                 } else if let Some(m) = self.last_master(b) {
@@ -3250,7 +3351,8 @@ impl Extractor {
             }
         }
         self.main_cmds = self.build_commands();
-        self.queue = self.main_cmds.clone().into();
+        let n = self.main_cmds.len() - self.held;
+        self.queue = self.main_cmds[..n].to_vec().into();
         eprintln!("{} command(s) to extract", self.queue.len());
         self.phase = Phase::Settle {
             until: self.t + self.secs(SETTLE_SECS),
@@ -3376,7 +3478,16 @@ impl Extractor {
                         eprintln!("ducking check: {n}");
                     }
                 }
-                Pass::DuckCheck => return false,
+                Pass::DuckCheck if self.held > 0 => {
+                    self.pass = Pass::Last;
+                    let n = self.main_cmds.len();
+                    self.queue = self.main_cmds[n - self.held..].to_vec().into();
+                    eprintln!(
+                        "last: {} command(s) after which the board plays nothing more",
+                        self.held
+                    );
+                }
+                Pass::DuckCheck | Pass::Last => return false,
             }
         }
         true
@@ -4344,6 +4455,7 @@ impl Extractor {
                 format!("{} (at factory {}, {:+} levels)", cmd.id, a.bytes, a.levels)
             }
             (Pass::DuckCheck, _) => format!("{} (ducking check)", cmd.id),
+            (Pass::Last, _) => format!("{} (played last)", cmd.id),
             (Pass::Chips, _) => match cmd.check.map(|c| c.kind) {
                 Some(TakeKind::ChipVoice) => format!("{} (voice chip alone)", cmd.id),
                 Some(TakeKind::MixMusic) => format!("{} (music chip alone)", cmd.id),
@@ -4364,7 +4476,7 @@ impl Extractor {
             _ => None,
         });
         self.sender.extend(cmd.sends.iter().copied());
-        let search = (matches!(self.pass, Pass::Main | Pass::Retry)
+        let search = (matches!(self.pass, Pass::Main | Pass::Retry | Pass::Last)
             && self.opts.loop_max_secs > 0.0)
             .then(|| self.loop_search(&cmd));
         self.phase = Phase::Record(Box::new(Recording {
@@ -4468,17 +4580,7 @@ impl Extractor {
         let mut v = Vec::new();
         for b in self.board_list() {
             let typestr = board_typestr(b).unwrap_or_default();
-            let stop = self.dat.family_entries(&typestr).into_iter().find(|e| {
-                let n = e.name.to_ascii_lowercase();
-                n.contains("sound off") || n.contains("reset sound")
-            });
-            let stop = stop.map(|e| e.bytes).or_else(|| {
-                BUILTIN_STOPS
-                    .iter()
-                    .find(|(t, _)| *t == typestr)
-                    .map(|(_, bytes)| bytes.to_vec())
-            });
-            match stop {
+            match self.stop_bytes(&typestr) {
                 // Data East alphanumeric: `00`, then the reset (see `BUILTIN_STOPS`).
                 Some(bytes) if typestr == "DE" => {
                     v.extend(board_sends(self.mask, b, &bytes));
@@ -4490,6 +4592,134 @@ impl Extractor {
                 None if !v.iter().any(|s| matches!(s, Send::Reset)) => v.push(Send::Reset),
                 None => {}
             }
+        }
+        v
+    }
+
+    /// A family's stop command: sounds.dat's "All sound off" / "Reset Sound System" of its
+    /// generic section, else `BUILTIN_STOPS`.
+    fn stop_bytes(&self, typestr: &str) -> Option<Vec<u8>> {
+        let stop = self.dat.family_entries(typestr).into_iter().find(|e| {
+            let n = e.name.to_ascii_lowercase();
+            n.contains("sound off") || n.contains("reset sound")
+        });
+        stop.map(|e| e.bytes).or_else(|| {
+            BUILTIN_STOPS
+                .iter()
+                .find(|(t, _)| *t == typestr)
+                .map(|(_, bytes)| bytes.to_vec())
+        })
+    }
+
+    /// What a command of the main list is when it is not a sound: the board's stop, or a
+    /// volume command (master or music volume), from its bytes or its sounds.dat name.
+    fn command_role(&self, c: &Cmd) -> Option<&'static str> {
+        let mut bytes = parse_id(&c.id);
+        if self.mask == 3 && !bytes.is_empty() {
+            bytes.remove(0);
+        }
+        let family = self.families.get(c.board_no as usize)?.as_str();
+        let name = c.name.to_ascii_lowercase();
+        if name.contains("sound off")
+            || name.contains("reset sound")
+            || self.stop_bytes(family).is_some_and(|s| s == bytes)
+        {
+            return Some("stop_command");
+        }
+        let volume = volume::decode(family, c.board_no, &bytes, 0.0).is_some()
+            || (self.is_de_board(c.board_no)
+                && bytes.len() == 1
+                && volume::decode_de_music(c.board_no, bytes[0], 0.0).is_some())
+            || (family == "SPINB"
+                && bytes.len() == 1
+                && [SPINB_UP, SPINB_DOWN, SPINB_UNLOCK, SPINB_LOCK].contains(&bytes[0]));
+        if volume {
+            return Some("volume_command");
+        }
+        // Tecnoplay: `40`..`7F` play from the sample ROMs (ic8-ic11) that no machine has
+        // dumped (docs/families/other-makers.md).
+        (family == "TECNOPLAY" && matches!(bytes[..], [0x40..=0x7F]))
+            .then_some("undumped_sample_rom")
+    }
+
+    /// The coverage of the main list: where it came from, and what became of each command.
+    pub fn coverage(&self) -> Coverage {
+        let mut not_written: BTreeMap<&'static str, usize> = BTreeMap::new();
+        let n = self.main_cmds.len().min(self.results.len());
+        let dead = self.dead_boards();
+        for (i, (s, c)) in self.results[..n].iter().zip(&self.main_cmds).enumerate() {
+            if s.file.is_some() {
+                continue;
+            }
+            let after_death = dead
+                .iter()
+                .any(|d| d.board == c.board_no && i >= d.from_index);
+            let why = if after_death && s.onset.is_none() {
+                "board_dead"
+            } else if s.blip {
+                "blip"
+            } else if s.onset.is_some() {
+                "empty_after_trimming"
+            } else {
+                self.command_role(c).unwrap_or("silent")
+            };
+            *not_written.entry(why).or_default() += 1;
+        }
+        let untried = self.main_cmds.len().saturating_sub(self.results.len());
+        if untried > 0 {
+            not_written.insert("not_tried", untried);
+        }
+        let written = self.results[..n]
+            .iter()
+            .filter(|s| s.file.is_some())
+            .count();
+        Coverage {
+            sources: self
+                .sources
+                .iter()
+                .map(|&(source, commands)| CoverageSource { source, commands })
+                .collect(),
+            expected: self.main_cmds.len(),
+            tried: n,
+            with_sound: self.results[..n]
+                .iter()
+                .filter(|s| s.onset.is_some())
+                .count(),
+            written,
+            not_written,
+            board_dead: dead,
+            note: COVERAGE_NOTE,
+        }
+    }
+
+    /// Boards that stopped playing for good during the main pass: every file played again
+    /// at the factory volume (the factory offset pass, which replays commands that did play)
+    /// came out silent. The board is then taken as dead from the first command of the
+    /// silent run that ends the main pass (lotr: from `FC85`, after which the AT91 plays
+    /// nothing, board reset or not).
+    pub fn dead_boards(&self) -> Vec<DeadBoard> {
+        let n = self.main_cmds.len().min(self.results.len());
+        let mut v = Vec::new();
+        for o in &self.offsets {
+            if o.samples.is_empty() || o.samples.iter().any(|x| x.factory_lufs.is_some()) {
+                continue;
+            }
+            let mine: Vec<usize> = (0..n)
+                .filter(|&i| self.main_cmds[i].board_no == o.board)
+                .collect();
+            let Some(last) = mine.iter().rfind(|&&i| self.results[i].onset.is_some()) else {
+                continue;
+            };
+            let Some(&from) = mine.iter().find(|&&i| i > *last) else {
+                continue;
+            };
+            v.push(DeadBoard {
+                board: o.board,
+                from_index: from,
+                from_id: self.main_cmds[from].id.clone(),
+                last_sound: self.results[*last].id.clone(),
+                silent_after: mine.iter().filter(|&&i| i >= from).count(),
+            });
         }
         v
     }
@@ -4510,6 +4740,7 @@ impl Extractor {
                 "{} sound(s) of the game's own sound layer",
                 game.sounds.len()
             );
+            self.sources.push(("game sound layer", game.sounds.len()));
             game.sounds
                 .iter()
                 .map(|g| Cmd {
@@ -4534,6 +4765,11 @@ impl Extractor {
             }
             self.commands_from = notes;
             self.sweep = ranges;
+            let dcs = self
+                .board_list()
+                .any(|b| is_dcs(&self.families[b as usize]));
+            self.sources
+                .push((if dcs { "rom track catalog" } else { "sweep" }, cmds.len()));
             cmds
         } else {
             let mut cmds: Vec<Cmd> = entries.iter().map(|e| self.game_cmd(e)).collect();
@@ -4542,16 +4778,51 @@ impl Extractor {
                 self.opts.parent.as_deref().unwrap_or(&self.opts.rom),
                 entries.len()
             )];
-            // Capcom: sounds.dat names a handful of Kingpin's and Big Bang Bar's commands (5
-            // and 21): the swept samples go after them.
-            if self.families.iter().any(|f| f == "CAPCOMS") {
-                let (sweep, notes, _) = sweep(self.mask);
-                let extra: Vec<Cmd> = sweep
-                    .into_iter()
-                    .filter(|c| !cmds.iter().any(|d| d.id == c.id))
+            self.sources.push(("sounds.dat", entries.len()));
+            // A sounds.dat section is a list someone typed, not the board's command space:
+            // Funhouse's has no `7A xx` bank ("Unable to access 7a bank in this game
+            // either"), Kingpin's and Big Bang Bar's name 5 and 21 of Capcom's samples, the
+            // DE3S sections 390 to 625 of the 717 two-byte commands. Every board but DCS
+            // (whose ROM catalog is added below) also gets its sweep, after the named
+            // commands; a swept command the section already names is not played twice.
+            if !self
+                .board_list()
+                .any(|b| is_dcs(&self.families[b as usize]))
+            {
+                let (sweep, notes, ranges) = sweep(self.mask);
+                let space = sweep.len();
+                let named: std::collections::HashSet<Vec<u8>> = cmds
+                    .iter()
+                    .map(|c| self.list_key(c.board_no, &parse_id(&c.id)))
                     .collect();
-                self.commands_from
-                    .push(format!("{} + {} swept", notes.join("; "), extra.len()));
+                let mut extra = Vec::new();
+                for c in sweep {
+                    if named.contains(&self.list_key(c.board_no, &parse_id(&c.id))) {
+                        continue;
+                    }
+                    extra.push(c);
+                }
+                self.commands_from.push(format!(
+                    "{} ({space} commands): + {} not in the section",
+                    notes.join("; "),
+                    extra.len()
+                ));
+                self.sources.push(("sweep", space));
+                // The sweep's report covers its whole range, named commands included.
+                // Ids the section names under another spelling (Firepower's `001F` for the
+                // swept `00`) are reported under the section's.
+                let spelled: HashMap<Vec<u8>, String> = cmds
+                    .iter()
+                    .map(|c| (self.list_key(c.board_no, &parse_id(&c.id)), c.id.clone()))
+                    .collect();
+                for mut r in ranges {
+                    for id in r.ids.iter_mut() {
+                        if let Some(s) = spelled.get(&self.list_key(r.board, &parse_id(id))) {
+                            *id = s.clone();
+                        }
+                    }
+                    self.sweep.push(r);
+                }
                 cmds.extend(extra);
             }
             // A sounds.dat section is not always complete (afm_113b leaves out 14 populated
@@ -4579,11 +4850,42 @@ impl Extractor {
                     "board {dcs} (DCS): + {} populated tracks of the ROM catalog's {count} not in sounds.dat (sorted in by track number)",
                     extra.len()
                 ));
+                self.sources.push((
+                    "rom track catalog",
+                    tracks.iter().filter(|&&t| t != 0).count(),
+                ));
                 cmds.extend(extra);
                 cmds.sort_by_key(|c| parse_id(&c.id));
             }
             cmds
         };
+        // Commands after which a board plays nothing more in emulation, board reset or not:
+        // played last, so that they cost no other command its sound.
+        let killers: Vec<Vec<u8>> = BOARD_KILLERS
+            .iter()
+            .filter(|(set, _)| {
+                self.opts.rom.starts_with(set)
+                    || self
+                        .opts
+                        .parent
+                        .as_deref()
+                        .is_some_and(|p| p.starts_with(set))
+            })
+            .map(|(_, bytes)| bytes.to_vec())
+            .collect();
+        if !killers.is_empty() {
+            let (last, mut first): (Vec<Cmd>, Vec<Cmd>) = std::mem::take(&mut cmds)
+                .into_iter()
+                .partition(|c| killers.contains(&parse_id(&c.id)));
+            for c in &last {
+                self.commands_from.push(format!(
+                    "{} played last, after every other pass: the board plays nothing after it in emulation",
+                    c.id
+                ));
+            }
+            first.extend(last);
+            cmds = first;
+        }
         if let (Some(only), Some(_)) = (&self.opts.only, &self.game) {
             // Game-driven sound: the ids are the game's (`--only 0x5883`).
             let want: Vec<Option<u32>> =
@@ -4591,6 +4893,7 @@ impl Extractor {
             cmds.retain(|c| want.contains(&crate::altsound::parse_id(&c.id)));
             self.commands_from
                 .push(format!("--only ({} sounds)", cmds.len()));
+            self.sources = vec![("--only", cmds.len())];
         } else if let Some(only) = &self.opts.only {
             cmds = only
                 .iter()
@@ -4619,15 +4922,23 @@ impl Extractor {
                 .collect();
             self.commands_from = vec![format!("--only ({} commands)", cmds.len())];
             self.sweep.clear();
+            self.sources = vec![("--only", cmds.len())];
         }
         if let Some(n) = self.opts.limit {
             cmds.truncate(n);
         }
+        // `--only` and `--limit` may have changed the list: the held commands are the
+        // killers still at its end.
+        self.held = cmds
+            .iter()
+            .rev()
+            .take_while(|c| killers.contains(&parse_id(&c.id)))
+            .count();
         cmds
     }
 
     /// A scenario for the ducking study: `0x000C+2.5+0x0390` sends 000C, waits 2.5 s, then
-    /// sends 0390, all in one recording.
+    /// sends 0390, all in one recording; `reset` resets the sound boards.
     fn scenario_cmd(&self, want: &str) -> Cmd {
         let mut sends = Vec::new();
         let mut board = 0;
@@ -4639,6 +4950,8 @@ impl Extractor {
                 });
                 board = c.board_no;
                 sends.extend(c.sends);
+            } else if part.eq_ignore_ascii_case("reset") {
+                sends.push(Send::Reset);
             } else {
                 let secs: f64 = part.parse().unwrap_or(0.0);
                 sends.push(Send::Wait((secs * 1000.0).round() as u32));
@@ -4689,6 +5002,22 @@ impl Extractor {
             alt: None,
             check: None,
         }
+    }
+
+    /// The command a list entry stands for, to match a sounds.dat entry with a swept one:
+    /// the bytes, without a trailing idle byte on the System 3-7 boards (Firepower's
+    /// section writes the sound `00` as `001F`, `1F` being the board's idle byte, which
+    /// `s67s_framed` sends around every byte anyway).
+    fn list_key(&self, board: c_int, bytes: &[u8]) -> Vec<u8> {
+        let family = self.families.get(board as usize).map_or("", String::as_str);
+        let mut b = self.wpcs_bank(board, bytes);
+        if family == "WMSS67" && self.mask != 3 && b.len() > 1 {
+            let sub = unsafe { ffi::shim_board_type(board) } & 0xFF;
+            while b.len() > 1 && b.last().is_some_and(|&x| s67s_idle(sub, x)) {
+                b.pop();
+            }
+        }
+        b
     }
 
     /// WPCS: sounds.dat writes a sound of the second bank (`7A xx`, which the game sends as
@@ -4798,7 +5127,7 @@ impl Extractor {
             Pass::FactoryOffset => self.finish_offset(rec, a, ended_by),
             Pass::Chips => self.finish_chip_take(rec, a),
             Pass::DuckCheck => self.finish_duck_take(rec, a),
-            Pass::Main | Pass::Retry => self.finish_sound(rec, a, ended_by),
+            Pass::Main | Pass::Retry | Pass::Last => self.finish_sound(rec, a, ended_by),
         }
         self.write_manifest();
     }
@@ -5139,6 +5468,7 @@ impl Extractor {
         let vol = self.volume_report();
         let factory = self.is_factory();
         let m = Manifest {
+            measurement: &self.opts.measurement,
             rom: &self.opts.rom,
             parent: self.opts.parent.as_deref(),
             mode: if factory { "factory" } else { "normal" },
@@ -5203,6 +5533,7 @@ impl Extractor {
             }),
             sweep: self.sweep_results(),
             counts: self.counts(),
+            coverage: self.coverage(),
             loudness: self.loudness_report(),
             stop: stop.join(" "),
             board_resets: self.board_resets,
@@ -5682,6 +6013,11 @@ const SPINB_LEVEL: u16 = 122;
 /// and a delay loop (`01D2`) before it polls the latch again. Measured on jolypark with
 /// `R2A_TRACE` on `A000`: with 4, only 24 of 142 steps reached `digvol_w`; with 30, all.
 const SPINB_SLICES: c_int = 30;
+/// `recorded_volume` of a Spinball board with a step volume (`spinb_step_volume`).
+pub const SPINB_POWER_ON: &str = "PinMAME's power-on step volume (122 of 142)";
+/// The Spinball sets whose program steps the board's volume (`spinb_level`), by name.
+const SPINB_STEP_SETS: &[&str] = &["jolypark", "vrnwrld"];
+
 fn spinb_level(mask: u8, board: c_int) -> Vec<Send> {
     let t = target(mask, board);
     let mut v = board_sends(mask, board, &[SPINB_UNLOCK]);
@@ -5769,7 +6105,53 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
             // Data East's music volume bytes 20..2F are swept too: before every command the
             // music volume is set back (see `set_refresh`), so a pure volume byte ends as
             // no_sound or a blip, and the real sounds among them (gnr_300 `2E`) are kept.
-            "BSMT" | "AT91" => (
+            // Whitestar II: the commands are two bytes, `FC xx`, `FD xx` and `FE xx` (the
+            // games' sounds.dat sections, lotr 207 / 240 / 178), `FE 10`..`2F` being the
+            // master volume, which waits for its `FD` (`volume.rs`). `FC FC`, `FD FD` and
+            // `FE FE` cannot reach the board: its queue drops a byte equal to the last one
+            // (desound.c `scmd_w`), for the game as for the tool.
+            "AT91" => {
+                let mut list: Vec<Vec<u8>> = Vec::new();
+                for p in [0xFCu8, 0xFD, 0xFE] {
+                    for x in 0..=0xFFu8 {
+                        if x == p || (p == 0xFE && x <= 0x2F) {
+                            continue;
+                        }
+                        list.push(vec![p, x]);
+                    }
+                }
+                (
+                    vec![(
+                        "FC00..FCFF, FD00..FDFF, FE30..FEFF (FE 00..2F = volume; FC FC, FD FD, FE FE dropped by the board's queue)".to_string(),
+                        list,
+                    )],
+                    format!(
+                        "board {b} (AT91): two-byte commands FC xx, FD xx, FE 30..FF (FE 10..2F is the master volume; FC FC, FD FD and FE FE never reach the board)"
+                    ),
+                )
+            }
+            // Whitestar (not Data East): `FE 30`..`FF` is a second bank of sounds, distinct
+            // from the single bytes (monopoly: 121 of FE30..FEFB play, none a twin of its
+            // single byte; the game sends them, simpprty `FE BC`). `FE 10`..`2F` is the
+            // master volume.
+            "BSMT" if !ffi::is_data_east() => (
+                vec![
+                    (
+                        format!(
+                            "01..{BSMT_LAST:02X} (00 = stop; FC..FF start two-byte commands, FE 10..2F FD = volume)"
+                        ),
+                        singles(1..=BSMT_LAST),
+                    ),
+                    (
+                        "FE30..FEFF (the second bank)".to_string(),
+                        (0x30..=0xFFu8).map(|x| vec![0xFE, x]).collect(),
+                    ),
+                ],
+                format!(
+                    "board {b} ({typestr}): bytes 01..{BSMT_LAST:02X} (00 = stop; FC..FF start two-byte commands, FE 10..2F FD = volume), then the second bank FE30..FEFF"
+                ),
+            ),
+            "BSMT" => (
                 vec![(
                     format!(
                         "01..{BSMT_LAST:02X} (00 = stop; FC..FF start two-byte commands, FE xx FD = volume)"

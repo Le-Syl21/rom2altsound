@@ -133,11 +133,12 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
         ("--factory-volume", cli.factory_volume),
         ("--no-volume-init", cli.no_volume_init),
         ("--cold-boot-only", cli.cold_boot_only),
+        ("--boot-only", cli.boot_only),
         ("--dc-block", cli.dc_block),
         ("--throttled", cli.throttled),
         ("--verbose", cli.verbose),
         ("--no-altsound", cli.no_altsound),
-        ("--no-html", cli.no_html),
+        ("--no-html", cli.no_html || cli.drop_audio),
         ("--merge-twins", cli.merge_twins),
         ("--check-ducking", cli.check_ducking),
         ("--no-refresh", cli.no_refresh),
@@ -206,6 +207,8 @@ pub enum Event<'a> {
     },
     /// A ROM's process ended.
     Finished(&'a Outcome),
+    /// A ROM not run: its folder already holds a current result (`--skip-done`).
+    Skipped(&'a Outcome),
 }
 
 /// A watched run (the window program): every ROM's output goes to its log file and is read
@@ -262,6 +265,7 @@ pub fn run(cli: &Cli) -> i32 {
             rom, log: Some(l), ..
         } => eprintln!("{rom}: started (log: {})", l.display()),
         Event::Finished(o) => println!("{}", line(o)),
+        Event::Skipped(o) => println!("{}: skipped, done already ({})", o.rom, o.out.display()),
         _ => {}
     });
     let code = recap(&outcomes);
@@ -276,7 +280,12 @@ pub fn run(cli: &Cli) -> i32 {
 /// The page linking every ROM's page at the output root, once some ROM went through (and
 /// pages are written); its path, or why it could not be written.
 pub fn write_index(cli: &Cli, outcomes: &[Outcome]) -> Option<Result<PathBuf, String>> {
-    if cli.no_html || cli.cold_boot_only || !outcomes.iter().any(|o| o.error.is_none()) {
+    if cli.no_html
+        || cli.drop_audio
+        || cli.cold_boot_only
+        || cli.boot_only
+        || !outcomes.iter().any(|o| o.error.is_none())
+    {
         return None;
     }
     crate::listen::write_index(&root(cli)).transpose()
@@ -293,8 +302,19 @@ pub fn run_with(
     let root = root(cli);
     let mut outcomes = Vec::new();
     let mut queue = Vec::new();
+    let current = crate::measurement(cli);
     for arg in &cli.rom_args {
         match resolve(arg, cli.roms.as_deref()) {
+            Ok(r) if cli.skip_done && is_done(&root.join(&r.name), cli, &current) => {
+                let o = Outcome {
+                    rom: r.name.clone(),
+                    out: root.join(&r.name),
+                    secs: 0.0,
+                    error: None,
+                };
+                on(Event::Skipped(&o));
+                outcomes.push(o);
+            }
             Ok(r) => queue.push(r),
             Err(e) => {
                 let o = Outcome {
@@ -387,6 +407,14 @@ pub fn run_with(
                         Err(e) => Some(e.to_string()),
                         Ok(None) => unreachable!(),
                     };
+                    if cli.drop_audio {
+                        let freed = drop_audio(&job.out);
+                        eprintln!(
+                            "{}: audio dropped ({:.1} MB)",
+                            job.rom.name,
+                            freed as f64 / 1e6
+                        );
+                    }
                     let o = Outcome {
                         rom: job.rom.name,
                         out: job.out,
@@ -403,6 +431,48 @@ pub fn run_with(
         }
     }
     outcomes
+}
+
+/// Whether a ROM's folder already holds the result this run would write (`--skip-done`):
+/// its report made with the same `measurement` (version and settings), from a run that
+/// wrote sounds, or found the set not applicable.
+pub fn is_done(out: &Path, cli: &Cli, current: &serde_json::Value) -> bool {
+    let file = if cli.boot_only {
+        crate::FACTORY_BOOT_REPORT
+    } else {
+        "manifest.json"
+    };
+    let Some(m) = std::fs::read_to_string(out.join(file))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+    else {
+        return false;
+    };
+    if m["measurement"] != *current {
+        return false;
+    }
+    cli.boot_only
+        || m["not_applicable"].is_string()
+        || m["counts"]["written"].as_u64().is_some_and(|n| n > 0)
+}
+
+/// `--drop-audio`: deletes a ROM folder's audio files (its WAV files, the loop bodies and
+/// extended files among them); returns how many bytes that freed.
+pub fn drop_audio(out: &Path) -> u64 {
+    let Ok(dir) = std::fs::read_dir(out) else {
+        return 0;
+    };
+    let mut freed = 0;
+    for e in dir.flatten() {
+        let p = e.path();
+        if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("wav")) && p.is_file() {
+            let len = e.metadata().map(|m| m.len()).unwrap_or(0);
+            if std::fs::remove_file(&p).is_ok() {
+                freed += len;
+            }
+        }
+    }
+    freed
 }
 
 /// Reports what a watched ROM wrote since the last look.
@@ -560,6 +630,9 @@ pub fn line(o: &Outcome) -> String {
     let m: Option<serde_json::Value> = std::fs::read_to_string(o.out.join("manifest.json"))
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok());
+    if let Some(why) = m.as_ref().and_then(|m| m["not_applicable"].as_str()) {
+        return format!("{}: not applicable: {why}", o.rom);
+    }
     let detail = m.map_or_else(String::new, |m| {
         let c = &m["counts"];
         let mut d = format!(
@@ -618,6 +691,38 @@ mod tests {
         assert_eq!(r.dir, dir);
         assert!(resolve("nope_10", Some(&dir)).is_err());
         assert!(resolve(dir.join("nope.zip").to_str().unwrap(), None).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn done_runs_are_skipped_and_audio_dropped() {
+        let dir = std::env::temp_dir().join(format!("rom2altsound-done-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cli = crate::parse_args(["afm_113b", "--skip-done", "--drop-audio"]).unwrap();
+        let current = crate::measurement(&cli);
+        assert!(!is_done(&dir, &cli, &current));
+        let write = |m: serde_json::Value| {
+            std::fs::write(dir.join("manifest.json"), m.to_string()).unwrap();
+        };
+        write(serde_json::json!({"measurement": current, "counts": {"written": 12}}));
+        assert!(is_done(&dir, &cli, &current));
+        // A run that wrote nothing is run again; so is one with other settings.
+        write(serde_json::json!({"measurement": current, "counts": {"written": 0}}));
+        assert!(!is_done(&dir, &cli, &current));
+        let other =
+            crate::measurement(&crate::parse_args(["afm_113b", "--max-secs", "5"]).unwrap());
+        write(serde_json::json!({"measurement": other, "counts": {"written": 12}}));
+        assert!(!is_done(&dir, &cli, &current));
+        write(serde_json::json!({"measurement": current, "not_applicable": "chimes"}));
+        assert!(is_done(&dir, &cli, &current));
+        // --boot-only looks at its own report.
+        let boot = crate::parse_args(["afm_113", "--boot-only"]).unwrap();
+        assert!(!is_done(&dir, &boot, &crate::measurement(&boot)));
+        std::fs::write(dir.join("0x01-afm_113b.wav"), [0u8; 100]).unwrap();
+        std::fs::write(dir.join("altsound.csv"), "x").unwrap();
+        assert_eq!(drop_audio(&dir), 100);
+        assert!(!dir.join("0x01-afm_113b.wav").exists());
+        assert!(dir.join("altsound.csv").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

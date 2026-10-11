@@ -418,7 +418,9 @@ impl App {
                 ctx.request_repaint();
             };
             let outcomes = batch::run_with(&cli, &exe, Some(&watch), &mut |e| match e {
-                Event::NotStarted(o) | Event::Finished(o) => send(Msg::Finished(o.clone())),
+                Event::NotStarted(o) | Event::Finished(o) | Event::Skipped(o) => {
+                    send(Msg::Finished(o.clone()))
+                }
                 Event::Started { rom, out, .. } => send(Msg::Started {
                     rom: rom.to_owned(),
                     out: out.to_path_buf(),

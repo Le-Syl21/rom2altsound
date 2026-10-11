@@ -188,6 +188,12 @@ pub struct Cli {
     /// settings); the boot report goes to cold-boot.json
     #[arg(long)]
     cold_boot_only: bool,
+    /// Only read the factory volume: boot with the factory settings (cold, then warm from
+    /// the factory nvram) and stop before the first sound. factory-boot.json gets the
+    /// master volume the game set (what `rom2altsound catalog --manifests` reads for the
+    /// sets that share a sound ROM with the one extracted)
+    #[arg(long, conflicts_with_all = ["no_factory", "no_volume_init", "cold_boot_only", "volume", "names"])]
+    boot_only: bool,
     /// A sounds.dat to name the commands with [default: the one of the PinMAME version
     /// built in]
     #[arg(long)]
@@ -279,6 +285,17 @@ pub struct Cli {
     /// after the boot instead of before every command
     #[arg(long, hide = true)]
     no_refresh: bool,
+    /// Measurement runs (a whole catalog): once each ROM is done, delete its audio files
+    /// (*.wav) and keep manifest.json, the CSVs and the boot reports, which hold every
+    /// figure `rom2altsound catalog --manifests` reads. No listening page is written
+    #[arg(long, conflicts_with = "in_process")]
+    drop_audio: bool,
+    /// Skip a ROM whose folder already holds a current result: a manifest.json (with
+    /// --boot-only, a factory-boot.json) made by this version with the same settings
+    /// (its `measurement`), from a run that wrote sounds or found the set not applicable.
+    /// Makes a long run resumable: run the same command again after a stop
+    #[arg(long)]
+    skip_done: bool,
     /// Internal: extract the single ROM given in this process; --roms is its directory and
     /// --out its own folder (libpinmame runs one machine per process)
     #[arg(long, hide = true)]
@@ -413,6 +430,7 @@ pub fn cli_main() {
         Some("seq-scan") => return seqloop::scan_cli(std::env::args().skip(2).collect()),
         Some("seq-audio") => return seqloop::audio_cli(std::env::args().skip(2).collect()),
         Some("page") => return listen::page_cli(std::env::args().skip(2).collect()),
+        Some("loudness") => std::process::exit(loudness_cli(std::env::args().skip(2).collect())),
         Some("names") => std::process::exit(names::cli(std::env::args().skip(2).collect())),
         Some("roms") => std::process::exit(romcheck::cli(std::env::args().skip(2).collect())),
         Some("catalog") => std::process::exit(catalog::cli(std::env::args().skip(2).collect())),
@@ -437,6 +455,24 @@ pub fn cli_main() {
             roms: cli.roms.clone().unwrap_or_else(|| PathBuf::from(".")),
             out: cli.out.clone().unwrap_or_else(|| PathBuf::from(rom)),
         };
+        // A set with nothing to extract: said so in its manifest, not a failure.
+        let borrowing = cli.sound_rom_from.is_some();
+        if let Some(why) = catalog::not_applicable(&job.rom).filter(|_| !borrowing) {
+            let m = serde_json::json!({
+                "measurement": measurement(&cli),
+                "rom": job.rom,
+                "not_applicable": why,
+            });
+            let path = job.out.join("manifest.json");
+            if let Err(e) = std::fs::create_dir_all(&job.out)
+                .and_then(|()| std::fs::write(&path, serde_json::to_string_pretty(&m).unwrap()))
+            {
+                eprintln!("error: {}: {e}", path.display());
+                std::process::exit(1);
+            }
+            println!("{}: not applicable: {why}", job.rom);
+            return;
+        }
         // The sound ROM id goes in the manifest (a names file says which one it is for); a
         // names file for another sound ROM is refused before the extraction, not after.
         let sound_rom_id = names::sound_rom_id_of(&job.rom);
@@ -462,7 +498,7 @@ pub fn cli_main() {
             eprintln!("error: {e}");
             std::process::exit(1);
         }
-        if !cli.cold_boot_only {
+        if !cli.cold_boot_only && !cli.boot_only {
             let named =
                 names::stamp_sound_rom_id(&job.out, sound_rom_id.as_deref()).and_then(|()| {
                     match &names_file {
@@ -478,7 +514,7 @@ pub fn cli_main() {
                 std::process::exit(1);
             }
         }
-        if !cli.no_html && !cli.cold_boot_only {
+        if !cli.no_html && !cli.cold_boot_only && !cli.boot_only {
             match listen::write_page(&job.out) {
                 Ok(p) => println!("  page: {}", p.display()),
                 Err(e) => eprintln!("cannot write the listening page: {e}"),
@@ -632,7 +668,7 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             max_secs: cli.max_secs,
             loop_max_secs: cli.loop_max_secs,
             no_sound_secs: cli.no_sound_secs,
-            cold_boot_only: cli.cold_boot_only,
+            cold_boot_only: cli.cold_boot_only || cli.boot_only,
             factory,
             stop: cli.stop.clone(),
             dc_block: cli.dc_block,
@@ -643,6 +679,7 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             solo: cli.solo.clone(),
             chip_check: !cli.no_chip_check,
             bsmt,
+            measurement: measurement(cli),
         },
         dat,
     ));
@@ -684,6 +721,31 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
         let path = job.out.join(COLD_BOOT_REPORT);
         std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap())
             .map_err(|e| format!("{}: {e}", path.display()))?;
+        return Ok(());
+    }
+    if cli.boot_only {
+        let vol = x.volume_report();
+        let report = serde_json::json!({
+            "measurement": measurement(cli),
+            "rom": job.rom,
+            "parent": parent,
+            "boards": x.board_names(),
+            "boot": x.boot_report(),
+            "factory_volume": vol,
+            "factory": x.factory_report(),
+            "note": "--boot-only: the warm boot from the factory nvram, stopped before the first sound; factory_volume is the master volume the game set there",
+        });
+        let path = job.out.join(FACTORY_BOOT_REPORT);
+        std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap())
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        println!(
+            "{}: factory volume {}",
+            job.rom,
+            match vol.commands.iter().rfind(|c| c.kind == "master") {
+                Some(c) => format!("{} (level {}/{})", c.bytes, c.level, c.level_max),
+                None => vol.note.unwrap_or_else(|| "none".into()),
+            }
+        );
         return Ok(());
     }
     progress::phase("pack");
@@ -833,7 +895,48 @@ fn mark_borrowed(cli: &Cli, job: &Job, b: &borrow::Borrowed) -> Result<(), Strin
     Ok(())
 }
 
+/// The version of the way the manifests' loudness and coverage are measured: bumped when
+/// a change of the tool moves the figures of an unchanged ROM (a new sweep range, another
+/// gating), so that `rom2altsound catalog` and `--skip-done` can tell stale manifests.
+pub(crate) const MEASUREMENT_VERSION: u32 = 1;
+
+/// The tool and the settings the figures of a manifest depend on. Two runs with equal
+/// `measurement` give the same figures for the same ROM.
+pub(crate) fn measurement(cli: &Cli) -> serde_json::Value {
+    serde_json::json!({
+        "tool": "rom2altsound",
+        "version": env!("CARGO_PKG_VERSION"),
+        "method": MEASUREMENT_VERSION,
+        "factory": cli.factory(),
+        "volume_mode": if cli.factory() {
+            match cli.volume_mode() {
+                VolumeMode::Factory => "factory",
+                VolumeMode::Reference => "reference",
+            }
+        } else {
+            "game"
+        },
+        "reference": {
+            "dcs": cli.dcs_volume.map(|v| format!("{v:02X}")),
+            "whitestar": cli.whitestar_volume.map(|v| format!("{v:02X}")),
+            "wpcs": cli.wpcs_volume.map(|v| format!("{v:02X}")),
+        },
+        "max_secs": cli.max_secs,
+        "loop_max_secs": cli.loop_max_secs,
+        "no_sound_secs": cli.no_sound_secs,
+        "boot_secs": cli.boot_secs,
+        "boot_max_secs": cli.boot_max_secs,
+        "bsmt_hle": cli.bsmt_hle,
+        "sounds_dat": cli.sounds_dat.as_ref().map(|p| p.display().to_string()),
+        "stop": cli.stop,
+        "sound_rom_from": cli.sound_rom_from,
+        "complete": cli.only.is_none() && cli.limit.is_none(),
+    })
+}
+
 const COLD_BOOT_REPORT: &str = "cold-boot.json";
+/// `--boot-only`'s report.
+pub(crate) const FACTORY_BOOT_REPORT: &str = "factory-boot.json";
 /// The reference volumes of `--factory`: per board family, the loudest master volume at
 /// which no file of our ROMs clips in emulation, apart from isolated clicks (README,
 /// "Reference volume"). DCS `55 AA EF 10` (level 29/31): at `FF`, 5 to 24 files per ROM
@@ -1265,6 +1368,47 @@ fn link_rom(roms: &Path, vpm: &Path, set: &str) -> Result<(), String> {
 }
 
 /// `loop-scan`: the loop detector on WAV files, one line per file.
+/// Diagnostic: `rom2altsound loudness [--from SECS] [--to SECS] <wav>...` measures WAV files
+/// (a recording of PinMAME's whole output, a pack's file) as the manifests do: DC-blocked,
+/// a mono file as two identical channels; prints the integrated loudness, the true peak and
+/// the length of each, between --from and --to.
+fn loudness_cli(args: Vec<String>) -> i32 {
+    let (mut from, mut to) = (0.0f64, f64::INFINITY);
+    let mut it = args.into_iter();
+    let mut code = 0;
+    while let Some(a) = it.next() {
+        let num = |v: Option<String>| v.and_then(|v| v.parse::<f64>().ok());
+        match a.as_str() {
+            "--from" => from = num(it.next()).unwrap_or(0.0),
+            "--to" => to = num(it.next()).unwrap_or(f64::INFINITY),
+            _ => {
+                let Ok(mut r) = hound::WavReader::open(&a) else {
+                    eprintln!("{a}: cannot read");
+                    code = 1;
+                    continue;
+                };
+                let spec = r.spec();
+                let ch = spec.channels.max(1) as usize;
+                let rate = spec.sample_rate;
+                let s: Vec<i16> = r.samples::<i16>().filter_map(Result::ok).collect();
+                let at = |t: f64| ((t * rate as f64) as usize * ch).min(s.len());
+                let s = &s[at(from)..at(to.min(s.len() as f64 / (rate as f64 * ch as f64)))];
+                let start: Vec<i32> = s.iter().take(ch).map(|&x| i32::from(x)).collect();
+                let blocked = extract::dc_block(s, ch, &start, rate);
+                let l = loudness::measure_fast(&blocked, ch, rate);
+                let fmt = |x: Option<f64>| x.map_or("-".to_string(), |v| format!("{v:.2}"));
+                println!(
+                    "{a}: {} LUFS, true peak {} dBTP, {:.2} s",
+                    fmt(l.lufs),
+                    fmt(l.true_peak_dbtp),
+                    l.frames as f64 / rate as f64
+                );
+            }
+        }
+    }
+    code
+}
+
 fn loop_scan(args: Vec<String>) {
     let mut hint = None;
     let mut it = args.into_iter();

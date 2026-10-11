@@ -52,6 +52,19 @@ struct CatalogCli {
     /// ROMs read at once for the track and call counts (Stern SAM images are large)
     #[arg(long, default_value_t = 2)]
     jobs: usize,
+    /// Folders of extraction runs (`rom2altsound <sets> --out DIR`, one folder per set):
+    /// each set's manifest.json (a full extraction) and factory-boot.json (`--boot-only`)
+    /// give the entries their loudness, coverage and factory volumes. Repeatable; a set
+    /// found in several takes the last folder's
+    #[arg(long, value_name = "DIR")]
+    manifests: Vec<PathBuf>,
+    /// Write the set lists of a whole-catalog measurement run to this folder (see
+    /// docs/catalog.md): measure.txt (one set per entry, extracted in full), boot.txt (the
+    /// entries' other sets, for `--boot-only`), and, once runs are read (`--manifests`),
+    /// differs.txt (the sets whose factory volume differs from their entry's measured set
+    /// and that have no extraction of their own yet)
+    #[arg(long, value_name = "DIR")]
+    plan: Option<PathBuf>,
     /// The map of the per-family docs ({"SNDBRD_X": "file.md#anchor"}, relative to its
     /// folder); a family it does not list links to docs/board-support.md
     #[arg(
@@ -81,6 +94,37 @@ pub fn family_docs(text: Option<&str>) -> BTreeMap<String, String> {
                 .then(|| (k.clone(), format!("{DOCS_URL}families/{rel}")))
         })
         .collect()
+}
+
+/// Sets with nothing to extract, and why: they count as "not applicable" in the catalog's
+/// coverage, and `rom2altsound <set>` says so instead of failing.
+pub fn not_applicable(set: &str) -> Option<&'static str> {
+    Some(match set {
+        "sam_iv" => {
+            "the S.A.M. IV tester boots a program of its own with no sound code: no sound to ask for (docs/families/stern-early.md)"
+        }
+        "mideartp" => {
+            "a prototype whose program ROM is a bad dump in PinMAME: no sound routine to read (docs/families/atari.md)"
+        }
+        "tts_l1" | "tts_l2" => {
+            "its sound ROMs were never dumped (NO_DUMP in PinMAME's bowlgames.c): the board plays nothing (docs/families/williams-system11.md)"
+        }
+        "bstrk_l1" | "tstrk_l1" => {
+            "chimes: the machine (s4_mS4) has no sound CPU, although PinMAME starts an S67S board for it (docs/families/williams-system3-7.md)"
+        }
+        "xforce" => {
+            "its sound ROM and sample ROMs were never dumped: PinMAME plays nothing; `--sound-rom-from spcteam` gives an approximate pack with Space Team's sound program (docs/families/other-makers.md#tecnoplay-xforce)"
+        }
+        s if s.starts_with("sam1_flashb_") => "a Stern SAM boot flash: no game and no sound data",
+        _ => return None,
+    })
+}
+
+/// A family with nothing to extract: no sound board to drive.
+pub fn family_not_applicable(label: &str) -> Option<&'static str> {
+    (label == "NONE (other)").then_some(
+        "no sound board to drive: chimes, or sounds made by the CPU board (docs/families/no-sound-board.md)",
+    )
 }
 
 /// How far rom2altsound gets with a family, from the status column of the survey.
@@ -202,6 +246,93 @@ pub struct SetRow {
     pub found: Found,
     /// Commands sounds.dat names for the set (its section and its parent's).
     pub names: usize,
+    /// Why the set has nothing to extract (`not_applicable`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_applicable: Option<&'static str>,
+    /// The master volume the game sets with its factory settings, per board with one, when
+    /// a run of this set was read (`--manifests`); empty: the game sets none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub factory_volume: Option<Vec<FactoryVolume>>,
+    /// Set only where the factory volume differs from the entry's measured set: this set's
+    /// own loudness (its own extraction), or why it is not known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loudness: Option<Loudness>,
+}
+
+/// A master volume a game sets at boot with its factory settings.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FactoryVolume {
+    pub board: i64,
+    pub family: String,
+    /// The command as the game sent it (hex), e.g. `55AA6798`, `FE2C`, `790CF3`; Stern SAM:
+    /// the PCM1755 attenuation, left and right (`E8E8`).
+    pub bytes: String,
+    /// On the game's own scale (DCS, Whitestar, WPCS, Pinball 2000: 0..31).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub level: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub level_max: Option<u64>,
+}
+
+/// The loudness of a set's sounds as written by rom2altsound (manifest.json `loudness`),
+/// at the game's factory volume, as PinMAME plays them in VPinball.
+#[derive(Debug, Clone, Serialize)]
+pub struct Loudness {
+    /// The set the figures were measured on.
+    pub set: String,
+    /// EBU R128 gated integrated loudness of every written file played back to back
+    /// (`loudness.all`; files that ignore the master volume left out): the main figure.
+    pub lufs: Option<f64>,
+    pub lufs_excluding_loops: Option<f64>,
+    pub median_file_lufs: Option<f64>,
+    /// The loudest file's true peak.
+    pub true_peak_dbtp: Option<f64>,
+    /// Seconds of material, and files, in `lufs`.
+    pub seconds: Option<f64>,
+    pub files: Option<u64>,
+    /// The master volume the files are at (the game's factory volume), per board with one.
+    pub factory_volume: Vec<FactoryVolume>,
+    /// Where the factory volume comes from, per board (manifest `recorded_volume`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub factory_volume_from: Vec<String>,
+    /// "emulation": the board ran in PinMAME and its output was recorded, which is what VPX
+    /// plays. "static": Stern SAM, decoded from the image (see `caveat`).
+    pub source: &'static str,
+    /// What the figure is not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caveat: Option<String>,
+    /// Stern SAM: the figures of the static decode, kept apart because they are not the
+    /// level of a game (`lufs` and the other levels above are null for it).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub static_decode: Option<StaticFigures>,
+    /// A board with a master volume whose files stayed at the reference volume (the
+    /// factory offset could not be measured): their levels, kept apart (`lufs` and the
+    /// levels above are null).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub at_reference_volume: Option<StaticFigures>,
+    /// The tool and the settings of the run (manifest `measurement`).
+    pub measurement: serde_json::Value,
+    /// The run used this catalog's measurement method and the default settings: figures
+    /// comparable with every other current entry.
+    pub current: bool,
+}
+
+/// The levels of a static decode (Stern SAM).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct StaticFigures {
+    pub lufs: Option<f64>,
+    pub lufs_excluding_loops: Option<f64>,
+    pub median_file_lufs: Option<f64>,
+    pub true_peak_dbtp: Option<f64>,
+}
+
+/// What one set's folder of a run holds.
+#[derive(Debug, Default, Clone)]
+pub struct RunData {
+    /// manifest.json of a full extraction.
+    pub manifest: Option<serde_json::Value>,
+    /// factory-boot.json of `--boot-only`.
+    pub boot: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -260,6 +391,16 @@ pub struct Entry {
     pub sounds: Option<Sounds>,
     /// Distinct commands sounds.dat names, over all the sets.
     pub names: usize,
+    /// Why the entry has nothing to extract (every set not applicable, or no sound board).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_applicable: Option<&'static str>,
+    /// The loudness of the measured set (`--manifests`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loudness: Option<Loudness>,
+    /// The measured set's coverage (manifest `coverage`): where its command list came
+    /// from, and what became of every command.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coverage: Option<serde_json::Value>,
 }
 
 /// The Stern SAM image of a set: its file name, CRC32 and length ([`sam::sam_set`]).
@@ -326,6 +467,9 @@ pub fn entries(drivers: &[Driver], inp: &Inputs) -> Vec<Entry> {
                     year: d.year.clone(),
                     found: inp.found.get(&d.name).copied().unwrap_or(Found::Absent),
                     names: inp.dat.game_entries(&d.name, d.parent.as_deref()).len(),
+                    not_applicable: not_applicable(&d.name),
+                    factory_volume: None,
+                    loudness: None,
                 })
                 .collect();
             let mut named: BTreeSet<Vec<u8>> = BTreeSet::new();
@@ -376,6 +520,11 @@ pub fn entries(drivers: &[Driver], inp: &Inputs) -> Vec<Entry> {
             } else {
                 Vec::new()
             };
+            let not_applicable = family_not_applicable(&label).or_else(|| {
+                let mut why = sets.iter().map(|s| s.not_applicable);
+                let first = why.next().flatten()?;
+                why.all(|w| w.is_some()).then_some(first)
+            });
             Entry {
                 id,
                 key,
@@ -389,6 +538,9 @@ pub fn entries(drivers: &[Driver], inp: &Inputs) -> Vec<Entry> {
                 roms,
                 sounds: None,
                 names: named.len(),
+                not_applicable,
+                loudness: None,
+                coverage: None,
             }
         })
         .collect();
@@ -464,6 +616,354 @@ pub fn count_sounds(e: &Entry, fetch: &dyn Fn(u32, u64) -> Option<Vec<u8>>) -> O
     }
 }
 
+/// Reads the run folders given (`--manifests`): per set name, its manifest.json and
+/// factory-boot.json. A later folder's set replaces an earlier one's.
+pub fn read_runs(dirs: &[PathBuf]) -> (HashMap<String, RunData>, Vec<String>) {
+    let mut out: HashMap<String, RunData> = HashMap::new();
+    let mut errors = Vec::new();
+    let read = |p: &std::path::Path, errors: &mut Vec<String>| -> Option<serde_json::Value> {
+        let t = std::fs::read_to_string(p).ok()?;
+        match serde_json::from_str(&t) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                errors.push(format!("{}: {e}", p.display()));
+                None
+            }
+        }
+    };
+    for d in dirs {
+        let Ok(rd) = std::fs::read_dir(d) else {
+            errors.push(format!("{}: not a folder", d.display()));
+            continue;
+        };
+        let mut subs: Vec<PathBuf> = rd
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+        subs.sort();
+        for sub in subs {
+            let manifest = read(&sub.join("manifest.json"), &mut errors);
+            let boot = read(&sub.join(crate::FACTORY_BOOT_REPORT), &mut errors);
+            if manifest.is_none() && boot.is_none() {
+                continue;
+            }
+            // The set's name as the run gives it (the folder may be named otherwise).
+            let name = manifest
+                .as_ref()
+                .or(boot.as_ref())
+                .and_then(|m| m["rom"].as_str())
+                .map(str::to_owned)
+                .unwrap_or_else(|| sub.file_name().unwrap_or_default().to_string_lossy().into());
+            let e = out.entry(name).or_default();
+            if manifest.is_some() {
+                e.manifest = manifest;
+            }
+            if boot.is_some() {
+                e.boot = boot;
+            }
+        }
+    }
+    (out, errors)
+}
+
+/// The master volumes a run's report says the game set (manifest.json or
+/// factory-boot.json); None when the report does not say (no factory boot).
+pub fn factory_volumes(v: &serde_json::Value) -> Option<Vec<FactoryVolume>> {
+    // Stern SAM: the PCM1755 attenuation (manifest: factory_offset.factory_volume "E8 E8";
+    // factory-boot.json: factory_volume.attenuation).
+    if let Some(s) = v["factory_offset"]["factory_volume"].as_str() {
+        return Some(vec![sam_volume(&s.replace(' ', ""))]);
+    }
+    if let Some(a) = v["factory_volume"]["attenuation"].as_object() {
+        let side = |k: &str| a.get(k).and_then(|x| x.as_str()).unwrap_or("").to_owned();
+        let (l, r) = (side("left"), side("right"));
+        if l.is_empty() && r.is_empty() {
+            return Some(Vec::new());
+        }
+        return Some(vec![sam_volume(&format!("{l}{r}"))]);
+    }
+    if v["boards"].as_array().is_some_and(|b| {
+        b.iter()
+            .any(|x| x.as_str().is_some_and(|s| s.starts_with("SAM")))
+    }) {
+        return None;
+    }
+    let cmds = v["factory_volume"]["commands"].as_array()?;
+    let mut last: BTreeMap<i64, FactoryVolume> = BTreeMap::new();
+    for c in cmds.iter().filter(|c| c["kind"] == "master") {
+        let board = c["board"].as_i64().unwrap_or(0);
+        last.insert(
+            board,
+            FactoryVolume {
+                board,
+                family: c["family"].as_str().unwrap_or_default().to_owned(),
+                bytes: c["bytes"].as_str().unwrap_or_default().to_owned(),
+                level: c["level"].as_u64(),
+                level_max: c["level_max"].as_u64(),
+            },
+        );
+    }
+    Some(last.into_values().collect())
+}
+
+fn sam_volume(bytes: &str) -> FactoryVolume {
+    FactoryVolume {
+        board: 0,
+        family: "SAM".into(),
+        bytes: bytes.to_owned(),
+        level: None,
+        level_max: None,
+    }
+}
+
+/// Whether a run's `measurement` is the one a run with the default settings of this
+/// version's method gives (the tool version itself aside: a release that changes no figure
+/// keeps the method number).
+pub fn is_current(m: &serde_json::Value, current: &serde_json::Value) -> bool {
+    let strip = |v: &serde_json::Value| {
+        let mut v = v.clone();
+        if let Some(o) = v.as_object_mut() {
+            o.remove("version");
+        }
+        v
+    };
+    !m.is_null() && strip(m) == strip(current)
+}
+
+/// The loudness block of a full extraction's manifest.
+pub fn loudness_of(set: &str, m: &serde_json::Value, current: &serde_json::Value) -> Loudness {
+    let l = &m["loudness"];
+    let sam = m["sam"].is_object();
+    let from: Vec<String> = m["recorded_volume"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|r| {
+                    Some(format!(
+                        "board {} ({}): {}: {}",
+                        r["board"].as_i64()?,
+                        r["family"].as_str()?,
+                        r["volume"].as_str()?,
+                        r["from"].as_str()?
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut caveat = Vec::new();
+    if sam {
+        caveat.push(SAM_CAVEAT.to_owned());
+    }
+    if m["measurement"]["complete"] == false {
+        caveat.push("a partial run (--only or --limit)".to_owned());
+    }
+    if m["volume_mode"] != "factory" && !sam {
+        caveat.push(format!(
+            "not at the factory volume (volume_mode {})",
+            m["volume_mode"]
+        ));
+    }
+    for d in m["coverage"]["board_dead"].as_array().into_iter().flatten() {
+        caveat.push(format!(
+            "incomplete: board {} played nothing more in emulation from {} on ({} commands)",
+            d["board"],
+            d["from_id"].as_str().unwrap_or("?"),
+            d["silent_after"]
+        ));
+    }
+    if m["sound_rom_borrowed"].is_object() {
+        caveat.push("approximate: made with another set's sound ROM (sound_rom_borrowed)".into());
+    }
+    let levels = StaticFigures {
+        lufs: l["all"]["lufs"].as_f64(),
+        lufs_excluding_loops: l["excluding_loops"]["lufs"].as_f64(),
+        median_file_lufs: l["median_file_lufs"].as_f64(),
+        true_peak_dbtp: l["all"]["true_peak_dbtp"].as_f64(),
+    };
+    // A board with a master volume whose files could not be scaled to the factory volume.
+    let unscaled = !sam
+        && m["factory_gain"]["boards"].as_array().is_some_and(|b| {
+            b.iter().any(|x| {
+                x["gain_db"].is_null()
+                    && x["note"]
+                        .as_str()
+                        .is_some_and(|n| n.contains("could not be measured"))
+            })
+        });
+    // Spinball's step volume: the files are at PinMAME's power-on level, not the game's.
+    let spinb = m["recorded_volume"].as_array().is_some_and(|a| {
+        a.iter()
+            .any(|r| r["volume"].as_str() == Some(crate::extract::SPINB_POWER_ON))
+    });
+    if spinb {
+        caveat.push(
+            "not at the game's level: Spinball's step volume is at PinMAME's power-on level, where the game's boot steps it down (jolypark's attract music plays 32.5 dB lower in PinMAME); levels under at_reference_volume".into(),
+        );
+    }
+    let unscaled = unscaled || spinb;
+    if unscaled && !spinb {
+        caveat.push(
+            "not at the factory volume: the factory offset could not be measured, so the files stayed at the reference volume (levels under at_reference_volume)".into(),
+        );
+    }
+    // A static decode's levels are not a game's, nor are files left at the reference
+    // volume: kept apart, the main figures left null so that no consumer takes them for
+    // one.
+    let (main, static_decode, at_reference_volume) = if sam {
+        (None, Some(levels), None)
+    } else if unscaled {
+        (None, None, Some(levels))
+    } else {
+        (Some(levels), None, None)
+    };
+    let main = main.as_ref();
+    Loudness {
+        set: set.to_owned(),
+        lufs: main.and_then(|l| l.lufs),
+        lufs_excluding_loops: main.and_then(|l| l.lufs_excluding_loops),
+        median_file_lufs: main.and_then(|l| l.median_file_lufs),
+        true_peak_dbtp: main.and_then(|l| l.true_peak_dbtp),
+        static_decode,
+        at_reference_volume,
+        seconds: l["all"]["seconds"].as_f64(),
+        files: l["all"]["files"].as_u64(),
+        factory_volume: factory_volumes(m).unwrap_or_default(),
+        factory_volume_from: from,
+        source: if sam { "static" } else { "emulation" },
+        caveat: (!caveat.is_empty()).then(|| caveat.join("; ")),
+        measurement: m["measurement"].clone(),
+        current: is_current(&m["measurement"], current),
+    }
+}
+
+/// What the Stern SAM figures are.
+pub const SAM_CAVEAT: &str = "Stern SAM: not measured in a game. The sounds are decoded from the image at the factory DAC attenuation, every sound and song at its full bus level; the game's own bus levels (script volume ramps) and mix are not applied, so static_decode is not the level PinMAME plays in a game (acd_168h, measured in a started game in PinMAME: the music bed -13.1 LUFS against the pack's -11.3, a coin sound 6.6 dB below its file; docs/catalog.md)";
+
+/// Gives the entries what the runs read say (`--manifests`): each set's factory volume,
+/// the measured set's loudness and coverage, and for a set whose factory volume differs
+/// from the measured set's its own figures (when it was extracted too) or the reason they
+/// are missing.
+pub fn apply_runs(
+    entries: &mut [Entry],
+    runs: &HashMap<String, RunData>,
+    current: &serde_json::Value,
+) {
+    for e in entries.iter_mut() {
+        // The measured set: one with a full extraction that wrote sounds, the game's head
+        // set (no parent) first, else the first in order.
+        let full = |s: &SetRow| {
+            runs.get(&s.name)
+                .and_then(|r| r.manifest.as_ref())
+                .filter(|m| m["loudness"].is_object())
+        };
+        let measured = e
+            .sets
+            .iter()
+            .filter(|s| full(s).is_some())
+            .min_by_key(|s| s.parent.is_some())
+            .map(|s| s.name.clone());
+        for s in e.sets.iter_mut() {
+            let Some(r) = runs.get(&s.name) else { continue };
+            s.factory_volume = r
+                .manifest
+                .as_ref()
+                .and_then(factory_volumes)
+                .or_else(|| r.boot.as_ref().and_then(factory_volumes));
+        }
+        let Some(name) = measured else { continue };
+        let m = runs[&name].manifest.as_ref().unwrap();
+        let base = loudness_of(&name, m, current);
+        e.coverage = Some(m["coverage"].clone()).filter(|c| !c.is_null());
+        // Written files that play the same audio as an earlier one (the pack's twin test).
+        if let (Some(c), Some(t)) = (
+            e.coverage.as_mut().and_then(|c| c.as_object_mut()),
+            m["altsound"]["twins"].as_u64(),
+        ) {
+            c.insert("twins".into(), t.into());
+        }
+        let key = |v: &[FactoryVolume]| -> Vec<(i64, String)> {
+            v.iter().map(|f| (f.board, f.bytes.clone())).collect()
+        };
+        let base_key = key(&base.factory_volume);
+        for s in e.sets.iter_mut().filter(|s| s.name != name) {
+            let Some(fv) = &s.factory_volume else {
+                continue;
+            };
+            if key(fv) == base_key {
+                continue;
+            }
+            s.loudness = Some(match full(s) {
+                Some(own) => loudness_of(&s.name, own, current),
+                None => Loudness {
+                    lufs: None,
+                    lufs_excluding_loops: None,
+                    median_file_lufs: None,
+                    true_peak_dbtp: None,
+                    seconds: None,
+                    files: None,
+                    factory_volume: fv.clone(),
+                    factory_volume_from: Vec::new(),
+                    caveat: Some(format!(
+                        "its factory volume differs from {name}'s and the set was not extracted: run rom2altsound {} for its figures",
+                        s.name
+                    )),
+                    static_decode: None,
+                    at_reference_volume: None,
+                    measurement: runs[&s.name]
+                        .boot
+                        .as_ref()
+                        .map_or(serde_json::Value::Null, |b| b["measurement"].clone()),
+                    current: false,
+                    set: s.name.clone(),
+                    source: base.source,
+                },
+            });
+        }
+        e.loudness = Some(base);
+    }
+}
+
+/// The set lists of a whole-catalog run (`--plan`).
+#[derive(Debug, Default, PartialEq)]
+pub struct Plan {
+    /// One set per entry that has something to extract and a set in the folders read: the
+    /// one already measured (`--manifests`), else the game's head set (no parent), else
+    /// the first.
+    pub measure: Vec<String>,
+    /// The other sets found of those entries: their factory volume (`--boot-only`).
+    pub boot: Vec<String>,
+    /// Sets whose factory volume differs from their entry's measured set, with no
+    /// extraction of their own.
+    pub differs: Vec<String>,
+}
+
+pub fn plan(entries: &[Entry]) -> Plan {
+    let mut p = Plan::default();
+    for e in entries.iter().filter(|e| e.not_applicable.is_none()) {
+        let found: Vec<&SetRow> = e
+            .sets
+            .iter()
+            .filter(|s| s.found <= Found::Completable && s.not_applicable.is_none())
+            .collect();
+        let head = e
+            .loudness
+            .as_ref()
+            .and_then(|l| found.iter().find(|s| s.name == l.set))
+            .or_else(|| found.iter().find(|s| s.parent.is_none()))
+            .or_else(|| found.first());
+        let Some(head) = head else { continue };
+        p.measure.push(head.name.clone());
+        for s in found.iter().filter(|s| s.name != head.name) {
+            p.boot.push(s.name.clone());
+            if s.loudness.as_ref().is_some_and(|l| l.lufs.is_none()) {
+                p.differs.push(s.name.clone());
+            }
+        }
+    }
+    p
+}
+
 #[derive(Debug, Default, Serialize)]
 struct Tally {
     entries: usize,
@@ -505,6 +1005,18 @@ struct Stats {
     families: Vec<FamilyTally>,
     entries_with_counts: usize,
     entries_with_names: usize,
+    /// Entries and sets with nothing to extract (`not_applicable`).
+    entries_not_applicable: usize,
+    sets_not_applicable: usize,
+    /// Entries with a loudness (`--manifests`), and those measured with the current method
+    /// and default settings.
+    entries_with_loudness: usize,
+    entries_with_current_loudness: usize,
+    /// Sets whose factory volume is known, and those whose factory volume differs from
+    /// their entry's measured set, with and without figures of their own.
+    sets_with_factory_volume: usize,
+    sets_volume_differs: usize,
+    sets_volume_differs_unmeasured: usize,
 }
 
 fn stats(entries: &[Entry], support: &HashMap<String, SupportRow>) -> Stats {
@@ -553,7 +1065,44 @@ fn stats(entries: &[Entry], support: &HashMap<String, SupportRow>) -> Stats {
         families,
         entries_with_counts: entries.iter().filter(|e| e.sounds.is_some()).count(),
         entries_with_names: entries.iter().filter(|e| e.names > 0).count(),
+        entries_not_applicable: entries
+            .iter()
+            .filter(|e| e.not_applicable.is_some())
+            .count(),
+        sets_not_applicable: entries
+            .iter()
+            .flat_map(|e| &e.sets)
+            .filter(|s| s.not_applicable.is_some())
+            .count(),
+        entries_with_loudness: entries.iter().filter(|e| e.loudness.is_some()).count(),
+        entries_with_current_loudness: entries
+            .iter()
+            .filter(|e| e.loudness.as_ref().is_some_and(|l| l.current))
+            .count(),
+        sets_with_factory_volume: entries
+            .iter()
+            .flat_map(|e| &e.sets)
+            .filter(|s| s.factory_volume.is_some())
+            .count(),
+        sets_volume_differs: entries
+            .iter()
+            .flat_map(|e| &e.sets)
+            .filter(|s| s.loudness.is_some())
+            .count(),
+        sets_volume_differs_unmeasured: entries
+            .iter()
+            .flat_map(|e| &e.sets)
+            .filter(|s| s.loudness.as_ref().is_some_and(|l| l.lufs.is_none()))
+            .count(),
     }
+}
+
+/// The `measurement` of an extraction with this version's default settings: what an
+/// entry's loudness must have been measured with to be `current`.
+pub fn current_measurement() -> serde_json::Value {
+    crate::parse_args(["x"])
+        .map(|c| crate::measurement(&c))
+        .unwrap_or_default()
 }
 
 /// The file: a header, then one entry per line (small diffs when it is regenerated).
@@ -569,6 +1118,7 @@ fn render(
         "units_read": units,
         "family_docs": docs,
         "family_docs_default": format!("{DOCS_URL}board-support.md"),
+        "measurement": current_measurement(),
         "stats": stats(entries, support),
     });
     let mut s = serde_json::to_string(&head).unwrap();
@@ -669,11 +1219,44 @@ pub fn cli(args: Vec<String>) -> i32 {
     for (i, s) in counted {
         entries[i].sounds = s;
     }
+    if !cli.manifests.is_empty() {
+        let (runs, errors) = read_runs(&cli.manifests);
+        for e in &errors {
+            eprintln!("warning: {e}");
+        }
+        eprintln!("{} run folder(s) read", runs.len());
+        apply_runs(&mut entries, &runs, &current_measurement());
+    }
     let docs = family_docs(std::fs::read_to_string(&cli.family_docs).ok().as_deref());
     if docs.is_empty() {
         eprintln!(
             "note: no family docs map at {}: families link to board-support.md",
             cli.family_docs.display()
+        );
+    }
+    if let Some(dir) = &cli.plan {
+        let p = plan(&entries);
+        let write = |name: &str, sets: &[String]| -> std::io::Result<()> {
+            std::fs::create_dir_all(dir)?;
+            let mut t = sets.join("\n");
+            if !t.is_empty() {
+                t.push('\n');
+            }
+            std::fs::write(dir.join(name), t)
+        };
+        let r = write("measure.txt", &p.measure)
+            .and_then(|()| write("boot.txt", &p.boot))
+            .and_then(|()| write("differs.txt", &p.differs));
+        if let Err(e) = r {
+            eprintln!("error: {}: {e}", dir.display());
+            return 1;
+        }
+        eprintln!(
+            "plan in {}: {} set(s) to extract, {} to boot only, {} whose factory volume differs",
+            dir.display(),
+            p.measure.len(),
+            p.boot.len(),
+            p.differs.len()
         );
     }
     let text = render(&entries, &support, &docs, units.len());
@@ -911,6 +1494,9 @@ mod tests {
             roms,
             sounds: None,
             names: 0,
+            not_applicable: None,
+            loudness: None,
+            coverage: None,
         };
         let fetch = |crc: u32, _size: u64| {
             if crc == crc_u2 {
@@ -934,5 +1520,208 @@ mod tests {
         assert!(Found::Good < Found::Split);
         assert!(Found::Completable < Found::BadDump);
         assert!(Found::Incomplete < Found::Absent);
+    }
+
+    fn set_row(name: &str, parent: Option<&str>) -> SetRow {
+        SetRow {
+            name: name.into(),
+            parent: parent.map(Into::into),
+            description: String::new(),
+            manufacturer: String::new(),
+            year: String::new(),
+            found: Found::Good,
+            names: 0,
+            not_applicable: not_applicable(name),
+            factory_volume: None,
+            loudness: None,
+        }
+    }
+
+    fn manifest(
+        rom: &str,
+        vol: &str,
+        level: u64,
+        lufs: f64,
+        m: &serde_json::Value,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "measurement": m,
+            "rom": rom,
+            "boards": ["DCS"],
+            "volume_mode": "factory",
+            "factory_volume": {"commands": [
+                {"board": 0, "family": "DCS", "kind": "channel AB", "bytes": "55ABFF00", "level": 255, "level_max": 255},
+                {"board": 0, "family": "DCS", "kind": "master", "bytes": vol, "level": level, "level_max": 31},
+            ]},
+            "recorded_volume": [{"board": 0, "family": "DCS", "volume": vol, "from": "the game at boot"}],
+            "coverage": {"expected": 10, "written": 9, "not_written": {"silent": 1}},
+            "altsound": {"twins": 2},
+            "loudness": {
+                "all": {"files": 9, "seconds": 30.5, "lufs": lufs, "true_peak_dbtp": -3.2},
+                "excluding_loops": {"files": 8, "seconds": 20.0, "lufs": lufs - 1.0},
+                "median_file_lufs": lufs - 2.0,
+            },
+        })
+    }
+
+    #[test]
+    fn runs_give_loudness_coverage_and_differing_volumes() {
+        let current = current_measurement();
+        assert_eq!(current["method"], crate::MEASUREMENT_VERSION);
+        let mut old = current.clone();
+        old["version"] = "0.0.1".into();
+        let mut e = Entry {
+            id: Some("x".into()),
+            key: "x".into(),
+            family: "SNDBRD_DCS".into(),
+            label: "DCS".into(),
+            support: Support::Works,
+            title: "Game".into(),
+            manufacturer: String::new(),
+            year: String::new(),
+            sets: vec![
+                set_row("g_l1", Some("g_l2")),
+                set_row("g_l2", None),
+                set_row("g_l3", Some("g_l2")),
+                set_row("g_l4", Some("g_l2")),
+                set_row("g_l5", Some("g_l2")),
+            ],
+            roms: Vec::new(),
+            sounds: None,
+            names: 0,
+            not_applicable: None,
+            loudness: None,
+            coverage: None,
+        };
+        let boot = |vol: &str, level: u64| {
+            serde_json::json!({"measurement": current, "rom": "?", "factory_volume": {"commands": [
+                {"board": 0, "family": "DCS", "kind": "master", "bytes": vol, "level": level, "level_max": 31}]}})
+        };
+        let runs: HashMap<String, RunData> = [
+            // The head set, extracted (with an older version of the same method).
+            (
+                "g_l2",
+                RunData {
+                    manifest: Some(manifest("g_l2", "55AA6798", 12, -24.0, &old)),
+                    boot: None,
+                },
+            ),
+            // Same volume: nothing of its own.
+            (
+                "g_l1",
+                RunData {
+                    manifest: None,
+                    boot: Some(boot("55AA6798", 12)),
+                },
+            ),
+            // Another volume, extracted too: its own figures.
+            (
+                "g_l3",
+                RunData {
+                    manifest: Some(manifest("g_l3", "55AA7788", 14, -21.0, &current)),
+                    boot: None,
+                },
+            ),
+            // Another volume, boot only: flagged, no figure.
+            (
+                "g_l4",
+                RunData {
+                    manifest: None,
+                    boot: Some(boot("55AA5FA0", 11)),
+                },
+            ),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v))
+        .collect();
+        apply_runs(std::slice::from_mut(&mut e), &runs, &current);
+        let l = e.loudness.as_ref().unwrap();
+        assert_eq!(l.set, "g_l2");
+        assert_eq!(
+            (l.lufs, l.lufs_excluding_loops, l.median_file_lufs),
+            (Some(-24.0), Some(-25.0), Some(-26.0))
+        );
+        assert_eq!(
+            (l.files, l.seconds, l.true_peak_dbtp),
+            (Some(9), Some(30.5), Some(-3.2))
+        );
+        assert_eq!(l.source, "emulation");
+        // Only the master volume, not the channel level.
+        assert_eq!(l.factory_volume.len(), 1);
+        assert_eq!(
+            (
+                l.factory_volume[0].bytes.as_str(),
+                l.factory_volume[0].level
+            ),
+            ("55AA6798", Some(12))
+        );
+        // The method and the settings are today's: current, whatever the version.
+        assert!(l.current);
+        assert_eq!(e.coverage.as_ref().unwrap()["twins"], 2);
+        assert!(e.sets[0].loudness.is_none());
+        assert_eq!(
+            e.sets[0].factory_volume.as_ref().unwrap()[0].level,
+            Some(12)
+        );
+        assert_eq!(e.sets[2].loudness.as_ref().unwrap().lufs, Some(-21.0));
+        let l4 = e.sets[3].loudness.as_ref().unwrap();
+        assert_eq!(l4.lufs, None);
+        assert!(l4.caveat.as_ref().unwrap().contains("differs"));
+        assert!(e.sets[4].factory_volume.is_none());
+        let p = plan(std::slice::from_ref(&e));
+        assert_eq!(p.measure, ["g_l2"]);
+        assert_eq!(p.boot, ["g_l1", "g_l3", "g_l4", "g_l5"]);
+        assert_eq!(p.differs, ["g_l4"]);
+        // Another method is not current.
+        let mut other = current.clone();
+        other["method"] = 0.into();
+        assert!(!is_current(&other, &current));
+        assert!(!is_current(&serde_json::Value::Null, &current));
+    }
+
+    #[test]
+    fn sam_and_not_applicable() {
+        let m = serde_json::json!({"boards": ["SAM (software mixer, PCM1755 DAC)"],
+            "factory_offset": {"factory_volume": "E8 E8"}, "sam": {}, "loudness": {"all": {"lufs": -12.0}}});
+        let v = factory_volumes(&m).unwrap();
+        assert_eq!((v[0].family.as_str(), v[0].bytes.as_str()), ("SAM", "E8E8"));
+        let b =
+            serde_json::json!({"factory_volume": {"attenuation": {"left": "E8", "right": "E8"}}});
+        assert_eq!(factory_volumes(&b).unwrap(), v);
+        let l = loudness_of("acd_168h", &m, &current_measurement());
+        assert_eq!(l.source, "static");
+        assert_eq!(l.lufs, None);
+        assert_eq!(l.static_decode.as_ref().unwrap().lufs, Some(-12.0));
+        assert!(l.caveat.unwrap().contains("not measured in a game"));
+        assert!(!l.current);
+        assert!(not_applicable("sam_iv").is_some());
+        assert!(not_applicable("sam1_flashb_0310").is_some());
+        assert!(not_applicable("afm_113b").is_none());
+        assert!(family_not_applicable("NONE (other)").is_some());
+    }
+
+    #[test]
+    fn levels_not_at_the_factory_volume_are_kept_apart() {
+        let cur = current_measurement();
+        let mut m = manifest("lotr", "FE26", 9, -11.7, &cur);
+        m["factory_gain"] = serde_json::json!({"boards": [{"board": 1, "gain_db": null,
+            "note": "the factory offset could not be measured: the files are left at the reference volume FE11FD"}]});
+        m["coverage"]["board_dead"] = serde_json::json!([{"board": 1, "from_id": "0xFC96", "last_sound": "0xFC95", "silent_after": 300}]);
+        let l = loudness_of("lotr", &m, &cur);
+        assert_eq!(l.lufs, None);
+        assert_eq!(l.at_reference_volume.unwrap().lufs, Some(-11.7));
+        let c = l.caveat.unwrap();
+        assert!(
+            c.contains("0xFC96") && c.contains("reference volume"),
+            "{c}"
+        );
+        let mut j = manifest("jolypark", "x", 0, -22.3, &cur);
+        j["factory_volume"]["commands"] = serde_json::json!([]);
+        j["recorded_volume"] = serde_json::json!([{"board": 0, "family": "SPINB",
+            "volume": crate::extract::SPINB_POWER_ON, "from": "..."}]);
+        let l = loudness_of("jolypark", &j, &cur);
+        assert_eq!(l.lufs, None);
+        assert!(l.caveat.unwrap().contains("Spinball"));
+        assert_eq!(l.at_reference_volume.unwrap().lufs, Some(-22.3));
     }
 }
