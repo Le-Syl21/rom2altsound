@@ -50,7 +50,7 @@
 <label class="check"><input type="checkbox" id="hideNoVpx"><span id="lHideNoVpx"></span></label>
 </div>
 <p id="count" class="count"></p>
-<div class="table"><table><thead><tr><th data-k="title" class="" aria-sort="none"><button type="button">Game</button></th><th data-k="maker" class="hide-sm" aria-sort="none"><button type="button">Maker</button></th><th data-k="year" class="" aria-sort="none"><button type="button">Year</button></th><th data-k="family" class="" aria-sort="none"><button type="button">Board</button></th><th data-k="support" class="" aria-sort="none"><button type="button">rom2altsound</button></th><th data-k="sets" class="num" aria-sort="none"><button type="button">Sets</button></th><th data-k="sounds" class="num" aria-sort="none"><button type="button">Sounds</button></th><th data-k="names" class="num" aria-sort="none"><button type="button">Names</button></th><th data-k="id" class="hide-sm" aria-sort="none"><button type="button">Sound ROM id</button></th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="table"><table><thead><tr><th data-k="title" class="" aria-sort="none"><button type="button">Game</button></th><th data-k="maker" class="hide-sm" aria-sort="none"><button type="button">Maker</button></th><th data-k="year" class="" aria-sort="none"><button type="button">Year</button></th><th data-k="family" class="" aria-sort="none"><button type="button">Board</button></th><th data-k="support" class="" aria-sort="none"><button type="button">rom2altsound</button></th><th data-k="sets" class="num" aria-sort="none"><button type="button">Sets</button></th><th data-k="sounds" class="num" aria-sort="none"><button type="button">Sounds</button></th><th data-k="names" class="num" aria-sort="none"><button type="button">Names</button></th><th data-k="lufs" class="num" aria-sort="none"><button type="button">LUFS</button></th><th data-k="id" class="hide-sm" aria-sort="none"><button type="button">Sound ROM id</button></th></tr></thead><tbody id="rows"></tbody></table></div>
 <p class="more"><button class="btn" type="button" id="more" hidden></button></p>
 </div>
 <section class="about">
@@ -91,6 +91,10 @@ catalog was built from (2804 VPinMAME zips), out of all.</li>
 <li><strong>Sounds</strong>: read from the ROMs without running them, where the layout is known: the populated
 tracks of the DCS (and Pinball 2000) track catalog, the records of a Stern SAM call table. Empty for
 the other boards: their commands are only found by playing them.</li>
+<li><strong>LUFS</strong>: the average loudness of the entry's sounds as rom2altsound wrote them, at the game's
+factory volume, as PinMAME plays them in VPinball: the EBU R128 integrated loudness of every file played
+back to back (<code>catalog.json</code> <code>loudness.lufs</code>). In italics: Stern SAM, decoded from the image
+at full bus level, not the level of a game. Empty: not measured yet.</li>
 </ul>
 <h3>Rebuilding the catalog</h3>
 <pre><code>rom2altsound catalog ~/vpinball/roms --out docs/catalog.json

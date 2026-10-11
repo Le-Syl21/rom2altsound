@@ -39,7 +39,8 @@ UI = {
         "family": "Board family", "support": "rom2altsound support", "maker": "Maker",
         "cols": [("title", "Game", ""), ("maker", "Maker", "hide-sm"), ("year", "Year", ""),
                  ("family", "Board", ""), ("support", "rom2altsound", ""), ("sets", "Sets", "num"),
-                 ("sounds", "Sounds", "num"), ("names", "Names", "num"), ("id", "Sound ROM id", "hide-sm")],
+                 ("sounds", "Sounds", "num"), ("names", "Names", "num"), ("lufs", "LUFS", "num"),
+                 ("id", "Sound ROM id", "hide-sm")],
         "about": f"""
 <h2 id="about">About</h2>
 <h3>What a sound ROM id is</h3>
@@ -78,6 +79,10 @@ catalog was built from (2804 VPinMAME zips), out of all.</li>
 <li><strong>Sounds</strong>: read from the ROMs without running them, where the layout is known: the populated
 tracks of the DCS (and Pinball 2000) track catalog, the records of a Stern SAM call table. Empty for
 the other boards: their commands are only found by playing them.</li>
+<li><strong>LUFS</strong>: the average loudness of the entry's sounds as rom2altsound wrote them, at the game's
+factory volume, as PinMAME plays them in VPinball: the EBU R128 integrated loudness of every file played
+back to back (<code>catalog.json</code> <code>loudness.lufs</code>). In italics: Stern SAM, decoded from the image
+at full bus level, not the level of a game. Empty: not measured yet.</li>
 </ul>
 <h3>Rebuilding the catalog</h3>
 <pre><code>rom2altsound catalog ~/vpinball/roms --out docs/catalog.json
@@ -109,7 +114,8 @@ python3 docs/build_site.py</code></pre>
         "family": "Famille de carte", "support": "Prise en charge", "maker": "Fabricant",
         "cols": [("title", "Jeu", ""), ("maker", "Fabricant", "hide-sm"), ("year", "Année", ""),
                  ("family", "Carte", ""), ("support", "rom2altsound", ""), ("sets", "Jeux de ROM", "num"),
-                 ("sounds", "Sons", "num"), ("names", "Noms", "num"), ("id", "Id de ROM son", "hide-sm")],
+                 ("sounds", "Sons", "num"), ("names", "Noms", "num"), ("lufs", "LUFS", "num"),
+                 ("id", "Id de ROM son", "hide-sm")],
         "about": f"""
 <h2 id="about">À propos</h2>
 <h3>Ce qu'est un id de ROM son</h3>
@@ -151,6 +157,10 @@ collection de référence d'où le catalogue est tiré (2804 zips VPinMAME), sur
 <li><strong>Sons</strong> : lu dans les ROM sans les faire tourner, là où leur organisation est connue : les
 pistes remplies du catalogue DCS (et Pinball 2000), les entrées de la table d'appels d'un Stern SAM. Vide
 pour les autres cartes : leurs commandes ne se trouvent qu'en les jouant.</li>
+<li><strong>LUFS</strong> : le volume sonore moyen des sons de l'entrée tels que rom2altsound les écrit, au volume
+d'usine du jeu, tels que PinMAME les joue dans VPinball : le volume intégré EBU R128 de tous les fichiers mis
+bout à bout (<code>loudness.lufs</code> de <code>catalog.json</code>). En italique : Stern SAM, décodé depuis l'image
+au niveau plein de chaque bus, pas le niveau d'une partie. Vide : pas encore mesuré.</li>
 </ul>
 <h3>Refaire le catalogue</h3>
 <pre><code>rom2altsound catalog ~/vpinball/roms --out docs/catalog.json

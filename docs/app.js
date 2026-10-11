@@ -93,6 +93,12 @@
   }
   function badge(s) { return '<span class="badge b-' + esc(s) + '">' + esc(T[s] || s) + "</span>"; }
   function soundCount(e) { return e.sounds ? e.sounds.count : -1; }
+  function lufs(e) {
+    var l = e.loudness;
+    if (!l) return null;
+    if (l.lufs != null) return l.lufs;
+    return l.static_decode && l.static_decode.lufs != null ? l.static_decode.lufs : null;
+  }
   function foundCount(e) { return e.sets.filter(function (s) { return s.found !== "absent"; }).length; }
 
   var data, entries = [], view = [], shown = PAGE, sortKey = "title", sortDir = 1;
@@ -156,6 +162,7 @@
       case "sets": x = a.sets.length; y = b.sets.length; break;
       case "sounds": x = soundCount(a); y = soundCount(b); break;
       case "names": x = a.names; y = b.names; break;
+      case "lufs": x = lufs(a) == null ? -999 : lufs(a); y = lufs(b) == null ? -999 : lufs(b); break;
       case "id": x = a.id || "~"; y = b.id || "~"; break;
       default: x = a.title.toLowerCase(); y = b.title.toLowerCase();
     }
@@ -189,6 +196,13 @@
     } catch (err) { /* file: URLs */ }
   }
 
+  function lufsCell(e) {
+    var v = lufs(e);
+    if (v == null) return "";
+    var t = v.toFixed(1);
+    return e.loudness.source === "static" ? '<em title="' + esc(e.loudness.caveat || "") + '">' + t + "</em>" : t;
+  }
+
   function row(e) {
     var found = foundCount(e);
     var sets = e.sets.slice(0, 4).map(function (s) { return s.name; }).join(", ") + (e.sets.length > 4 ? ", …" : "");
@@ -203,6 +217,7 @@
       '<td class="num">' + found + " / " + e.sets.length + "</td>" +
       '<td class="num">' + snd + "</td>" +
       '<td class="num">' + (e.names ? fmt(e.names) : dash()) + "</td>" +
+      '<td class="num">' + lufsCell(e) + "</td>" +
       '<td class="hide-sm">' + (e.id ? '<code class="id" title="' + esc(e.id) + '">' + esc(e.id.slice(0, 10)) + "</code>" : '<span class="sets" title="' + esc(T.dIdNone) + '">' + esc(T.dash) + "</span>") + "</td>" +
       "</tr>";
   }
