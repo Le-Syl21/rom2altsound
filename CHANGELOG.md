@@ -21,6 +21,39 @@
   cold boot (10 of 40, its 10 commands). Bushido's 31 of 40 are all its commands (its
   programs take `81`..`A0` only). The packs still cannot play in VPinball: neither line
   goes through PinMAME's sound command log (the docs said the Inder ones did).
+- **Stern SB-300 with speech (ST300V: Flight 2000, Free Fall, Lightning, Split Second,
+  Catacomb, Orbitor 1): the effects and the game's own speech.** These games are now
+  game-driven like the SB-300: the scripts of their interrupt's interpreter (F on Flight
+  2000, E on the others) are the sounds, and the same scripts say the words (one-byte ops
+  `80`..`BF` a word, `40`..`7F` speed and volume, after a speech frame op). Every speech op
+  tests the game's speech switch, S17 (its RAM copy, `$28` bit 0), which PinMAME's default
+  DIPs leave off: with them these games say nothing. The tool sets it for each speech script
+  only (with it on all the time, Orbitor 1's attract mode speaks without end) and clears it
+  once the script pointer leaves the script. The thread instruction `59` that asks for a
+  speech script is read too, and the speech ROM's words that no script says go out alone,
+  after the scripts' speed and volume. The old sweep `40`..`7F` sent all 64 word numbers:
+  past the end of the speech ROM's word table they said noise (the clipped words, up to
+  +2.6 dBFS); the table is now read and only its words are sent. 296 of 312 sounds on the
+  six games, every file from silence (0.2.6: Flight 2000 and Free Fall's words only).
+- **Williams World Cup and Disco Fever (System 3): every sound once.** Their sound programs
+  were read: Disco Fever has 15 numbered sounds, a priority decoder of five (the repeats
+  of the old sweep) and four more after its control line (`s67s_ctrl_w`, solenoid 5);
+  World Cup one sound on data bit 6, four routines, ten pitches after a prefix byte (`40`)
+  and one on its control line (solenoid 7). In a command for these boards, `80` is now a
+  pulse of the control line (data bit 7 never reaches them), and their Sound Dip 2 is
+  turned off after the boot: with it on (PinMAME's default) Disco Fever's numbered sounds
+  and World Cup's four routines cannot play. disco_l1 24 of 24, wldcp_l1 16 of 16, all
+  different, all from silence (0.2.6: few distinct, all alike).
+- **Tabart's L'Hexagone: its switch sounds.** Its board takes no command: its program plays
+  on the playfield switches it reads itself and on the chime lines. The tool now leaves
+  the game running, turns both sound DIPs off (no tune), and closes each switch of its
+  table, and the 10's chime line with the outhole closed: 14 of 15 sounds, from silence
+  (0.2.6: a raw sweep, mostly the same held sound). PinMAME returned the switch returns
+  as they are where the board reads them inverted, so every open switch looked closed:
+  fixed in rom2altsound's PinMAME (the fork's `bsmt2000-lle`, branch
+  `tabart-switch-returns`); with it the board is silent at boot.
+- `rom2altsound`'s game-driven layer can now set DIP switches, close playfield switches,
+  write the sound lines and set bits in the game's RAM (`gamesound::Request`).
 
 ## 0.2.6 (2026-10-10)
 

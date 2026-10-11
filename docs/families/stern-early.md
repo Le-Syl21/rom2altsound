@@ -118,38 +118,78 @@ Stern SB-300 · PinMAME interface `ST300` (`src/wpc/stsnd.c`) · ✅ (game-drive
 ## <a name="sndbrd_st300v"></a>SNDBRD_ST300V
 
 Stern SB-300 with the VS-1000 speech board · interface `ST300`, sub-type 1
-(`src/wpc/stsnd.c`) · ⚠️ · 21 sets, 6 games, 7 sound ROM ids, 1980-2024, Stern · Flight
-2000 (`flight2k`), Free Fall (`freefall`), Split Second (`splitsec`), Orbitor 1
-(`orbitor1`)
+(`src/wpc/stsnd.c`) · ✅ (game-driven) · 21 sets, 6 games, 7 sound ROM ids, 1980-2024,
+Stern · Flight 2000 (`flight2k`), Free Fall (`freefall`), Lightning (`lightnin`), Split
+Second (`splitsec`), Catacomb (`catacomb`), Orbitor 1 (`orbitor1`)
 
 - **Hardware**: the ST300's timers plus an S14001A speech chip with its ROM
-  (`MACHINE_DRIVER_START(st300v)`).
+  (`MACHINE_DRIVER_START(st300v)`, the ROM in `VSU100_ROMREGION`).
 - **Commands**: the effects as ST300. The game's speech goes through `by35.c`
   `pia1ca2_w`: `sndbrd_0_diag(1)` (`st300_switch_w`, the speech path) then
   `sndbrd_0_ctrl_w` with the word; a write `40 | word` starts word `word` (`S14001A_reg_0_w`),
   `80 | ...` sets speed and volume. `st300_man_w` takes the same path.
-- **Sound list**: `40`..`7F`, the S14001A's 64 words (`sweep`, `"ST300"` with sub-type 1,
-  `ST300V_SUBTYPE`); the generic `01`..`FF` before, whose first 40 commands (`01`..`28`)
-  never reached them. The speech plays at the chip's power-on rate (34722 Hz, "what is
-  set by all Stern machines as first clock", `s14001a_sh_start`) and the mixer's
-  default volume: the game's own speed and volume byte (`80` and up, sent through
-  `sndbrd_ctrl_w`, which the boot log does not show) is not known.
-- **Measured** (survey settings, board-support): flight2k 37 of 40, freefall 40 of 40,
-  all from silence: the speech words, 0.2 to 0.4 s each (12 and 10 of them clipped,
-  peaks at 0 dBFS; 0 of 40 before).
-- **Limits**: only the speech is extracted. The effects, most of the game's sounds, are
-  the game's own scripts as on ST300 (interpreter F, Gamatron's, read by
-  [ST300's layer](#sndbrd_st300)), but the speech sweep halts the game CPU, which plays
-  them: not done. The stop is still a board reset, which does nothing on a board without
-  a CPU (the words end by themselves).
-- **In VPinball**: **the pack does not play, in any VPinball so far**: its speech words go
-  through `sndbrd_ctrl_w`, which is not logged, and up to 10.8.1-5436 libaltsound has no
-  case for `GEN_STMPU200` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
-  Measured on `catacomb`: the game sent `01 00 06 07 04 05 02 03... (46018 in 45 s)`,
-  AltSound looked up `0100 0607 0405 0203`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
-  looks up `0001 0000 0006 0007`. The speech goes through `sndbrd_ctrl_w`, which
-  AltSound does not receive (`snd_cmd_log` is called from `sndbrd_data_w` only).
+- **The game's speech** (read with a 6800 disassembler in Flight 2000's and Free Fall's
+  programs; the other four are the same code moved). The speech is part of the sound
+  scripts of [ST300's layer](#sndbrd_st300): Flight 2000 runs interpreter F (Gamatron's),
+  the others interpreter E, and in both the one-byte ops `80`..`BF` say a word, `40`..`7F`
+  set the speech board's speed and volume, `C0`..`FF` wait. Such an op stores a speech
+  request (`$02FF` on Flight 2000, `$02F7` on the others) that the interrupt sends to the
+  board inverted in bits 6-7 (Flight 2000's `5F43`: `EORA #C0`, port A, then CA2), a word
+  only once the board has signalled it is ready (CB1, `pia0cb2_w`: low while the chip is
+  busy). A speech script opens a speech frame (F's `1A`, E's `14`: wait for the board,
+  silence the timers), sets speed and volume (`42` on Flight 2000: `82`, speed 2, volume
+  bits 0, PinMAME's loudest), says its words and closes the frame (`1B`/`15`, which puts
+  the board back to the resting `B8`). The game asks for one with the thread instruction
+  `59` (Flight 2000's `57BD`; it sets the resting voice first and skips the request while
+  the board speaks), and some effects start with a few words.
+- **The speech switch**: every speech op first tests bit 0 of `$28` (`BITA #C0; BEQ;
+  LDAB $28; LSRB; BCC`, Flight 2000's `1C92`, Free Fall's `1B4B`), the game's copy of DIP
+  switches 17-24 (bank 2) read at boot: S17 is the speech switch. PinMAME's default bank 2
+  is `18` (S20, S21): **with PinMAME's default DIPs these games say nothing**. Lightning
+  has the test NOPed out (`1871`: `01 01 01 01 01`): it always speaks.
+- **Sound list** (`src/gamesound.rs`, `st300::find_speech`): the scripts of ST300's layer,
+  with the thread instruction `59` among the sound instructions (its routine stores the
+  pointer 40 bytes after its call, one more than the ST300 reader allowed) and the speech
+  scripts taken too (a speech frame op, a speed and volume op, at least one word; a script
+  of words alone with no pitch is not taken on ST300), then the words of the speech ROM
+  that no script says, alone. The S14001A ROM starts with a table of 2-byte word starts
+  (`CWARMSB`/`CWARLSB` in `s14001a.c`), which ends where the first word starts (Flight
+  2000: 21 words, Free Fall: 39); the entries after it are bytes of the words (they said
+  noise, up to +2.6 dBFS and 27 clipped samples: the clipped words of 0.2.6). A word alone
+  goes through the speech path with the scripts' speed and volume first (`82`, `84` or
+  `86`): manual command `82`, then `40 | word`. Ids: the script's address (`0x1A27`),
+  `0x0040` + the word for a word alone.
+- **Request**: as ST300 (delay byte and script pointer), and for a script that speaks,
+  the speech switch's bit set in `$28` first (`Request::RamBits`); it is cleared once the
+  script pointer leaves the script and its subroutines (`Request::ClearAfter`, checked
+  each frame) and by the stop. With the switch on all the time, Orbitor 1's attract mode
+  speaks without end (a phrase every 2.2 s, thread code at `5E86`) under every sound; with
+  it on only for one script, every file of Orbitor 1 starts from silence. **Stop**: the
+  speech bit cleared, then ST300's.
+- **Measured** (`--max-secs 5`, every sound of the list, no loop search): flight2k 32 of
+  33 (30 files), freefall 48 of 48, lightnin 44 of 51, splitsec 68 of 73, catacomb 35 of
+  38, orbitor1 69 of 69, every file from silence. Scripts / words alone: Flight 2000 33 /
+  0 (its scripts say all 21 words), Free Fall 30 / 18, Lightning 34 / 17, Split Second 38
+  / 35, Catacomb 25 / 13, Orbitor 1 24 / 45. Before: the 64 table entries alone, the
+  effects not extracted (flight2k 37 of 40, freefall 40 of 40 in the survey).
+- **Limits**: the scripts that give nothing or a blip need what the game sets during play
+  (Flight 2000's `1AC3`, `1B97`, `1C19`: native code and pitch scaling; Lightning's
+  `5B21`, Split Second's `5BF3`); the 14 silent words of Lightning (6), Split Second (5)
+  and Catacomb (3) are the last entries of their tables, which say nothing. The words come at the level the game asks (volume bits 0, the loudest): up to
+  +0.4 dBTP, 19 clipped samples at most, in 5 to 14 files a game (reported, not
+  corrected). The speed and volume byte reaches the chip in the standalone PinMAME only:
+  `st300_ctrl_w` sets `mixer_set_volume(9, ...)`, channel 9 being the S14001A when the 6
+  mechanical sample channels exist (`ENABLE_MECHANICAL_SAMPLES`, off in VPinMAME and
+  libpinmame, where the S14001A is channel 3): the games' speech volume is always the
+  loudest here, as the scripts ask anyway.
+- **In VPinball**: **the pack cannot play**: no command reaches AltSound for the effects
+  (as ST300) and the speech goes through `sndbrd_ctrl_w`, which is not logged; up to
+  10.8.1-5436 libaltsound has no case for `GEN_STMPU200` and joins the bytes two by two
+  ([In VPinball](common.md#in-vpinball)). Measured on `catacomb`: the game sent `01 00 06
+  07 04 05 02 03... (46018 in 45 s)`, AltSound looked up `0100 0607 0405 0203`; with one
+  byte per command ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20),
+  in VPinball master from 3abe805) it looks up `0001 0000 0006 0007`: timer register
+  numbers. The pack's ids are script addresses and words.
 
 ## <a name="sndbrd_astro"></a>SNDBRD_ASTRO
 

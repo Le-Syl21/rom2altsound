@@ -1019,6 +1019,16 @@ const unsigned char *shim_cpu_region(int cpu, unsigned *len) {
   return memory_region(REGION_CPU1 + cpu);
 }
 
+// The region numbered as the k-th CPU's (REGION_CPU1 + k), whether a CPU runs from it or
+// not: the ST300V's speech ROM is loaded in REGION_CPU2 (stsnd.h `VSU100_ROMREGION`) on a
+// machine with one CPU. NULL when the machine has no such region.
+const unsigned char *shim_region_after_cpu1(int k, unsigned *len) {
+  if (k < 0 || k >= MAX_CPU)
+    return NULL;
+  *len = memory_region_length(REGION_CPU1 + k);
+  return memory_region(REGION_CPU1 + k);
+}
+
 // ---------------------------------------------------------------------------------------
 // Game-driven sound (Stern SB-300, Atari, Astro, Romstar): boards with no sound command,
 // whose sounds the game CPU makes itself by writing the sound registers over time. The

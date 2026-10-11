@@ -32,10 +32,10 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_S11BS+SNDBRD_S11JS`](williams-system11.md#sndbrd_s11bs_s11js) | ✅ | 3 | 1 | Jokerz |
 | [`SNDBRD_S11S`](williams-system11.md#sndbrd_s11s) | ✅ | 6 | 5 | Alley Cats; Gold Mine; Top Dawg |
 | [`SNDBRD_S67S`](williams-system3-7.md#sndbrd_s67s) | ✅ | 105 | 38 | Black Knight; Firepower; Alien Poker |
-| [`SNDBRD_S3DFS`](williams-system3-7.md#sndbrd_s3dfs) | ⚠️ | 1 | 1 | Disco Fever |
+| [`SNDBRD_S3DFS`](williams-system3-7.md#sndbrd_s3dfs) | ✅ | 1 | 1 | Disco Fever |
 | [`SNDBRD_S3S`](williams-system3-7.md#sndbrd_s3s) | ✅ | 3 | 3 | Phoenix; Contact; Pokerino |
 | [`SNDBRD_S7S_ND`](williams-system3-7.md#sndbrd_s7s_nd) | ✅ | 3 | 1 | Thunderball |
-| [`SNDBRD_S3WCS`](williams-system3-7.md#sndbrd_s3wcs) | ⚠️ | 1 | 1 | World Cup |
+| [`SNDBRD_S3WCS`](williams-system3-7.md#sndbrd_s3wcs) | ✅ | 1 | 1 | World Cup |
 | [`SNDBRD_DE2S`](data-east-sega-stern.md#sndbrd_de2s) | ✅ | 307 | 48 | Jurassic Park; Playboy; Batman Forever |
 | [`SNDBRD_DE3S`](data-east-sega-stern.md#sndbrd_de3s) | ✅ | 156 | 7 | Lord of the Rings, The; Grand Prix; Ripley's Believe It or Not! |
 | [`SNDBRD_DE1S`](data-east-sega-stern.md#sndbrd_de1s) | ✅ | 38 | 15 | Time Machine; Teenage Mutant Ninja Turtles; Back to the Future |
@@ -59,7 +59,7 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_ST100B`](stern-early.md#sndbrd_st100b) | ✅ | 16 | 7 | Trident; Magic; Cosmic Princess |
 | [`SNDBRD_ST100`](stern-early.md#sndbrd_st100) | ✅ | 10 | 4 | Dracula; Wild Fyre; Lectronamo |
 | [`SNDBRD_ST300`](stern-early.md#sndbrd_st300) | ✅ | 76 | 17 | Meteor; Dragonfist; Seawitch |
-| [`SNDBRD_ST300V`](stern-early.md#sndbrd_st300v) | ⚠️ | 21 | 6 | Flight 2000; Lightning; Orbitor 1 |
+| [`SNDBRD_ST300V`](stern-early.md#sndbrd_st300v) | ✅ | 21 | 6 | Flight 2000; Lightning; Orbitor 1 |
 | [`SNDBRD_ASTRO`](stern-early.md#sndbrd_astro) | ✅ | 2 | 1 | S.A.M. III Board Tester |
 | [`SNDBRD_GTS80B`](gottlieb.md#sndbrd_gts80b) | ✅ | 148 | 32 | Bad Girls; Monte Carlo; Spring Break |
 | [`SNDBRD_GTS3`](gottlieb.md#sndbrd_gts3) | ✅ | 51 | 23 | Cue Ball Wizard; Super Mario Bros.; Stargate |
@@ -104,7 +104,7 @@ the most sets in PinMAME (the survey's test ROM first).
 | [`SNDBRD_TECHNO`](other-makers.md#sndbrd_techno) | ✅ | 1 | 1 | Scramble |
 | [`SNDBRD_JVH`](other-makers.md#sndbrd_jvh) | ✅ | 3 | 3 | Ice Mania; Escape; Movie Masters |
 | [`SNDBRD_ROWAMET`](other-makers.md#sndbrd_rowamet) | ✅ | 1 | 1 | Heavy Metal |
-| [`SNDBRD_TABART`](other-makers.md#sndbrd_tabart) | ⚠️ | 1 | 1 | L'Hexagone |
+| [`SNDBRD_TABART`](other-makers.md#sndbrd_tabart) | ✅ | 1 | 1 | L'Hexagone |
 | [`SNDBRD_TABART2`](other-makers.md#sndbrd_tabart2) | ✅ | 1 | 1 | Sahara Love |
 | [`SNDBRD_TABART3`](other-makers.md#sndbrd_tabart3) | ✅ | 1 | 1 | Grand 8, Le |
 | [`SNDBRD_SPINB`](other-makers.md#sndbrd_spinb) | ✅ | 27 | 16 | Bushido; Brave Team; Canasta '86' |

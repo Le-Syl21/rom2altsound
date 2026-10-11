@@ -53,11 +53,14 @@ between two idle bytes, as the games send it.
   0-4 and 6 on World Cup and Disco Fever) goes out as `FF`, the byte, `FF`, one send every
   4 frames: CB1 makes its edge on the command and drops on the idle byte that follows. An
   idle byte is sent as is, so Firepower's sounds.dat commands (`00 1F`) become
-  `FF 00 FF 1F`.
+  `FF 00 FF 1F`. On World Cup and Disco Fever, `80` in a command is the control line
+  instead (`S3_CTRL`): `s67s_ctrl_w` with `00`, then `FF` (the line on, then off: the game
+  writes its solenoids 1-8 there inverted, `s4_sol1_8_w`), the data lines idle; data bit 7
+  never reaches these boards, so `80` repeats no command.
 - **Sound list** (`sweep`, `"WMSS67"`): only the bits the board reads, each value once:
   `00`..`1E` on sub-type 0 (31 commands; bits 5-7 are the board's DIP switches) and on
-  `S3S`; `00`..`7E` on `S7S_ND`; `00`..`1F` and `40`..`5E` on World Cup and Disco Fever
-  (data bit 6 reaches the program there). The ids are the bytes swept: the game's own
+  `S3S`; `00`..`7E` on `S7S_ND`; on World Cup and Disco Fever, each sound their program
+  can play, once (below: 16 and 24). The ids are the bytes swept: the game's own
   bytes carry other solenoid lines in bits 5-7 (bk_l4 sends `2C` for command `0C`), so a
   pack's ids are the command bits, not what VPinball's AltSound receives.
 - **Stop, boot and resets**: no stop known: **the stop is a board reset** after every
@@ -81,9 +84,14 @@ the idle bits is low, and, when data bit 4 (bit 7 of the byte it reads) is low, 
 a flag and waits for the next command. With bit 4 high and no flag, the low nibble,
 inverted, minus one, selects one of 15 numbered sounds (`7E4B`): the commands `10`..`1E`.
 After the flag, the next command plays the sound of the lowest low bit (a priority
-decoder, table at `7FE7`): a two-byte sequence the sweep does not send. World Cup and
-Disco Fever have other programs, not read; their extra bit from the control byte
-(`s67s_ctrl_w`, which `sndbrd_manCmd` never calls) is not set either.
+decoder, table at `7FE7`): a two-byte sequence the sweep does not send. World Cup's and
+Disco Fever's programs are read below (their sections); both use the bit their board
+takes from the control port (`s67s_ctrl_w`, which `sndbrd_manCmd` never calls), and both
+read bit 6, the board's Sound Dip 2 (s4.h, DIP bank 0 `02`, on in PinMAME by default:
+bit 6 low), to choose between two paths. **The tool turns Sound Dip 2 off on these two
+boards** (`PinmameSetDIP`, after the boot): with it on, one path is never taken (World
+Cup's four direct routines, Disco Fever's 15 numbered sounds); with it off, both are. The
+packs hold the sounds the board can play under either setting.
 
 ## <a name="sndbrd_s67s"></a>SNDBRD_S67S
 
@@ -132,42 +140,74 @@ Williams System 3 sound board · interface `WMSS67` (sub-type 2) · ✅ · 3 set
 
 ## <a name="sndbrd_s3dfs"></a>SNDBRD_S3DFS
 
-Disco Fever's System 3 sound board · interface `WMSS67` (sub-type 16|4|2) · ⚠️ · 1 set,
+Disco Fever's System 3 sound board · interface `WMSS67` (sub-type 16|4|2) · ✅ · 1 set,
 1978, Williams · Disco Fever (`disco_l1`)
 
-- As above; bit 4 of the byte the program reads is data bit 6, bit 7 is bit 4 of the last
-  control byte (`s67s_ctrl_w`, solenoids 1-8 through `s4_sol1_8_w`), which a manual
-  command cannot set. PinMAME also defines a prototype variant, `SNDBRD_S3DFPS`
-  (sub-type 4|2, without the control bit; `sndbrd.h`), which is not a family of the
-  survey.
-- **Measured**: disco_l1 40 of 40, all from silence, but few distinct: the files repeat
-  with the lowest low bit of the command (`00`, `02`, `04`... 0.13 s; `01`, `05`, `09`...
-  0.35 s; `0F` and `1F` 2.6 s), as a priority decoder would (1 of 40 before).
-- **Limits**: the control bit (above); the program is not read.
-- **In VPinball**: **the pack does not play as written, in any VPinball so far**: `s4.c` logs the inverted solenoid byte, whose bits 5 and 7 follow other lines: it matches the pack's ids only while they are clear; and up to 10.8.1-5436 libaltsound has no case for
-  `GEN_S3` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)). Measured
-  on `disco_l1`: the game sent `5F 5F 7F 5F 7F`, AltSound looked up `5F5F 7F5F 7F5F`; with
-  one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
-  looks up `005F 005F 007F`.
+- As above; bits 0-3 of the byte the program reads are the low data nibble, bit 4 is data
+  bit 6, bit 6 the board's Sound Dip 2, bit 7 bit 4 of the last control byte
+  (`s67s_ctrl_w`: solenoid 5, through `s4_sol1_8_w`). PinMAME also defines a prototype
+  variant, `SNDBRD_S3DFPS` (sub-type 4|2, without the control bit; `sndbrd.h`), which is
+  not a family of the survey.
+- **The program** (`483_s0_disco_fever.716`, interrupt handler `7F45`, read with a 6800
+  disassembler): it inverts the byte and ignores the idle one; the control line alone
+  (bit 7 low) sets a flag (`$09` = 5) and waits. Without the flag, data bit 6 high (and
+  Sound Dip 2 off) plays one of 15 numbered sounds, the inverted nibble minus one (`7E6A`
+  with the pair of the table at `7FD0`): `40`..`4E`. Otherwise a priority decoder: the
+  lowest low bit of the inverted byte (bits 0-4) picks a routine of the table at `7FE0`,
+  the flag adding 5: `0E`, `0D`, `0B`, `07` and `0F` (data bit 6 low), then, after the
+  control line, `80 0E`, `80 0D`, `80 0B`, `80 07` (the flag and `0F` would take entry 9,
+  the word `0000`: not sent). The other commands of `00`..`0F` repeat these.
+- **Sound list** (`s3dfs_sounds`): those 24, each once; `80` is the control line pulse
+  (above), the ids are the bytes sent (`0x800E`).
+- **Measured** (survey settings): disco_l1 24 of 24, all from silence, all different (15
+  numbered sounds of 0.9 to 3.3 s, 5 priority sounds of 0.2 to 2.7 s, 4 after the control
+  line of 2.0 to 4.8 s). Before: 40 of 40 but few distinct (the sweep `00`..`27` repeats
+  the priority decoder: `00`, `02`, `04`... alike), 1 of 40 before the idle framing.
+- **Limits**: no stop (a board reset after each sound). The numbered sounds need Sound
+  Dip 2 off, the tool's setting (PinMAME's default has it on).
+- **In VPinball**: **the pack does not play as written, in any VPinball so far**: `s4.c`
+  logs the inverted solenoid byte, whose bits 5 and 7 follow other lines (it matches the
+  pack's ids only while they are clear), the control line is not logged at all
+  (`sndbrd_ctrl_w`), and up to 10.8.1-5436 libaltsound has no case for `GEN_S3` and joins
+  the bytes two by two ([In VPinball](common.md#in-vpinball)). Measured on `disco_l1`: the
+  game sent `5F 5F 7F 5F 7F`, AltSound looked up `5F5F 7F5F 7F5F`; with one byte per
+  command ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in
+  VPinball master from 3abe805) it looks up `005F 005F 007F`.
 
 ## <a name="sndbrd_s3wcs"></a>SNDBRD_S3WCS
 
-World Cup's System 3 sound board · interface `WMSS67` (sub-type 8|4|2) · ⚠️ · 1 set,
+World Cup's System 3 sound board · interface `WMSS67` (sub-type 8|4|2) · ✅ · 1 set,
 1978, Williams · World Cup (`wldcp_l1`)
 
-- As above; bit 5 of the byte the program reads comes from bit 6 of the last control
-  byte (`s67s_ctrl_w`), which a manual command cannot set.
-- **Measured**: wldcp_l1 16 of 40, all from silence, but all 16 alike (`10`..`1F`, 2.6 s,
-  the same level): one sound (0 of 40 before).
-- **Limits**: the control bit (bit 5 of the byte the program reads, from `s67s_ctrl_w`),
-  which the tool never sets; the program is not read.
-- **In VPinball**: **the pack does not play as written, in any VPinball so far**: `s4.c` logs the inverted solenoid byte, whose bits 5 and 7 follow other lines: it matches the pack's ids only while they are clear; and up to 10.8.1-5436 libaltsound has no case for
-  `GEN_S3` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)). Measured
-  on `wldcp_l1`: the game sent `5F 5F 7F 5F 7F`, AltSound looked up `5F5F 7F5F 7F5F`; with
-  one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
-  looks up `005F 005F 007F`.
+- As above; bits 0-3 of the byte the program reads are the low data nibble, bit 4 data
+  bit 6, bit 5 bit 6 of the last control byte (`s67s_ctrl_w`: solenoid 7), bit 6 the
+  board's Sound Dip 2, bit 7 data bit 4.
+- **The program** (`481_s0_world_cup.716`, interrupt handler `7F15`): with bit 7 low (data
+  bit 4 low) it only stores the byte as a prefix flag (`$0B`; a second one clears it, the
+  board reset too). Otherwise, inverted: data bit 6 low plays one sound (`7EF5`, whatever
+  the nibble); the control line plays another (`7EA0` with `B9`); else the inverted
+  nibble minus one picks, after a prefix (or with Sound Dip 2 on), a pitch in the table at
+  `7FDA` for the sound at `7EA0` (15 entries, ten different), without one a routine of the
+  table at `7FB1`, of which only the first eight are code (four different: `7E89` five
+  times, `7E7B`, `7E76`, `7E9B`; the other seven words jump into nothing: nibbles `6`..`0`
+  without a prefix are not sent).
+- **Sound list** (`s3wcs_sounds`): `10`; `5E 5D 5B 57` (the four routines); the prefix
+  `40`, then `5E 5D 5C 5B 57 56 55 54 53 50` (the ten pitches; ids `0x405E`...); `80`
+  (the control line): 16 sounds.
+- **Measured** (survey settings): wldcp_l1 16 of 16, all from silence, all different (0.1
+  to 3.5 s). Before: 16 of 40, all alike (`10`..`1F`: the data bit 6 sound, 2.6 s; the
+  sweep stopped at `27` and never reached `50`..`5E`); 0 of 40 before the idle framing.
+- **Limits**: no stop (a board reset after each sound). The four direct routines need
+  Sound Dip 2 off, the tool's setting (with it on, `5E` plays as `40 5E`).
+- **In VPinball**: **the pack does not play as written, in any VPinball so far**: `s4.c`
+  logs the inverted solenoid byte, whose bits 5 and 7 follow other lines (it matches the
+  pack's ids only while they are clear), the prefix and the command come as two commands,
+  the control line is not logged (`sndbrd_ctrl_w`), and up to 10.8.1-5436 libaltsound has
+  no case for `GEN_S3` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
+  Measured on `wldcp_l1`: the game sent `5F 5F 7F 5F 7F`, AltSound looked up `5F5F 7F5F
+  7F5F`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball
+  master from 3abe805) it looks up `005F 005F 007F`.
 
 ## <a name="sndbrd_s7s_nd"></a>SNDBRD_S7S_ND
 

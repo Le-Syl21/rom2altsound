@@ -12,6 +12,11 @@
 //! that silence it the way the game stops its sounds. The extraction then leaves the game
 //! running (it idles in its attract mode) and records each one.
 //!
+//! Two more are driven the same way: the SB-300 with its speech board (`ST300V`), whose
+//! scripts also say its words, and Tabart's L'Hexagone (`TABART`, sub-type 0), whose sound
+//! CPU takes no command but plays on the playfield switches it reads itself: its layer is
+//! read in the sound program, and a sound is a switch closed.
+//!
 //! The ids are the game's own internal sound ids (a script address, a sound number), not
 //! sound commands: no command reaches AltSound on these machines, so the packs cannot play
 //! in VPinball. They are a recording of the game's sounds, for measurement and archive.
@@ -52,7 +57,37 @@ pub enum Request {
     Pokes(Vec<Poke>),
     /// The game's own routine, called.
     Call(Call),
+    /// A playfield switch (PinMAME's switch number) closed, then opened, with the game
+    /// running: the sound board reads the switch matrix itself (Tabart's L'Hexagone).
+    Switch(u16),
+    /// Bytes through the sound board's manual command (`sndbrd_manCmd`, board 0), one per
+    /// send: the ST300V's speech words, which have their own path from the game.
+    Board(Vec<u8>),
+    /// The sound board's reset (its CPU's reset line, `shim_reset_audio_cpus`): the stop
+    /// of a board whose program has none.
+    Reset,
+    /// The sound lines as the game writes them (`sndbrd_data_w`, board 0).
+    Lines(u8),
+    /// A playfield switch closed (`true`) or opened, and left so.
+    SwitchState(u16, bool),
+    /// These, one after the other.
+    Seq(Vec<Request>),
+    /// The bits `mask` of the game's RAM byte `addr` set (`on`) or cleared, the other bits
+    /// kept (the game's own copy of a DIP switch).
+    RamBits { addr: u32, mask: u8, on: bool },
+    /// Waits, frame by frame, while the 16-bit script pointer at `ptr` is on one of the
+    /// address ranges `ops` (a script and its subroutines), then clears the bits `mask` of
+    /// `addr`: the ST300V's speech switch, on for one speech script only.
+    ClearAfter {
+        ptr: u32,
+        ops: [(u16, u16); MAX_RANGES],
+        addr: u32,
+        mask: u8,
+    },
 }
+
+/// The most address ranges a `Request::ClearAfter` watches.
+pub const MAX_RANGES: usize = 6;
 
 /// A sound of the game: its id and how the game asks for it.
 #[derive(Clone, Debug)]
@@ -76,30 +111,57 @@ pub struct Layer {
     pub sounds: Vec<GameSound>,
     /// Silences what is playing, as the game does.
     pub stop: Request,
+    /// DIP switches set once before the first sound (`PinmameSetDIP`): the bits `mask` of
+    /// bank `bank` set to `value`: the mode the board's program reads (L'Hexagone's sound
+    /// DIPs), or the game's own switch for its speech (the ST300V games' S17).
+    pub dips: Vec<Dip>,
+    /// Sent once before the first sound, after `dips`.
+    pub setup: Vec<Request>,
+}
+
+/// A DIP switch setting: in bank `bank`, the bits `mask` set to `value`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Dip {
+    pub bank: i32,
+    pub mask: i32,
+    pub value: i32,
 }
 
 /// The families handled here, by PinMAME's board type string and sub-type: every one
-/// whose sound the game CPU makes itself, with no command (the ST300V's speech is a
-/// command, swept as such; its effects are not done here).
+/// whose sound the game CPU makes itself, with no command (the ST300V's effects are the
+/// ST300's, and its speech is said by the same scripts), and Tabart's L'Hexagone, whose
+/// board plays on the playfield switches it reads itself.
 pub fn game_driven(typestr: &str, subtype: i32) -> bool {
     match typestr {
-        "ST300" => subtype == 0,
+        "ST300" => subtype == 0 || subtype == ST300V_SUBTYPE,
         "ASTRO" | "ATARI1" | "ATARI2" => true,
         "TMS320AV120" => subtype == 1,
+        "TABART" => subtype == 0,
         _ => false,
     }
 }
 
+/// `SNDBRD_ST300V` is `SNDBRD_TYPE(31, 1)`: the ST300 interface with the speech board.
+pub const ST300V_SUBTYPE: i32 = 1;
+
+/// Whether the layer is read in the sound CPU's program rather than the game CPU's.
+pub fn in_sound_program(typestr: &str) -> bool {
+    typestr == "TABART"
+}
+
 /// Reads the sound layer of the running game, from its program image (the game CPU's
-/// memory region, as the driver loaded it).
-pub fn find(typestr: &str, image: &[u8]) -> Result<Layer, String> {
+/// memory region, as the driver loaded it; the sound CPU's when `in_sound_program`).
+/// `speech` is the ST300V's speech ROM (empty elsewhere).
+pub fn find(typestr: &str, subtype: i32, image: &[u8], speech: &[u8]) -> Result<Layer, String> {
     match typestr {
+        "ST300" if subtype == ST300V_SUBTYPE => st300::find_speech(image, speech),
         "ST300" | "ASTRO" => st300::find(image),
         "ATARI1" => atari::gen1(image),
         "ATARI2" => atari::gen2(image),
         "TMS320AV120" => romstar::find(image),
         "INDER0" => inder::sn76489(image),
         "INDER1" => inder::ay8910(image),
+        "TABART" => tabart::find(image),
         _ => Err(format!("no reader for the {typestr} game's sound layer")),
     }
 }
@@ -170,6 +232,12 @@ mod st300 {
         End,
         /// Silences the board and ends the script.
         Silence,
+        /// Says a word (`80`..`BF` on interpreters E and F: the game's speech request, which
+        /// its interrupt sends to the ST300V's speech board, `40 | word`); one byte.
+        Word,
+        /// Sets the speech board's speed and volume (`40`..`7F` on E and F, sent as `80 |
+        /// ...`); one byte.
+        Voice,
     }
 
     /// One interpreter: how its entry looks, and its opcodes.
@@ -252,8 +320,17 @@ mod st300 {
             0x16 => Op::Call,
             0x17 => Op::Ret,
             0x20..=0x27 => reg(op | 0x80),
-            0x40..=0xFF => Op::Step(1),
+            0x40..=0xFF => speech(op),
             _ => Op::Bad,
+        }
+    }
+    /// The one-byte ops `40`..`FF` of E and F: the speech requests (handled the same way on
+    /// the games without the speech board, where they say nothing) and the delays `C0` up.
+    fn speech(op: u8) -> Op {
+        match op {
+            0x40..=0x7F => Op::Voice,
+            0x80..=0xBF => Op::Word,
+            _ => Op::Step(1),
         }
     }
     /// Cheetah, Star Gazer, Quicksilver: `00` silences, `01`..`07` the control bits, then
@@ -299,7 +376,7 @@ mod st300 {
             0x1E => Op::Call,
             0x1F => Op::Ret,
             0x20..=0x27 => reg(op | 0x80),
-            0x40..=0xFF => Op::Step(1),
+            0x40..=0xFF => speech(op),
             _ => Op::Bad,
         }
     }
@@ -411,6 +488,10 @@ mod st300 {
     struct Script {
         path: Vec<usize>,
         pitch: bool,
+        /// The words it says (speech requests along the path read).
+        words: Vec<u8>,
+        /// The script subroutines it calls.
+        calls: Vec<usize>,
         silence_at: Option<usize>,
     }
 
@@ -421,6 +502,8 @@ mod st300 {
         let mut s = Script {
             path: Vec::new(),
             pitch: false,
+            words: Vec::new(),
+            calls: Vec::new(),
             silence_at: None,
         };
         let mut a = start;
@@ -439,6 +522,11 @@ mod st300 {
                     usize::from(n)
                 }
                 Op::Setup(n) | Op::Counter(n) | Op::Step(n) => usize::from(n),
+                Op::Word => {
+                    s.words.push(m[a] & 0x3F);
+                    1
+                }
+                Op::Voice => 1,
                 Op::End | Op::Ret => return Some(s),
                 Op::Silence => {
                     s.silence_at = Some(a);
@@ -454,8 +542,12 @@ mod st300 {
                     continue;
                 }
                 Op::Loop | Op::Call => {
-                    if !rom(usize::from(be16(m, a + 1))) {
+                    let t = usize::from(be16(m, a + 1));
+                    if !rom(t) {
                         return None;
+                    }
+                    if ops(m[a]) == Op::Call {
+                        s.calls.push(t);
                     }
                     3
                 }
@@ -463,6 +555,32 @@ mod st300 {
             a += len;
         }
         None
+    }
+
+    /// The address ranges a script's ops lie in, its subroutines' included (one level):
+    /// consecutive ops (at most 5 bytes apart) make one range. `None` when there are more
+    /// than `MAX_RANGES`.
+    fn op_ranges(m: &[u8], ops: fn(u8) -> Op, s: &Script) -> Option<[(u16, u16); MAX_RANGES]> {
+        let mut at: Vec<usize> = s.path.clone();
+        for &c in &s.calls {
+            if let Some(sub) = read(m, ops, c) {
+                at.extend(sub.path);
+            }
+        }
+        at.sort_unstable();
+        let mut ranges: Vec<(u16, u16)> = Vec::new();
+        for a in at {
+            match ranges.last_mut() {
+                Some(r) if a <= usize::from(r.1) + 5 => r.1 = a as u16,
+                _ => ranges.push((a as u16, a as u16)),
+            }
+        }
+        if ranges.len() > MAX_RANGES {
+            return None;
+        }
+        let mut out = [(0, 0); MAX_RANGES];
+        out[..ranges.len()].copy_from_slice(&ranges);
+        Some(out)
     }
 
     /// `STX ptr` (direct or extended) at `a`.
@@ -494,8 +612,11 @@ mod st300 {
     /// The thread engine's dispatch table (one word per thread opcode) and its sound
     /// opcodes: those whose routine, after at most two `BRA`, calls the routine that reads
     /// the word after the thread instruction (`JSR`) and stores the script pointer within
-    /// 40 bytes. Opcodes 57 and 58 are sounds on every program of the family.
-    fn sound_ops(m: &[u8], ptr: u8) -> Option<(usize, Vec<u8>)> {
+    /// 40 bytes (`reach`; 41 on the ST300V games, whose speech opcode 59 stores it 40 bytes
+    /// after its call: Flight 2000's `57BD`, the routine that says a speech script after
+    /// setting the speech board's resting speed and volume). Opcodes 57 and 58 are sounds
+    /// on every program of the family.
+    fn sound_ops(m: &[u8], ptr: u8, reach: usize) -> Option<(usize, Vec<u8>)> {
         // A routine that calls the word reader and stores the pointer, reached from `a`.
         let stores_after = |mut a: usize| {
             for _ in 0..2 {
@@ -505,7 +626,7 @@ mod st300 {
             }
             (a..a + 12)
                 .find(|&k| m[k] == 0xBD)
-                .is_some_and(|j| (j + 3..j + 40).any(|k| stores_ptr(m, k, ptr)))
+                .is_some_and(|j| (j + 3..j + reach).any(|k| stores_ptr(m, k, ptr)))
         };
         // The table is at 1000 or 5000 on Stern's own programs; a MOD that moved it (Nine
         // Ball's ball-handling MODs) still points its entry 58 at such a routine.
@@ -530,6 +651,40 @@ mod st300 {
     }
 
     pub fn find(m: &[u8]) -> Result<Layer, String> {
+        find_with(m, None)
+    }
+
+    /// The ST300V games (Flight 2000, Free Fall, Lightning, Split Second, Catacomb, Orbitor
+    /// 1): the same interpreters (F, E), whose one-byte ops `80`..`BF` say a word and
+    /// `40`..`7F` set the speech board's speed and volume: the game's speech request
+    /// (`$02FF` on Flight 2000, `$02F7` on Free Fall), which its interrupt sends to the
+    /// board inverted in bits 6-7 (Flight 2000's `5F43`: `EORA #C0`, port A, then CA2:
+    /// by35.c `pia1ca2_w`, `sndbrd_0_ctrl_w`), when the speech enable bit (`$28` bit 0, set
+    /// at boot) is on. A script that says a word is a sound, pitch or not. `words` is the
+    /// speech ROM (`VSU100_ROMREGION`): the words no script says are sent alone.
+    pub fn find_speech(m: &[u8], words: &[u8]) -> Result<Layer, String> {
+        find_with(m, Some(words))
+    }
+
+    /// The words of an S14001A speech ROM: word `w`'s start (`CWAR`, 12 bits) is the two
+    /// bytes at `2w` (s14001a.c `CWARMSB`, `CWARLSB`); the table ends where the first word
+    /// starts, and the entries after it are bytes of the words. Words whose start is the
+    /// same are one word: the first of each.
+    pub fn speech_words(rom: &[u8]) -> Vec<u8> {
+        let start = |w: usize| (usize::from(rom[2 * w]) << 4) | usize::from(rom[2 * w + 1] >> 4);
+        if rom.len() < 128 {
+            return Vec::new();
+        }
+        let n = (start(0) / 2).min(64);
+        let mut seen = std::collections::BTreeSet::new();
+        (0..n)
+            .filter(|&w| start(w) >= 2 * n && start(w) < rom.len() && seen.insert(start(w)))
+            .map(|w| w as u8)
+            .collect()
+    }
+
+    fn find_with(m: &[u8], speech_rom: Option<&[u8]>) -> Result<Layer, String> {
+        let speech = speech_rom.is_some();
         if m.len() < 0x10000 {
             return Err("program image smaller than the MPU-200 map".into());
         }
@@ -570,7 +725,8 @@ mod st300 {
             ));
         };
         // No thread engine on the board tester: its sounds are direct loads.
-        let (base, thread_ops) = sound_ops(m, ptr).unwrap_or_default();
+        let (base, thread_ops) =
+            sound_ops(m, ptr, if speech { 41 } else { 40 }).unwrap_or_default();
         // Every place the program refers to a script from: thread instructions, direct
         // loads, tables.
         let mut refs: BTreeMap<usize, Vec<String>> = BTreeMap::new();
@@ -627,11 +783,42 @@ mod st300 {
         // the address is not inside another script, with a loop counter. Anything else is a
         // coincidence of bytes (a delay, an end), the inside of another script, or a script
         // that only changes the state of what plays (the self-test's `C0` levels).
-        let scripts: BTreeMap<usize, Script> = refs
+        let v_ops = v.ops;
+        let mut scripts: BTreeMap<usize, Script> = refs
             .keys()
             .filter_map(|&w| read(m, v.ops, w).map(|s| (w, s)))
             .collect();
+        // The words of the subroutines a speech script calls (Orbitor 1's `5931` calls
+        // `5928`, which says three of its five words).
+        if speech {
+            for s in scripts.values_mut() {
+                for &c in &s.calls {
+                    if let Some(sub) = read(m, v.ops, c) {
+                        s.words.extend(sub.words);
+                    }
+                }
+            }
+        }
         let inside = |w: usize| scripts.iter().any(|(&o, s)| o != w && s.path.contains(&w));
+        // The speech gate: every speech op of the interpreter first tests bit 0 of a RAM
+        // byte (`BITA #C0; BEQ; LDAB gate; LSRB; BCC`; Flight 2000's `1C92`, Free Fall's
+        // `1B4B`: `$28`), the game's copy of DIP switches 17-24 (bank 2), read at boot:
+        // S17 is the speech switch, off in PinMAME's default (`$28` = 18: S20 and S21), and
+        // with it off the game says nothing. It is set for the sounds that speak, and
+        // cleared by the stop: with it on all the time, Orbitor 1's attract mode speaks
+        // without end (a phrase every 2.2 s, under every other sound). Lightning has no
+        // gate (the test is NOPed out: it always speaks).
+        let speech_gate = speech
+            .then(|| find_pat(m, &pat("85 C0 27 ?? D6 ?? 54 24"), at, at + 0x100))
+            .flatten()
+            .map(|k| u32::from(m[k + 5]));
+        let gate = |on: bool| {
+            speech_gate.map(|addr| Request::RamBits {
+                addr,
+                mask: 0x01,
+                on,
+            })
+        };
         let mut silence_at = None;
         let mut sounds = Vec::new();
         let mut rejected = 0;
@@ -641,27 +828,50 @@ mod st300 {
                 Op::Counter(_) => !inside(w),
                 _ => false,
             };
+            // A speech script opens the game's speech frame (a one-byte op: F's `1A`, E's
+            // `14`, which wait for the board and silence the timers), sets the speech
+            // board's speed and volume, then says its words (Flight 2000's `1A27`: `1A 42
+            // 80 1B`, then an effect). Self-tests and bytes that only look like words (a
+            // word op first, a set-up op before them) are left out.
+            let speaks =
+                speech && matches!((v.ops)(m[w]), Op::Step(1)) && (v.ops)(m[w + 1]) == Op::Voice;
             match scripts.get(&w) {
-                Some(s) if starts && s.pitch => {
+                Some(s) if (starts && s.pitch) || (speaks && !s.words.is_empty()) => {
                     silence_at = silence_at.or(s.silence_at);
                     let [hi, lo] = (w as u16).to_be_bytes();
+                    let request = Request::Pokes(vec![
+                        Poke {
+                            addr: u32::from(delay),
+                            val: 0,
+                        },
+                        Poke {
+                            addr: u32::from(ptr),
+                            val: hi,
+                        },
+                        Poke {
+                            addr: u32::from(ptr) + 1,
+                            val: lo,
+                        },
+                    ]);
+                    let start = match (gate(true), speech_gate) {
+                        (Some(on), Some(addr)) if !s.words.is_empty() => {
+                            let mut v = vec![on, request];
+                            if let Some(ops) = op_ranges(m, v_ops, s) {
+                                v.push(Request::ClearAfter {
+                                    ptr: u32::from(ptr),
+                                    ops,
+                                    addr,
+                                    mask: 0x01,
+                                });
+                            }
+                            Request::Seq(v)
+                        }
+                        _ => request,
+                    };
                     sounds.push(GameSound {
                         id: w as u32,
                         refs: why.join(", "),
-                        start: Request::Pokes(vec![
-                            Poke {
-                                addr: u32::from(delay),
-                                val: 0,
-                            },
-                            Poke {
-                                addr: u32::from(ptr),
-                                val: hi,
-                            },
-                            Poke {
-                                addr: u32::from(ptr) + 1,
-                                val: lo,
-                            },
-                        ]),
+                        start,
                     });
                 }
                 _ => rejected += 1,
@@ -672,6 +882,57 @@ mod st300 {
                 "sound interpreter at {at:04X}: no script found among {} references",
                 refs.len()
             ));
+        }
+        let scripted = sounds.len();
+        let mut speech_note = String::new();
+        if speech {
+            // The words no script says, through the speech path the game's interrupt takes
+            // (the manual command is it: stsnd.c `st300_man_w`), after the speed and volume
+            // the game's scripts set (the most frequent `40`..`7F` op, sent as `op ^ C0`).
+            let said: std::collections::BTreeSet<u8> = sounds
+                .iter()
+                .filter_map(|g| scripts.get(&(g.id as usize)))
+                .flat_map(|s| s.words.iter().copied())
+                .collect();
+            let mut voices: BTreeMap<u8, usize> = BTreeMap::new();
+            for g in &sounds {
+                for &a in scripts
+                    .get(&(g.id as usize))
+                    .map_or(&[][..], |s| &s.path[..])
+                {
+                    if (v.ops)(m[a]) == Op::Voice {
+                        *voices.entry(m[a]).or_default() += 1;
+                    }
+                }
+            }
+            let voice = voices
+                .iter()
+                .max_by_key(|&(&op, &n)| (n, std::cmp::Reverse(op)))
+                .map(|(&op, _)| op ^ 0xC0);
+            let words = speech_words(speech_rom.unwrap_or_default());
+            for &w in words.iter().filter(|w| !said.contains(w)) {
+                let mut bytes: Vec<u8> = voice.into_iter().collect();
+                bytes.push(0x40 | w);
+                sounds.push(GameSound {
+                    id: u32::from(0x40 | w),
+                    refs: format!(
+                        "speech word {w:02X}, said by no script: sent as the game sends a word{}",
+                        voice.map_or(String::new(), |b| format!(
+                            ", after the scripts' speed and volume {b:02X}"
+                        ))
+                    ),
+                    start: Request::Board(bytes),
+                });
+            }
+            speech_note = format!(
+                "; the scripts say {} of the speech ROM's {} words, the {} others are sent alone (ids 0040 + word){}",
+                said.len(),
+                words.len(),
+                words.iter().filter(|w| !said.contains(w)).count(),
+                voice.map_or(String::new(), |b| format!(
+                    " after the scripts' speed and volume {b:02X}"
+                ))
+            );
         }
         // The stop: the pointer on the game's own silencing op (the one that ends a script),
         // which writes the board's registers as the game silences it and clears the pointer.
@@ -710,14 +971,19 @@ mod st300 {
                             .join("/")
                     )
                 },
-                sounds.len(),
+                scripted,
                 rejected,
                 v.silence
-            ),
+            ) + &speech_note,
             id_is: "the address of the sound script in the game's program (what the game stores in its script pointer)".into(),
             id_digits: 4,
             sounds,
-            stop: Request::Pokes(stop),
+            setup: Vec::new(),
+            dips: Vec::new(),
+            stop: match gate(false) {
+                Some(g) => Request::Seq(vec![g, Request::Pokes(stop)]),
+                None => Request::Pokes(stop),
+            },
         })
     }
 }
@@ -814,6 +1080,8 @@ mod atari {
                 id_is: "the counter's RAM address (high byte) and the length the game stores in it to start the sound (low byte)".into(),
                 id_digits: 4,
                 sounds,
+                setup: Vec::new(),
+                dips: Vec::new(),
                 stop: Request::Pokes(counters.iter().map(|&c| poke(usize::from(c), 0)).collect()),
             });
         }
@@ -853,6 +1121,8 @@ mod atari {
                 id_is: "the sound's slot number (the game asks for slot n by adding to its pending count)".into(),
                 id_digits: 2,
                 sounds,
+                setup: Vec::new(),
+                dips: Vec::new(),
                 stop: Request::Pokes((base..end).map(|a| poke(a, 0)).collect()),
             });
         }
@@ -898,6 +1168,8 @@ mod atari {
                         start: Request::Pokes(vec![poke(state(d) + 1, 1)]),
                     })
                     .collect(),
+                setup: Vec::new(),
+                dips: Vec::new(),
                 stop: Request::Pokes(
                     descs
                         .iter()
@@ -979,7 +1251,168 @@ mod atari {
                     start: Request::Pokes(vec![poke(base + s, 1)]),
                 })
                 .collect(),
+            setup: Vec::new(),
+            dips: Vec::new(),
             stop: Request::Pokes(stop),
+        })
+    }
+}
+
+/// Christian Tabart's L'Hexagone (1986, Gottlieb System 1 hardware, `SNDBRD_TABART`): the
+/// sound board takes no command, it watches the playfield.
+///
+/// Its Z80 program (`hexagone.bin`) reads the game's switch returns itself: the game's
+/// switch strobe 1 raises its NMI (`0066`, gts1.c `port_w` → tabart.c `tabart_ctrl_w`),
+/// which reads YM2203 port B (the returns of the strobed row) into `$400A` and arms four
+/// reads more on the YM2203's timer interrupt (`01BD`, rows 2 to 5 as the game's strobe
+/// moves on, `$400B`..`$400E`). Its main loop (`0381`) finds a newly closed switch
+/// (`0209`: each row XOR its last state, AND the new one; `$4009` = row << 4 | bit) and,
+/// with the outhole open (port A bit 4: tabart.c `core_getSw(66)`), plays the routine of
+/// the table at `1083` (`044D`: row × `12`, bit × 2). Eleven of them (table `02E7`) play
+/// only once until their bank of switches opens again (drop targets). The sound DIPs (the
+/// game's sound lines bits 4 and 7, gts1.c `snd_w`: `core_getDip(3) & 0x90`, port A bits 5
+/// and 6) choose the mode: a tune played over and over (`04CE`, both bits giving `00`), a
+/// background after each sound (`0422`), a call every minute or so (`03E8`). The chime
+/// lines (the game's 10, 100 and 1000 chimes) play one more sound (`04B6`), while the
+/// outhole is closed (the bonus count): not reached here (they are the game's solenoids).
+///
+/// A sound is a switch: closed, then opened, with the game running (its strobe). The id
+/// is PinMAME's switch number (`m2sw`: bit × 10 + row, the strobe being the row + 1), its
+/// decimal digits as hex digits, one per routine of the table (the first switch that plays
+/// it). The stop is the board's
+/// reset: its program has none (a routine plays to its end).
+mod tabart {
+    use super::*;
+
+    /// The rows the program reads: at the NMI, then four timer interrupts (`0084`: `LD
+    /// A,4; LD ($4020),A`).
+    const ROWS: usize = 5;
+
+    /// The sound DIP bank and value: both sound DIPs off (port A bits 6-5 = `10`): the
+    /// switch sounds, no tune, no background after them; the program's own call every
+    /// minute or so (`03E8`) is reset with the board after each sound.
+    const DIP_BANK: i32 = 3;
+    const DIP_VALUE: i32 = 0x00;
+    /// The sound lines in attract mode with those DIPs (gts1.c `snd_w`: game over, no
+    /// tilt, no chime, `core_getDip(3) & 0x90`).
+    const LINES: u8 = DIP_VALUE as u8 & 0x90;
+    /// The 10's chime line (`snd_w`: bit 2, the game's solenoid 3).
+    const CHIME_10: u8 = 0x04;
+    /// The outhole (tabart.c `core_getSw(66)`).
+    const OUTHOLE: u16 = 66;
+    /// The chimes' id: no switch number (they are at most 79) reads as `C4`, the chime
+    /// line's bit (`04`) after a `C`.
+    const CHIME_ID: u32 = 0xC4;
+
+    pub fn find(m: &[u8]) -> Result<Layer, String> {
+        // `044D`: LD HL,table; AND F0; SRL A x4; AND 7; INC A; LD B,A; DJNZ; LD A,C; AND
+        // 0F; CALL index ... `0479`: LD DE,stride; ADD HL,DE.
+        let at = find_pat(
+            m,
+            &pat("21 ?? ?? E6 F0 CB 3F CB 3F CB 3F CB 3F E6 07 3C 47 10 ?? 79 E6 0F CD"),
+            0,
+            0x4000,
+        )
+        .ok_or("no switch-sound dispatch of L'Hexagone's kind in the sound program")?;
+        let table = usize::from(u16::from_le_bytes([m[at + 1], m[at + 2]]));
+        let stride = find_pat(m, &pat("11 ?? 00 19 18"), at, at + 0x40)
+            .map(|k| usize::from(m[k + 1]))
+            .ok_or("the row size of the switch-sound table was not found")?;
+        let word = |a: usize| usize::from(u16::from_le_bytes([m[a], m[a + 1]]));
+        // The routine that plays nothing: `JP` to the main loop's restart (`1080`: `JP
+        // 107A`, which reloads the stack and jumps back), the most frequent entry.
+        let mut count: BTreeMap<usize, usize> = BTreeMap::new();
+        for r in 0..ROWS {
+            for b in 0..8 {
+                *count.entry(word(table + r * stride + 2 * b)).or_default() += 1;
+            }
+        }
+        let nothing = count
+            .iter()
+            .max_by_key(|&(_, &n)| n)
+            .map(|(&w, _)| w)
+            .unwrap_or_default();
+        let mut sounds: Vec<GameSound> = Vec::new();
+        let mut seen: BTreeMap<usize, u32> = BTreeMap::new();
+        for r in 0..ROWS {
+            for b in 0..8 {
+                let w = word(table + r * stride + 2 * b);
+                if w == nothing || w >= 0x4000 {
+                    continue;
+                }
+                // Row 0 bit 0 makes the code `00`, which the loop takes for "none".
+                if r == 0 && b == 0 {
+                    continue;
+                }
+                let sw = (b * 10 + r) as u16;
+                // The id reads as the switch number: its decimal digits in hex (`0x46` is
+                // switch 46).
+                let id = u32::from(sw / 10) << 4 | u32::from(sw % 10);
+                if let Some(first) = seen.get(&w) {
+                    if let Some(g) = sounds.iter_mut().find(|g| g.id == *first) {
+                        g.refs.push_str(&format!(", switch {sw}"));
+                    }
+                    continue;
+                }
+                seen.insert(w, id);
+                sounds.push(GameSound {
+                    id,
+                    refs: format!(
+                        "routine {w:04X} (table {table:04X} row {r} bit {b}): switch {sw}"
+                    ),
+                    start: Request::Switch(sw),
+                });
+            }
+        }
+        if sounds.is_empty() {
+            return Err(format!(
+                "the switch-sound table at {table:04X} has no routine"
+            ));
+        }
+        // The chimes (`03D3`: BIT 0,(HL); CALL Z,chime; the same for bits 1 and 2), read
+        // while the outhole is closed: the line of the game's 10's chime on, then off, the
+        // outhole switch held closed around it.
+        let switch_sounds = sounds.len();
+        let chime = find_pat(
+            m,
+            &pat("CB 46 CC ?? ?? CB 4E CC ?? ?? CB 56 CC ?? ??"),
+            0,
+            0x4000,
+        )
+        .map(|k| usize::from(u16::from_le_bytes([m[k + 3], m[k + 4]])));
+        if let Some(c) = chime {
+            sounds.push(GameSound {
+                id: CHIME_ID,
+                refs: format!(
+                    "routine {c:04X}: a chime line (the game's 10's chime) with the outhole (switch {OUTHOLE}) closed"
+                ),
+                start: Request::Seq(vec![
+                    Request::SwitchState(OUTHOLE, true),
+                    Request::Lines(LINES | CHIME_10),
+                    Request::Lines(LINES),
+                    Request::SwitchState(OUTHOLE, false),
+                ]),
+            });
+        }
+        Ok(Layer {
+            what: format!(
+                "Tabart switch sounds: the sound program's table at {table:04X} ({ROWS} rows of {} switches, `{nothing:04X}` = none): {switch_sounds} routines, each played by closing one of its switches with the game running{}; DIP bank {DIP_BANK} bits 4 and 7 off (both sound DIPs off: no tune, no background); stop: the board reset",
+                stride / 2,
+                chime.map_or(String::new(), |c| format!(", and the chimes' routine {c:04X} (id {CHIME_ID:02X})"))
+            ),
+            id_is: "PinMAME's number of the playfield switch that plays the sound, its decimal digits written as hex digits (0x46: switch 46; the board reads the switches itself)".into(),
+            id_digits: 2,
+            sounds,
+            // The game writes its lines on a lamp change only (gts1.c `lamp_w` → `snd_w`):
+            // the lines it would write in attract mode with these DIPs (the sound DIPs, no
+            // game, no tilt, no chime) go out once, through its own path.
+            setup: vec![Request::Lines(LINES)],
+            dips: vec![Dip {
+                bank: DIP_BANK,
+                mask: 0x90,
+                value: DIP_VALUE,
+            }],
+            stop: Request::Reset,
         })
     }
 }
@@ -1215,6 +1648,8 @@ mod romstar {
             id_is: "the address of the effect sequence or song in the game's program (what the game passes to its play routine)".into(),
             id_digits: 8,
             sounds,
+            setup: Vec::new(),
+            dips: Vec::new(),
             stop: Request::Call(busy_call(reset, &[])),
         })
     }
@@ -1340,6 +1775,8 @@ mod inder {
         let mut stop: Vec<Poke> = on.iter().map(|&a| poke(a, 0)).collect();
         stop.extend(quiet.iter().copied());
         Ok(Layer {
+            setup: Vec::new(),
+            dips: Vec::new(),
             what: format!(
                 "Inder SN76489 sound start at {k:04X} (silences the chip with {n} bytes from {table:04X}, voices {:04X}/{:04X}/{:04X} on), {} descriptors of 12 bytes; stop: the voices off, the chip silenced",
                 on[0],
@@ -1447,6 +1884,8 @@ mod inder {
         stop.extend(ay(7, 0xFF));
         stop.extend((8..=10).flat_map(|r| ay(r, 0)));
         Ok(Layer {
+            setup: Vec::new(),
+            dips: Vec::new(),
             what: format!(
                 "Inder AY8910 effect start at {e:04X} ({} scripts), music start at {mu:04X} ({} scripts); stop: both channels off ({e_on:04X}, {music_on:04X}), the AY's mixer and volumes off",
                 effects.len(),
@@ -1463,6 +1902,53 @@ mod inder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An S14001A word table: three words, the second a duplicate of the first, the
+    /// entries after the table (bytes of the words) left out.
+    #[test]
+    fn speech_words_stop_at_the_first_word_and_skip_duplicates() {
+        let mut rom = vec![0u8; 0x800];
+        // Words 0, 1, 2 start at 006, 006, 00A: the table is 6 bytes long.
+        rom[..6].copy_from_slice(&[0x00, 0x60, 0x00, 0x60, 0x00, 0xA0]);
+        rom[6] = 0x12;
+        assert_eq!(st300::speech_words(&rom), vec![0, 2]);
+        assert!(st300::speech_words(&[]).is_empty());
+    }
+
+    /// A made-up L'Hexagone-like program: the switch-sound dispatch, a table of two rows
+    /// (the no-sound routine everywhere but two entries) and the chime test.
+    #[test]
+    fn tabart_reads_the_switch_table_and_the_chimes() {
+        let mut m = vec![0xFFu8; 0x4000];
+        let put = |m: &mut Vec<u8>, at: usize, p: &str| {
+            for (i, b) in pat(p).iter().enumerate() {
+                m[at + i] = b.unwrap();
+            }
+        };
+        put(
+            &mut m,
+            0x044D,
+            "21 83 10 E6 F0 CB 3F CB 3F CB 3F CB 3F E6 07 3C 47 10 19 79 E6 0F CD 54 07",
+        );
+        put(&mut m, 0x0479, "11 12 00 19 18 DF");
+        put(
+            &mut m,
+            0x03D3,
+            "CB 46 CC B6 04 CB 4E CC B6 04 CB 56 CC B6 04",
+        );
+        for e in 0..5 * 9 {
+            m[0x1083 + 2 * e..0x1085 + 2 * e].copy_from_slice(&[0x80, 0x10]);
+        }
+        // Row 0 bit 1 (switch 10) and row 1 bit 4 (switch 41).
+        m[0x1083 + 2..0x1083 + 4].copy_from_slice(&[0x9D, 0x05]);
+        m[0x1095 + 8..0x1095 + 10].copy_from_slice(&[0xDD, 0x08]);
+        let l = tabart::find(&m).unwrap();
+        let ids: Vec<u32> = l.sounds.iter().map(|g| g.id).collect();
+        assert_eq!(ids, vec![0x10, 0x41, 0xC4]);
+        assert_eq!(l.sounds[0].start, Request::Switch(10));
+        assert_eq!(l.stop, Request::Reset);
+        assert_eq!(l.setup, vec![Request::Lines(0)]);
+    }
 
     #[test]
     fn patterns_match_with_wildcards() {

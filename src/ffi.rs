@@ -91,6 +91,11 @@ unsafe extern "C" {
     pub fn PinmameIsRunning() -> c_int;
     pub fn PinmameStop();
     pub fn PinmameSetHandleKeyboard(handle: c_int);
+    /// A playfield switch, by PinMAME's switch number (`vp_putSwitch`).
+    pub fn PinmameSetSwitch(sw: c_int, state: c_int);
+    /// A DIP switch bank (`vp_setDIP`), read by the drivers through `core_getDip`.
+    pub fn PinmameSetDIP(bank: c_int, value: c_int);
+    pub fn PinmameGetDIP(bank: c_int) -> c_int;
 
     /// src/libpinmame/video.c: when 0 the emulation runs as fast as the host allows.
     pub static mut throttle: c_int;
@@ -131,6 +136,7 @@ unsafe extern "C" {
     pub fn shim_cpu_read(cpu: c_int, addr: c_uint, len: c_uint, out: *mut u8) -> c_int;
     pub fn shim_cpu_reg(cpu: c_int, reg: c_int) -> c_uint;
     pub fn shim_cpu_region(cpu: c_int, len: *mut c_uint) -> *const u8;
+    pub fn shim_region_after_cpu1(k: c_int, len: *mut c_uint) -> *const u8;
     pub fn shim_game_cpu() -> c_int;
     pub fn shim_game_pokes(cpu: c_int, addr: *const c_uint, data: *const u8, n: c_int);
     pub fn shim_m68k_call(
@@ -213,6 +219,14 @@ pub fn sound_region() -> Option<&'static [u8]> {
 pub fn cpu_region(cpu: c_int) -> Option<&'static [u8]> {
     let mut len: c_uint = 0;
     let p = unsafe { shim_cpu_region(cpu, &mut len) };
+    (!p.is_null() && len > 0).then(|| unsafe { std::slice::from_raw_parts(p, len as usize) })
+}
+
+/// The memory region `REGION_CPU1 + k`, with or without a CPU running from it (the
+/// ST300V's speech ROM, `VSU100_ROMREGION`). Only valid while the emulation runs.
+pub fn region_after_cpu1(k: c_int) -> Option<&'static [u8]> {
+    let mut len: c_uint = 0;
+    let p = unsafe { shim_region_after_cpu1(k, &mut len) };
     (!p.is_null() && len > 0).then(|| unsafe { std::slice::from_raw_parts(p, len as usize) })
 }
 
