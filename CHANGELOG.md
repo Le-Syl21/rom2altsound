@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- **Spinball / Inder (SPINB, 27 sets): every set now extracts, each sound from silence.**
+  Read in the sound programs (and in Corsario's game program for how it sends): Inder's
+  MSM5205 boards poll their latch as Spinball's do (a byte counts while its bit 7 is set,
+  then `00`), but the single-CPU programs (Moon Light, Clown, Corsario, Mundial 90, Atleta,
+  250 c.c.) play their background music whenever bit 7 is clear: every file was that music
+  (40 of 40, none from silence). Commands now go out as `8x 00`, `80`..`BF`, stop `CF` (the
+  music stop of every program, no effect anywhere; `8F` is Metal Man's effect `0F`), and a
+  hook on the sound CPU's latch read answers `CF` when the program has nothing to play, so
+  each effect ends in silence (`8C` still records the background music). moonlght 18,
+  pinclown 20, corsario 22, mundial 19, atleta 25, ind250cc 19, larana 12 (0 before),
+  metalman 38 (0 before) of 40: every command each program has. Lap By Lap: `00`..`1E`
+  (its program reads 5 bits), stop `1F` instead of `00` (an effect): 20 of 31. Brave Team
+  and Canasta '86, which start no sound board (the game CPU writes its SN76489 or AY8910),
+  are game-driven: their start routines are read in the program, brvteam 16 of 16, canasta
+  15 of 16 (both failed before). Gun Shot, which keeps no nvram, failed its factory boot
+  (waiting for an nvram it never writes): a machine without an NVRAM handler now skips the
+  cold boot (10 of 40, its 10 commands). Bushido's 31 of 40 are all its commands (its
+  programs take `81`..`A0` only). The packs still cannot play in VPinball: neither line
+  goes through PinMAME's sound command log (the docs said the Inder ones did).
+
 ## 0.2.6 (2026-10-10)
 
 - **Tecnoplay (Space Team, X Force): the tunes have their melody and the effects play.**

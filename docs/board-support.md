@@ -36,8 +36,8 @@ the families whose packs do not play there are flagged on the site (`docs/vpx_pl
 
 PinMAME 3.7 (the submodule) knows 2971 sets, 10 of them shared system ROM sets (`gts80s`,
 `allied`...: no game, see [how it works](how-it-works.md#rom-verification)). Of the other
-2961, 2653 (602 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
-sets built outside the full set, see its row), 51 in a ⚠️ one, none in a ❌ one, 257
+2961, 2680 (618 of 797 games) are in a ✅ family (Pinball 2000's 52 included, tried on
+sets built outside the full set, see its row), 24 in a ⚠️ one, none in a ❌ one, 257
 have no sound board (October 2026, after the protocol fixes and the game-driven boards
 listed below; before them: 1939 ✅, 444 ⚠️, 315 ❌, 6 not run). "Sets" counts every set (clones
 and revisions included), "games" the sets without a parent, "sound ROM ids" the distinct
@@ -131,7 +131,7 @@ are the system zips; 2796 of the 2961 sets are there).
 | ATARI2 | ATARI2 | 3 | 3 | 1 | 1979-1979 | Atari | 3 | superman, hercules | ✅ | game-driven (0 of 40 before): one pending count per sound number, the driver's descriptor table read in the program: superman 18 of 18, hercules 20 of 20, roadrunr 16 of 16, all from silence; ids are the game's sound numbers. The pack cannot play in VPinball |
 | ASTRO | ASTRO | 2 | 1 | 0 | ? | Stern | 2 | sam_iii | ✅ | game-driven (0 of 40 before): the tester's program has Meteor's script interpreter; its 6 test sounds, 6 of 6, from silence. sam_iv boots a program of its own with no sound code: no sound layer (error). The pack cannot play in VPinball |
 | ROMSTAR | TMS320AV120 | 1 | 1 | 1 | 1994-1994 | Romstar | 1 | ghv101 | ✅ | game-driven (40 of 40 before but doubtful: PinMAME's test handler played slices of the sample ROM, none from silence): the game's own play routines are called (a few instructions entered on its 68306), with every effect sequence and song the program passes them; stop: its sound system reset. ghv101 72 of 72 (63 effects, 9 songs), all from silence. The pack cannot play in VPinball |
-| SPINB | SPINB | 27 | 16 | 14 | 1985-1996 | Inder (Spain), Spinball (Spain) | 26 | bushido, corsario | ⚠️ | Spinball's own boards fixed (bushido, mach2, jolypark, vrnwrld: 7 sets; 0 of 40 before): both sound CPUs take a byte only while its bit 7 is set, so each command is 8x..FF followed by 00, stop 8F; the MSM6585 boards' step volume, which the games' boot steps down to 0, is set back to 122. bushido 31 of 40, mach2, jolypark, vrnwrld 40 of 40, all from silence. Inder's machines (20 sets, INDER in the logs): stop 00, lapbylap 28 of 40 from silence; the MSM5205 ones (moonlght, pinclown, corsario, atleta) play their background music whenever bit 7 is clear, under every command (read in corsario's program) |
+| SPINB | SPINB | 27 | 16 | 14 | 1985-1996 | Inder (Spain), Spinball (Spain) | 26 | bushido, corsario | ✅ | every set from silence, each command its program has. Spinball's boards (bushido, mach2, jolypark, vrnwrld, gunshot): each command `8x` then `00` (the sound CPUs take a byte while its bit 7 is set), stop `8F`, the MSM6585 step volume set back to 122: bushido 31 of 40 (its programs take `81`..`A0` only), mach2, jolypark, vrnwrld 40 of 40, gunshot 10 of 40 (its 10; failed before: no nvram to wait for). Inder's MSM5205 boards (`INDER`): `80`..`BF`, each then `00`, stop `CF`; the single-CPU programs play their background music whenever the latch's bit 7 is clear (read in corsario's program), so a latch hook answers `CF` when the program has nothing to play: moonlght 18, pinclown 20, corsario 22, mundial 19, atleta 25, ind250cc 19, larana 12, metalman 38 of 40 (40 of 40 before, all the background music). Lap By Lap (`INDER2`, NMI): `00`..`1E`, stop `1F` (no stop command): 20 of 31. Brave Team and Canasta (no board, the game writes its chip): game-driven, brvteam 16 of 16, canasta 15 of 16 (failed before). The packs cannot play in VPinball (the latch is written directly) |
 | ST300V | ST300 | 21 | 6 | 7 | 1980-2024 | Stern, Stern / Idleman | 20 | flight2k | ⚠️ | speech only: the sweep is now 40..7F, the S14001A's 64 words (the manual command is the speech path): flight2k 37 of 40, freefall 40 of 40, all from silence, 0.2 to 0.4 s each, some clipped (0 of 40 before). The effects are the game's own timer programming (as ST300), not extracted |
 | S3DFS | WMSS67 | 1 | 1 | 1 | 1978-1978 | Williams | 1 | disco_l1 | ⚠️ | with the S67S idle framing (1 of 40 before): 40 of 40, all from silence, but few distinct (the files repeat with the lowest low bit of the command); the control bit (s67s_ctrl_w) is never set |
 | TABART | TABART | 1 | 1 | 1 | 1986-1986 | Christian Tabart (France) | 1 | hexagone | ⚠️ | doubtful: 31 of 40, 22 not from silence, 5 distinct levels. Read in its sound program: not a command board: it plays on eleven playfield switches it reads itself (YM2203 port B, during the switch-strobe NMI and the four timer interrupts after it), the three chime lines and the outhole, and with the default sound DIPs only its tune (what PinMAME plays from 1 s into the boot); AltSound could not key the switch sounds. Left as is |
@@ -172,8 +172,8 @@ row give the before and after of the survey run. In short:
 
 - **an idle value between commands**: Williams System 3 to 7 (`FF cmd FF`), Gottlieb
   System 80 (`cmd 00`), Zaccaria 1346, Game Plan MSU-1, Jac Van Ham, Playmatic Zira;
-- **a strobe or a flag bit**: Zaccaria's 1370 family (bit 7), Spinball (bit 7, then
-  `00`), Taito (the `00` that lets CB1 rise again);
+- **a strobe or a flag bit**: Zaccaria's 1370 family (bit 7), Spinball and Inder (bit 7,
+  then `00`; Lap By Lap: the 5 bits its program reads), Taito (the `00` that lets CB1 rise again);
 - **two nibbles or a sequence**: Game Plan MSU-3 (low, high, then `F`), Baby Pac-Man's
   Cheap Squeak (with the video CPU's strobe), Bell Games' -51N, Capcom's serial messages
   (`DA 04 07 0F nnnn`);
@@ -185,8 +185,11 @@ row give the before and after of the survey run. In short:
   upstream by vpinball/pinmame#719 to #721; rom2altsound's shim tick is gone);
 - **the board's level**: Spinball's MSM6585 boards, stepped back up after the boot steps
   them down to 0;
+- **what the program reads when idle**: Inder's single-CPU MSM5205 programs, which play
+  their background music whenever the latch's bit 7 is clear: a hook on the latch answers
+  their music stop there, so that every effect ends in silence;
 - **no command at all, the game's own sound layer**: Stern SB-300 and its Astro tester,
-  Atari generation 1 and 2, Romstar's Goofy Hoops: the game plays every sound itself, so
+  Atari generation 1 and 2, Romstar's Goofy Hoops, Inder's Brave Team and Canasta '86: the game plays every sound itself, so
   its program is read for the request its own code makes (a script pointer, a counter, a
   slot, a play routine) and for every sound it asks for; the game is left running in
   attract mode and asked for each one ([game-driven boards](families/common.md#game-driven-boards)).
@@ -200,6 +203,5 @@ What is left, and why (each family's notes say what was tried):
   `sam_iv` (its own program has no sound code) and `mideartp` (a bad dump).
 - **Not a command board**: Tabart's L'Hexagone (its program plays on the playfield
   switches it reads itself, the chime lines and the outhole, read in its program).
-- **Doubtful**: Inder's MSM5205 machines (their background music plays under every
-  command), Williams' Disco Fever and World Cup (few distinct sounds; a control bit the
+- **Doubtful**: Williams' Disco Fever and World Cup (few distinct sounds; a control bit the
   tool does not set).

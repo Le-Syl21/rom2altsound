@@ -148,6 +148,9 @@ unsafe extern "C" {
     pub fn shim_nibble_reads() -> c_int;
     pub fn shim_nibble_after(n: c_int);
     pub fn shim_spinb_own(board: c_int) -> c_int;
+    pub fn shim_spinb_latch_cpus() -> c_int;
+    pub fn shim_inder_cpu_sound() -> c_int;
+    pub fn shim_inder_idle_hook(idle: c_int, keep: u64) -> c_int;
     pub fn shim_by45_p21(on: c_int);
     pub fn shim_mancmd_pairs(board: c_int, a: c_int, b: c_int, n: c_int, slices: c_int);
     pub fn shim_trace_hook(n: c_int, start: c_uint, end: c_uint) -> c_int;
@@ -172,6 +175,7 @@ unsafe extern "C" {
     pub fn shim_p2k_word(word: u16);
     pub fn shim_p2k_take_reply() -> c_int;
     pub fn shim_driver_count() -> c_int;
+    pub fn shim_driver_nvram(name: *const c_char) -> c_int;
     pub fn shim_driver_text(i: c_int, field: c_int) -> *const c_char;
     pub fn shim_driver_flags(i: c_int) -> c_uint;
     pub fn shim_driver_rom(i: c_int, j: c_int, out: *mut ShimRom) -> c_int;

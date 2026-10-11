@@ -98,6 +98,8 @@ pub fn find(typestr: &str, image: &[u8]) -> Result<Layer, String> {
         "ATARI1" => atari::gen1(image),
         "ATARI2" => atari::gen2(image),
         "TMS320AV120" => romstar::find(image),
+        "INDER0" => inder::sn76489(image),
+        "INDER1" => inder::ay8910(image),
         _ => Err(format!("no reader for the {typestr} game's sound layer")),
     }
 }
@@ -1218,6 +1220,246 @@ mod romstar {
     }
 }
 
+/// Inder's first machines (1985-1986): the game's Z80 writes its sound chip itself.
+///
+/// Brave Team (`INDER0`) has an SN76489 at `4B00`, Canasta '86 (`INDER1`) an AY8910 at
+/// `4B00` (register) / `4B02` (data). PinMAME names the SPINB board in their game data but
+/// starts none. The game's program has a sound layer that its timer interrupt runs:
+/// - Brave Team: three voices, each a pointer to its next note (3 bytes for the chip), a
+///   note count and a delay. A sound is a 12-byte descriptor: the three voices' note lists
+///   (the first right after the descriptor) and their counts. The game starts one with
+///   `LD HL,desc; CALL 1617`, which silences the chip (`174D`: 4 bytes from `1613`), stores
+///   the pointers (minus 1) and counts, and marks the voices on.
+/// - Canasta: an effect channel and a music channel, each a pointer to a script of register
+///   writes. `LD HL,script; CALL 16FB` starts an effect (unless a music plays: the effect
+///   player waits for its end), after clearing the tone and volume registers; `CALL 173A`
+///   starts a music (Lap By Lap's sound program, `lblsr0.bin`, has the same two routines).
+///
+/// The requests are the routines' own writes, as RAM and chip pokes (`cpunum_write_byte`
+/// goes through the memory map, so the chip writes reach it); the stop marks every voice
+/// or channel off and silences the chip as the routines do.
+mod inder {
+    use super::*;
+
+    fn poke(addr: usize, val: u8) -> Poke {
+        Poke {
+            addr: addr as u32,
+            val,
+        }
+    }
+    fn le16(m: &[u8], a: usize) -> usize {
+        usize::from(m[a]) | usize::from(m[a + 1]) << 8
+    }
+    /// The 16-bit operand at `k + i` of a pattern match.
+    fn op(m: &[u8], k: usize, i: usize) -> usize {
+        le16(m, k + i)
+    }
+    /// The program's ROM: 8 KB at 0 (`INDER_ROMSTART`), RAM from `4000`.
+    const ROM: usize = 0x2000;
+
+    /// Every operand of `LD HL,nn` (and `LD DE,nn` with `de`) in the ROM within `0x28` bytes
+    /// before a `CALL target`, in the ROM: the sounds the game asks for there (the operand
+    /// may come from another branch that joins the call, so a few bytes before).
+    fn loaded_before_calls(m: &[u8], target: usize, de: bool) -> Vec<usize> {
+        let mut v = std::collections::BTreeSet::new();
+        for i in 0..ROM - 2 {
+            if m[i] == 0xCD && le16(m, i + 1) == target {
+                for j in i.saturating_sub(0x28)..i {
+                    if (m[j] == 0x21 || de && m[j] == 0x11) && le16(m, j + 1) < ROM {
+                        v.insert(le16(m, j + 1));
+                    }
+                }
+            }
+        }
+        v.into_iter().collect()
+    }
+
+    /// Brave Team: the 12-byte sound descriptors.
+    pub fn sn76489(m: &[u8]) -> Result<Layer, String> {
+        if m.len() < 0x4100 {
+            return Err("program image smaller than Inder's map".into());
+        }
+        let start_pat = pat(
+            "E5 C5 CD ?? ?? C1 5E 23 56 1B ED 53 ?? ?? 23 5E 23 56 1B ED 53 ?? ?? 23 5E 23 56 1B \
+             ED 53 ?? ?? 23 5E 23 56 ED 53 ?? ?? 23 5E 23 56 ED 53 ?? ?? 23 5E 23 56 ED 53 ?? ?? \
+             3E 01 32 ?? ?? 32 ?? ?? 32 ?? ?? AF 32 ?? ?? 32 ?? ?? 32 ?? ??",
+        );
+        let Some(k) = find_pat(m, &start_pat, 0, ROM) else {
+            return Err("no Brave Team sound start routine (descriptor to three voices)".into());
+        };
+        let silence = op(m, k, 3);
+        let ptrs = [op(m, k, 12), op(m, k, 21), op(m, k, 30)];
+        let counts = [op(m, k, 38), op(m, k, 46), op(m, k, 54)];
+        let on = [op(m, k, 59), op(m, k, 62), op(m, k, 65)];
+        let delays = [op(m, k, 69), op(m, k, 72), op(m, k, 75)];
+        // The silencing routine: `LD DE,table; LD B,n; LD A,(DE); LD (chip),A; INC DE; DJNZ`.
+        let Some(s) = find_pat(
+            m,
+            &pat("11 ?? ?? 06 ?? 1A 32 ?? ?? 13 10 F9"),
+            silence,
+            silence + 12,
+        ) else {
+            return Err(format!(
+                "Brave Team: no chip silencing routine at {silence:04X}"
+            ));
+        };
+        let (table, n, chip) = (op(m, s, 1), usize::from(m[s + 4]), op(m, s, 7));
+        let quiet: Vec<Poke> = (0..n).map(|i| poke(chip, m[table + i])).collect();
+        // A descriptor: three note lists, the first right after it, in order, in the ROM;
+        // three counts below 400.
+        let valid = |d: usize| {
+            d + 12 <= ROM && {
+                let p: Vec<usize> = (0..3).map(|i| le16(m, d + 2 * i)).collect();
+                let c: Vec<usize> = (3..6).map(|i| le16(m, d + 2 * i)).collect();
+                p[0] == d + 12
+                    && p[0] <= p[1]
+                    && p[1] <= p[2]
+                    && p[2] < ROM
+                    && c.iter().all(|&c| (1..0x400).contains(&c))
+            }
+        };
+        let descs: Vec<usize> = loaded_before_calls(m, k, true)
+            .into_iter()
+            .filter(|&d| valid(d))
+            .collect();
+        // The ones the game reaches through a table (`EX DE,HL; CALL 1617` at 13D8): every
+        // other valid descriptor named by a `LD HL` or `LD DE` operand.
+        let mut all: Vec<usize> = (0..ROM - 2)
+            .filter(|&i| m[i] == 0x21 || m[i] == 0x11)
+            .map(|i| le16(m, i + 1))
+            .filter(|&d| valid(d))
+            .chain(descs)
+            .collect();
+        all.sort_unstable();
+        all.dedup();
+        if all.is_empty() {
+            return Err(format!(
+                "Brave Team sound start routine at {k:04X}: no descriptor"
+            ));
+        }
+        let mut stop: Vec<Poke> = on.iter().map(|&a| poke(a, 0)).collect();
+        stop.extend(quiet.iter().copied());
+        Ok(Layer {
+            what: format!(
+                "Inder SN76489 sound start at {k:04X} (silences the chip with {n} bytes from {table:04X}, voices {:04X}/{:04X}/{:04X} on), {} descriptors of 12 bytes; stop: the voices off, the chip silenced",
+                on[0],
+                on[1],
+                on[2],
+                all.len()
+            ),
+            id_is: "the address of the sound's descriptor in the game's program".into(),
+            id_digits: 4,
+            sounds: all
+                .iter()
+                .map(|&d| {
+                    let mut p = quiet.clone();
+                    for v in 0..3 {
+                        let [lo, hi] = (le16(m, d + 2 * v) as u16).wrapping_sub(1).to_le_bytes();
+                        p.extend([poke(ptrs[v], lo), poke(ptrs[v] + 1, hi)]);
+                        let [lo, hi] = (le16(m, d + 6 + 2 * v) as u16).to_le_bytes();
+                        p.extend([poke(counts[v], lo), poke(counts[v] + 1, hi)]);
+                    }
+                    p.extend(on.iter().map(|&a| poke(a, 1)));
+                    p.extend(delays.iter().map(|&a| poke(a, 0)));
+                    GameSound {
+                        id: d as u32,
+                        refs: format!("descriptor {d:04X}"),
+                        start: Request::Pokes(p),
+                    }
+                })
+                .collect(),
+            stop: Request::Pokes(stop),
+        })
+    }
+
+    /// Canasta '86: the effect and music scripts.
+    pub fn ay8910(m: &[u8]) -> Result<Layer, String> {
+        if m.len() < 0x4100 {
+            return Err("program image smaller than Inder's map".into());
+        }
+        let effect_pat = pat(
+            "F5 C5 D5 E5 DD E5 FD E5 3A ?? ?? A7 20 28 1E 02 06 05 7B 32 ?? ?? 3E 00 32 ?? ?? \
+             1C 10 F4 1E 08 06 06 7B 32 ?? ?? 3E 00 32 ?? ?? 1C 10 F4 22 ?? ?? 3E FF 32 ?? ??",
+        );
+        let music_pat = pat(
+            "F5 C5 E5 D5 DD E5 FD E5 3E 07 32 ?? ?? 3E FF 32 ?? ?? 1E 08 06 04 7B 32 ?? ?? \
+             3E FF 32 ?? ?? 1C 10 F4 7B 32 ?? ?? 3E 0A 32 ?? ?? 22 ?? ?? 3E FF 32 ?? ?? \
+             3E 01 32 ?? ??",
+        );
+        let Some(e) = find_pat(m, &effect_pat, 0, ROM) else {
+            return Err("no Canasta effect start routine".into());
+        };
+        let Some(mu) = find_pat(m, &music_pat, 0, ROM) else {
+            return Err("no Canasta music start routine".into());
+        };
+        let (reg, data) = (op(m, e, 20), op(m, e, 25));
+        let music_on = op(m, e, 9);
+        let (e_ptr, e_on) = (op(m, e, 47), op(m, e, 52));
+        let m_lock = op(m, mu, 16);
+        let (m_ptr, m_on, m_delay) = (op(m, mu, 44), op(m, mu, 49), op(m, mu, 54));
+        let ay = |r: u8, v: u8| [poke(reg, r), poke(data, v)];
+        let effects: Vec<usize> = loaded_before_calls(m, e, false)
+            .into_iter()
+            .filter(|&a| a >= mu)
+            .collect();
+        let musics: Vec<usize> = loaded_before_calls(m, mu, false)
+            .into_iter()
+            .filter(|&a| a >= mu)
+            .collect();
+        if effects.is_empty() && musics.is_empty() {
+            return Err("Canasta sound routines found, but no script".into());
+        }
+        let mut sounds = Vec::new();
+        for &a in &effects {
+            // 16FB: tone registers 2-6 and volume/envelope registers 8-13 to 0, the
+            // effect's pointer, the effect on.
+            let mut p: Vec<Poke> = (2..=6).chain(8..=13).flat_map(|r| ay(r, 0)).collect();
+            let [lo, hi] = (a as u16).to_le_bytes();
+            p.extend([poke(e_ptr, lo), poke(e_ptr + 1, hi), poke(e_on, 0xFF)]);
+            sounds.push(GameSound {
+                id: a as u32,
+                refs: format!("effect script {a:04X}"),
+                start: Request::Pokes(p),
+            });
+        }
+        for &a in &musics {
+            // 173A: registers 8-11 to FF, 12 to 0A, the music's pointer, its delay 1, on.
+            let mut p = vec![poke(m_lock, 0xFF)];
+            p.extend((8..=11).flat_map(|r| ay(r, 0xFF)));
+            p.extend(ay(12, 0x0A));
+            let [lo, hi] = (a as u16).to_le_bytes();
+            p.extend([
+                poke(m_ptr, lo),
+                poke(m_ptr + 1, hi),
+                poke(m_on, 0xFF),
+                poke(m_delay, 1),
+            ]);
+            sounds.push(GameSound {
+                id: a as u32,
+                refs: format!("music script {a:04X}"),
+                start: Request::Pokes(p),
+            });
+        }
+        sounds.sort_by_key(|s| s.id);
+        // Both channels off, the mixer off (register 7 = FF, as the music player's end
+        // does), the three volumes to 0.
+        let mut stop = vec![poke(e_on, 0), poke(music_on, 0)];
+        stop.extend(ay(7, 0xFF));
+        stop.extend((8..=10).flat_map(|r| ay(r, 0)));
+        Ok(Layer {
+            what: format!(
+                "Inder AY8910 effect start at {e:04X} ({} scripts), music start at {mu:04X} ({} scripts); stop: both channels off ({e_on:04X}, {music_on:04X}), the AY's mixer and volumes off",
+                effects.len(),
+                musics.len()
+            ),
+            id_is: "the address of the sound's script in the game's program".into(),
+            id_digits: 4,
+            sounds,
+            stop: Request::Pokes(stop),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1347,6 +1589,80 @@ mod tests {
                 addr: 0xA5,
                 val: 0x1F
             }])
+        );
+    }
+
+    fn hex(s: &str) -> Vec<u8> {
+        pat(s).into_iter().map(|b| b.unwrap()).collect()
+    }
+
+    /// Brave Team: the start routine at 1617 with its silencing routine at 174D, one call
+    /// `LD HL,17B8; CALL 1617`, and the descriptor there.
+    #[test]
+    fn inder_sn76489_descriptor_and_its_pokes() {
+        let mut m = vec![0u8; 0x10000];
+        let start = hex(
+            "E5 C5 CD 4D 17 C1 5E 23 56 1B ED 53 10 40 23 5E 23 56 1B ED 53 12 40 23 5E 23 56 1B \
+             ED 53 14 40 23 5E 23 56 ED 53 0A 40 23 5E 23 56 ED 53 0C 40 23 5E 23 56 ED 53 0E 40 \
+             3E 01 32 01 40 32 02 40 32 03 40 AF 32 04 40 32 06 40 32 08 40 E1 C9",
+        );
+        m[0x1617..0x1617 + start.len()].copy_from_slice(&start);
+        m[0x174D..0x1759].copy_from_slice(&hex("11 13 16 06 04 1A 32 00 4B 13 10 F9"));
+        m[0x1613..0x1617].copy_from_slice(&[0xF9, 0xFD, 0xFB, 0xFF]);
+        m[0x02BB..0x02C1].copy_from_slice(&hex("21 B8 17 CD 17 16"));
+        m[0x17B8..0x17C4].copy_from_slice(&hex("C4 17 E4 17 04 18 00 01 00 01 00 01"));
+        let l = inder::sn76489(&m).unwrap();
+        assert_eq!(l.sounds.len(), 1);
+        assert_eq!(l.sounds[0].id, 0x17B8);
+        let Request::Pokes(p) = &l.sounds[0].start else {
+            panic!("pokes expected");
+        };
+        let at = |a: u32| p.iter().find(|q| q.addr == a).map(|q| q.val);
+        // The chip silenced first, the first voice's pointer minus 1, its count, all on.
+        assert_eq!(
+            p[..4].iter().map(|q| q.val).collect::<Vec<_>>(),
+            [0xF9, 0xFD, 0xFB, 0xFF]
+        );
+        assert_eq!((at(0x4010), at(0x4011)), (Some(0xC3), Some(0x17)));
+        assert_eq!((at(0x400A), at(0x400B)), (Some(0x00), Some(0x01)));
+        assert_eq!((at(0x4003), at(0x4008)), (Some(1), Some(0)));
+    }
+
+    /// Canasta '86: the effect routine at 16FB, the music routine at 173A, one call of each.
+    #[test]
+    fn inder_ay8910_effects_and_musics() {
+        let mut m = vec![0u8; 0x10000];
+        let effect = hex(
+            "F5 C5 D5 E5 DD E5 FD E5 3A 02 40 A7 20 28 1E 02 06 05 7B 32 00 4B 3E 00 32 02 4B \
+             1C 10 F4 1E 08 06 06 7B 32 00 4B 3E 00 32 02 4B 1C 10 F4 22 04 40 3E FF 32 01 40",
+        );
+        m[0x16FB..0x16FB + effect.len()].copy_from_slice(&effect);
+        let music = hex(
+            "F5 C5 E5 D5 DD E5 FD E5 3E 07 32 00 4B 3E FF 32 14 40 1E 08 06 04 7B 32 00 4B \
+             3E FF 32 02 4B 1C 10 F4 7B 32 00 4B 3E 0A 32 02 4B 22 11 40 3E FF 32 02 40 \
+             3E 01 32 13 40",
+        );
+        m[0x173A..0x173A + music.len()].copy_from_slice(&music);
+        m[0x0731..0x0737].copy_from_slice(&hex("21 02 1C CD FB 16"));
+        m[0x0FE3..0x0FE9].copy_from_slice(&hex("21 A6 1E CD 3A 17"));
+        let l = inder::ay8910(&m).unwrap();
+        let ids: Vec<u32> = l.sounds.iter().map(|s| s.id).collect();
+        assert_eq!(ids, [0x1C02, 0x1EA6]);
+        let Request::Pokes(p) = &l.sounds[0].start else {
+            panic!("pokes expected");
+        };
+        // 11 registers cleared (select, value), then the pointer and the effect on.
+        assert_eq!(p.len(), 25);
+        assert_eq!((p[0].addr, p[0].val, p[1].addr), (0x4B00, 2, 0x4B02));
+        assert_eq!((p[22].addr, p[22].val, p[23].val), (0x4004, 0x02, 0x1C));
+        assert_eq!((p[24].addr, p[24].val), (0x4001, 0xFF));
+        let Request::Pokes(q) = &l.sounds[1].start else {
+            panic!("pokes expected");
+        };
+        let at = |a: u32| q.iter().find(|x| x.addr == a).map(|x| x.val);
+        assert_eq!(
+            (at(0x4011), at(0x4012), at(0x4002), at(0x4013)),
+            (Some(0xA6), Some(0x1E), Some(0xFF), Some(1))
         );
     }
 }

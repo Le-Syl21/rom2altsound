@@ -240,7 +240,8 @@ nibble), and now logs the byte on the sound strobe only. On Whirlwind (System 11
 `S11_SNDOVERLAY`), #723 stops the solenoid overlay's bytes from reaching AltSound as sound
 commands. This holds for the families where a command reaches AltSound at all:
 not on the game-driven boards (below), SAM, Pinball 2000, Capcom, Mr. Game, Playmatic's
-last board, Romstar, Spinball and Zaccaria 1311, whose packs stay unplayable. Nor where
+last board, Romstar, Spinball and Inder (the game writes the latch itself, `spinb.c`
+`soundbd_w`, `inder.c` `snd_w`, `snd2_w`) and Zaccaria 1311, whose packs stay unplayable. Nor where
 what the game makes PinMAME log is not the byte the pack is keyed by: System 3 and 4 to 7
 (the logged bytes keep the solenoid lines in bits 5-7), Baby Pac-Man and Game Plan's
 MSU-3 (nibbles), Tabart's L'Hexagone (line and chime state), Stern SB-300 with its
@@ -285,7 +286,9 @@ registers over time, and sends no sound command: Stern's SB-300
 ([ST300](stern-early.md#sndbrd_st300)) and its board tester
 ([ASTRO](stern-early.md#sndbrd_astro)), Atari's generation 1 and 2
 ([ATARI1](atari.md#sndbrd_atari1), [ATARI2](atari.md#sndbrd_atari2)) and Romstar's Goofy
-Hoops ([ROMSTAR](capcom-romstar.md#sndbrd_romstar)). There is nothing to sweep: a byte
+Hoops ([ROMSTAR](capcom-romstar.md#sndbrd_romstar)); and so do Inder's first two machines,
+Brave Team and Canasta '86 ([SPINB](other-makers.md#sndbrd_spinb), reported `INDER0` and
+`INDER1`), which start no board at all (their game CPU writes an SN76489 or an AY8910). There is nothing to sweep: a byte
 sent to these boards is a register value, not a sound. What every one of these programs
 has is a sound layer: a routine that plays a sound and a request the rest of the game uses
 to ask for one. `src/gamesound.rs` reads that layer in the game's program image (the game
@@ -293,7 +296,8 @@ CPU's memory region, Romstar's `REGION_USER1`):
 
 - **The request**: what the game's own code writes or calls to start a sound: a script
   pointer and a delay byte in RAM (Stern), a counter, a slot or a pending count per sound
-  (Atari), the game's own play routines (Romstar).
+  (Atari), the game's own play routines (Romstar), the RAM and chip writes of the game's
+  start routines (Inder).
 - **The catalog**: every sound the program asks for, found where the program refers to it
   (thread instructions, direct loads, tables), each checked against the format the sound
   routine reads; or the game's own sound table where it has one (Atari generation 2).

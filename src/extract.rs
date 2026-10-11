@@ -167,11 +167,19 @@ fn ac_couples_dac(family: &str) -> bool {
 ///   files started over the last sound. `00` alone silences them, but on tmac_a24 nothing
 ///   played after its commands `0A`..`0D` (10 of 40, 38 with the reset): the reset puts the
 ///   program back as the stop leaves the chips silent.
-/// - INDER (Inder's machines on the SPINB interface): `00`. lapbylap: no board reset over
-///   its first 20 commands instead of one after each, the same sounds, all from silence.
-///   Corsario's and Atleta's programs (polled latch, as Spinball's) play their background
-///   music (command `0C`) whenever the latch's bit 7 is clear, under every effect; `00`
-///   does not change that (see the family's notes).
+/// - INDER (Inder's MSM5205 boards, which poll the latch as Spinball's do): `CF`, then `00`
+///   (`spinb_released`; `INDER_STOP`). The music programs take `& 3F` = `0F`, their music
+///   stop (corsario `02A7`, metalman's `sound_m1.bin` `00EE`; a music is interrupted by any
+///   byte whose `& 8F` is `8F`, `013F`), and `& 7F` = `4F` is no effect (the effect lists
+///   end at `27`, metalman's `sound_e1.bin`). `8F` is Metal Man's effect `0F`, and `BF`
+///   (`& 3F` = `3F`) interrupts its music, which then starts again from its idle loop
+///   (`009E`: the music flag `2231` is only cleared by `0F`). The single-CPU programs would
+///   start their background music again on the `00` that follows: the latch hook
+///   (`shim_inder_idle_hook`) answers `CF` there.
+/// - INDER2 (Lap By Lap: AY8910, a command per NMI): `1F`, which its program takes and does
+///   nothing with (`cmd & 1F`, commands `00`..`15`, `lblsr0.bin` `0263`); it has no stop of
+///   any kind (an effect ends by itself, a tune at its end mark, `01E3`): the board reset
+///   that follows a stop that leaves sound playing cuts the rest.
 /// - TECNOPLAY: `4F`, which stops the DAC sample (Space Team's program, `E26D` -> `DC38`:
 ///   the Y8950's timer A off), then `00`, a command the game sends too (back to the
 ///   silent sound 0, `E0EB`). PinMAME delivers `00` as a command since its PR #719.
@@ -207,7 +215,8 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("GTS80", &[0x00]),
     ("ZAC1346", &[0x00]),
     ("BYSD", &[0x00]),
-    ("INDER", &[0x00]),
+    ("INDER", &[INDER_STOP]),
+    ("INDER2", &[INDER2_IDLE]),
     ("ROWAMET", &[0x00]),
     ("TECNOPLAY", &[0x4F, 0x00]),
     ("GTS80SS", &[0x00]),
@@ -232,6 +241,14 @@ fn capcoms_play(n: u16) -> Vec<u8> {
 /// Spinball / Inder: `8F` ends the music (bushido's music program: `& 3F` = `0F`, at `00B7`,
 /// and `xF` with bit 7 interrupts a playing music, `0142`). The effects end by themselves.
 const SPINB_STOP: u8 = 0x8F;
+/// Inder's MSM5205 boards: the stop (see `BUILTIN_STOPS`), and what the latch hook answers
+/// the single-CPU programs when they have nothing to play (`shim_inder_idle_hook`).
+const INDER_STOP: u8 = 0xCF;
+/// Inder's single-CPU MSM5205 programs: `0C` is the background music (corsario `00F6` ->
+/// `0268`, the routine its idle loop jumps to), which the latch hook lets play on.
+const INDER_BACKGROUND: u8 = 0x0C;
+/// Lap By Lap: the command its program takes as "nothing" (`cmd & 1F` above `15`).
+const INDER2_IDLE: u8 = 0x1F;
 /// Boards that take this long after a reset before they take commands again, silently: the
 /// wait for quiet after a reset is at least this.
 /// - BYTCS: the Turbo Cheap Squeak's ROM and RAM self-test.
@@ -2929,6 +2946,20 @@ impl Extractor {
         self.boards = self.board_list().filter_map(board_typestr).collect();
         // The reports are also written after PinmameStop, when the boards are gone.
         self.families = [0, 1].map(|b| board_typestr(b).unwrap_or_default());
+        // Inder's first machines start no board (the game CPU writes its chip): board 0
+        // stands for that chip, game-driven (`gamesound::inder`).
+        if self.mask == 0 {
+            let t = match unsafe { ffi::shim_inder_cpu_sound() } {
+                1 => "INDER0",
+                2 => "INDER1",
+                _ => "",
+            };
+            if !t.is_empty() {
+                self.mask = 1;
+                self.families[0] = t.into();
+                self.boards = vec![t.into()];
+            }
+        }
         self.data_east = ffi::is_data_east();
         self.bsmt = ffi::has_bsmt2000().then(|| self.opts.bsmt.report());
         if let Some(b) = &self.bsmt {
@@ -2972,13 +3003,19 @@ impl Extractor {
         {
             eprintln!("cannot dump the sound region to {}: {e}", path.display());
         }
+        let inder_cpu = matches!(self.families[0].as_str(), "INDER0" | "INDER1");
         let game_driven = self.mask == 1
-            && gamesound::game_driven(
-                &ffi::cstr(unsafe { ffi::sndbrd_typestr(0) }).unwrap_or_default(),
-                unsafe { ffi::shim_board_type(0) } & 0xFF,
-            );
+            && (inder_cpu
+                || gamesound::game_driven(
+                    &ffi::cstr(unsafe { ffi::sndbrd_typestr(0) }).unwrap_or_default(),
+                    unsafe { ffi::shim_board_type(0) } & 0xFF,
+                ));
         if game_driven {
-            let typestr = ffi::cstr(unsafe { ffi::sndbrd_typestr(0) }).unwrap_or_default();
+            let typestr = if inder_cpu {
+                self.families[0].clone()
+            } else {
+                ffi::cstr(unsafe { ffi::sndbrd_typestr(0) }).unwrap_or_default()
+            };
             let image = if typestr == "TMS320AV120" {
                 ffi::user1_region().unwrap_or_default()
             } else {
@@ -3075,6 +3112,21 @@ impl Extractor {
                     // the PIA's flags before the low nibble: the high one comes after the
                     // third read.
                     unsafe { ffi::shim_nibble_after(3) };
+                }
+            }
+            if self.families[b as usize] == "INDER"
+                && unsafe { ffi::shim_spinb_latch_cpus() } == 1
+                && self.game.is_none()
+            {
+                let keep = 1u64 << INDER_BACKGROUND;
+                if unsafe { ffi::shim_inder_idle_hook(INDER_STOP as c_int, keep) } != 0 {
+                    eprintln!(
+                        "  board {b} (INDER): latch hook: the program reads {INDER_STOP:02X} when it has nothing to play (no background music after a sound, but after {INDER_BACKGROUND:02X})"
+                    );
+                } else {
+                    return self.fail(format!(
+                        "sound board {b} (INDER): its latch could not be hooked: every sound would play over the background music"
+                    ));
                 }
             }
             let family = &self.families[b as usize];
@@ -5158,7 +5210,9 @@ fn board_mask() -> u8 {
 /// The board's type string, PinMAME's own, except for the Sounds Plus -56 (`SNDBRD_BY56`),
 /// which PinMAME also names "BY51" but which takes its commands as two nibbles, and for
 /// Inder's machines, which PinMAME runs as a "SPINB" board with a command handler of their
-/// own (shim.c `shim_spinb_own`): "INDER"; and for Capcom's board (`SNDBRD_CAPCOMS`), which
+/// own (shim.c `shim_spinb_own`): "INDER" where a sound CPU polls the latch (the MSM5205
+/// boards, `shim_spinb_latch_cpus`), "INDER2" where the latch goes with an NMI (Lap By Lap's
+/// AY8910 board, PinMAME's INDER2 machine); and for Capcom's board (`SNDBRD_CAPCOMS`), which
 /// PinMAME's interface "TMS320AV120" shares with Romstar's: "CAPCOMS".
 fn board_typestr(board: c_int) -> Option<String> {
     let t = ffi::cstr(unsafe { ffi::sndbrd_typestr(board) })?;
@@ -5172,6 +5226,7 @@ fn board_typestr(board: c_int) -> Option<String> {
         _ if by56 => "BY56".into(),
         _ if by51n => "BY51N".into(),
         _ if p2k => "DCSP2K".into(),
+        _ if inder && unsafe { ffi::shim_spinb_latch_cpus() } == 0 => "INDER2".into(),
         _ if inder => "INDER".into(),
         _ => t,
     })
@@ -5285,7 +5340,7 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
     match board_typestr(board).as_deref() {
         Some("DCSP2K") => return p2k_sends(bytes),
         Some("ZAC1370") => return addressed(mask, board, &zac_strobed(bytes)),
-        Some("SPINB") => return addressed(mask, board, &spinb_released(bytes)),
+        Some("SPINB" | "INDER") => return addressed(mask, board, &spinb_released(bytes)),
         Some("GPSM") => return addressed(mask, board, &gpsm_framed(bytes)),
         // Jac Van Ham (not Formula 1's sub-type): the board reads a level on its VIA, and
         // the program acts on a change of it (`jvh_data_w`); each command is followed by
@@ -5736,6 +5791,30 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                 )],
                 format!(
                     "board {b} (SPINB): bytes 81..FF but 8F (stop), C3/C4/DE/DF (the step volume): the latch's bit 7 is the command flag; each is followed by 00"
+                ),
+            ),
+            // Inder's MSM5205 programs take `cmd & 3F` (effects `& 7F` on La Rana and Metal
+            // Man, whose lists end at `0D` and `27`): `80`..`BF` hold every command, `C0`..`FF`
+            // repeat them; `80` is a sound on Moon Light and Clown (command 00).
+            "INDER" => (
+                vec![(
+                    format!(
+                        "80..BF (bit 7 set, each followed by 00; {INDER_STOP:02X} = stop)"
+                    ),
+                    (0x80..=0xBFu8).map(|c| vec![c]).collect(),
+                )],
+                format!(
+                    "board {b} (INDER): bytes 80..BF: the latch's bit 7 is the command flag, the programs take its low 6 bits; each is followed by 00; {INDER_STOP:02X} = stop"
+                ),
+            ),
+            // Lap By Lap: `cmd & 1F`, commands 00..15, 16..1F do nothing.
+            "INDER2" => (
+                vec![(
+                    format!("00..1E (cmd & 1F; {INDER2_IDLE:02X} = idle, no stop)"),
+                    singles(0x00..=INDER2_IDLE - 1),
+                )],
+                format!(
+                    "board {b} (INDER2): bytes 00..1E: the program takes the low 5 bits of the byte the NMI hands it"
                 ),
             ),
             "BYSNT" => (

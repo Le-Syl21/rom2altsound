@@ -499,6 +499,20 @@ int shim_driver_machine(int i, unsigned *audio_mask) {
 }
 
 // After shim_driver_machine: the name of CPU k / sound chip k, or NULL.
+// 1 when the driver named `name` keeps an nvram (its machine has an NVRAM handler), 0 when
+// it has none (Gun Shot: "no NVRAM, just 8 DIPs"), -1 when no driver has that name.
+int shim_driver_nvram(const char *name) {
+  int i, n = shim_driver_count();
+  for (i = 0; i < n; i++)
+    if (drivers[i]->name && !strcmp(drivers[i]->name, name)) {
+      if (!drivers[i]->drv)
+        return 0;
+      expand_machine_driver(drivers[i]->drv, &shim_mdrv);
+      return shim_mdrv.nvram_handler != NULL;
+    }
+  return -1;
+}
+
 const char *shim_machine_cpu(int k) {
   return (k >= 0 && k < MAX_CPU && shim_mdrv.cpu[k].cpu_type)
     ? cputype_name(shim_mdrv.cpu[k].cpu_type) : NULL;
@@ -844,6 +858,130 @@ extern WRITE_HANDLER(spinb_sndCmd_w);
 int shim_spinb_own(int board) {
   const struct sndbrdIntf *b = board_intf(board);
   return b && b->manCmd_w == spinb_sndCmd_w;
+}
+
+// Inder's first machines (indergames.c: Brave Team, INDER0; Canasta '86, INDER1) name the
+// SPINB board in their game data but start none: their game CPU writes its sound chip
+// itself (an SN76489 at $4B00, an AY8910 at $4B00/$4B02), and the machine has no audio
+// CPU. Returns 1 (SN76489) or 2 (AY8910) for such a machine, else 0.
+int shim_inder_cpu_sound(void) {
+  int k;
+  if (!core_gameData || core_gameData->hw.soundBoard != SNDBRD_SPINB || shim_audio_cpu(0) >= 0
+      || sndbrd_exists(0))
+    return 0;
+  for (k = 0; k < MAX_SOUND && Machine->drv->sound[k].sound_type; k++) {
+    int t = Machine->drv->sound[k].sound_type;
+    if (t == SOUND_SN76489 || t == SOUND_SN76496)
+      return 1;
+    if (t == SOUND_AY8910)
+      return 2;
+  }
+  return 0;
+}
+
+// Inder's sound CPUs that poll the command latch (inder.c `sndcmd_r`, a read handler on the
+// single address $8000): the MSM5205 boards (INDERS0, INDERS1, INDERS1RANA: one CPU; INDERS2,
+// Metal Man: two). Lap By Lap's (INDER2) reads its latch through an AY8910 port after an
+// NMI instead, and has none. Returns how many audio CPUs have one.
+static int shim_latch_cpu(int i) {
+  int ii;
+  for (ii = 0; ii < MAX_CPU; ii++) {
+    const struct Memory_ReadAddress *p;
+    if (!Machine->drv->cpu[ii].cpu_type || !(Machine->drv->cpu[ii].cpu_flags & CPU_AUDIO_CPU))
+      continue;
+    p = (const struct Memory_ReadAddress *)Machine->drv->cpu[ii].memory_read;
+    for (; p && !IS_MEMPORT_END(p); p++)
+      if (!IS_MEMPORT_MARKER(p) && p->start == 0x8000 && p->end == 0x8000
+          && (size_t)p->handler > STATIC_COUNT) {
+        if (i-- == 0)
+          return ii;
+        break;
+      }
+  }
+  return -1;
+}
+int shim_spinb_latch_cpus(void) {
+  int n = 0;
+  while (shim_latch_cpu(n) >= 0)
+    n++;
+  return n;
+}
+
+// Inder's single-CPU MSM5205 programs (Moon Light, Clown, Corsario, Mundial 90, Atleta,
+// 250 c.c.: corsario's a-corsar.bin, main loop at $008D) play their background music
+// (command 0C) whenever the latch's bit 7 is clear: the game sends a command as `8x`, and
+// 4 interrupts later 00 (corsario's game program, $1D46 and $173B), so on the machine the
+// music comes back after every effect, from where the effect cut it. The program reads the
+// latch at three places: while a sample plays (any byte with bit 7 interrupts it), while
+// the MSM5205 is held in reset between two samples (a byte with bit 7 is kept as the next
+// command), and when it has nothing to play (bit 7: dispatch; clear: the background). The
+// hook answers that last read with `idle` (a byte with bit 7 the program takes as "nothing
+// to play") instead of 00, so that an effect ends in silence and is recorded alone; the
+// other reads see the latch as it is. The program's state comes from its writes to the
+// board's 8255 (ports at $4000-$4002): an address byte on port A or B (sample ROM address)
+// means a sample is playing; port C bit 6 is the MSM5205's reset, which also ends the
+// sample. After a command whose `& 3F` is in `keep` (a mask of 64 bits, the background's
+// own command), the latch is left as it is, so that the background plays on.
+static mem_read_handler shim_il_r_orig;
+static mem_write_handler shim_il_w_orig;
+static offs_t shim_il_w_base;
+static int shim_il_cpu = -1, shim_il_playing, shim_il_reset;
+static int shim_il_idle = 0xcf;
+static unsigned long long shim_il_keep;
+static data8_t shim_il_last;
+
+static READ_HANDLER(shim_il_r) {
+  data8_t v = shim_il_r_orig(offset);
+  if (v & 0x80) {
+    shim_il_last = v;
+    return v;
+  }
+  if (shim_il_playing || shim_il_reset || (shim_il_keep >> (shim_il_last & 0x3f) & 1))
+    return v;
+  return (data8_t)shim_il_idle;
+}
+static WRITE_HANDLER(shim_il_w) {
+  offs_t a = offset + shim_il_w_base - 0x4000; // the 8255 ignores registers above 3
+  if (a < 2)
+    shim_il_playing = 1;
+  else if (a == 2) {
+    shim_il_reset = (data & 0x40) != 0;
+    if (shim_il_reset)
+      shim_il_playing = 0;
+  }
+  shim_il_w_orig(offset, data);
+}
+
+// Hooks the latch read ($8000) and the 8255 writes ($4000) of the only audio CPU that polls
+// the latch. Call it from the emulation thread between two frames. Returns 1 when hooked
+// (or already), 0 when the machine has not exactly one such CPU or no 8255 at $4000.
+int shim_inder_idle_hook(int idle, unsigned long long keep) {
+  int cpu = shim_latch_cpu(0);
+  const struct Memory_ReadAddress *r;
+  const struct Memory_WriteAddress *w;
+  shim_il_idle = idle & 0xff;
+  shim_il_keep = keep;
+  if (shim_il_cpu >= 0)
+    return 1;
+  if (cpu < 0 || shim_latch_cpu(1) >= 0)
+    return 0;
+  r = (const struct Memory_ReadAddress *)Machine->drv->cpu[cpu].memory_read;
+  w = (const struct Memory_WriteAddress *)Machine->drv->cpu[cpu].memory_write;
+  for (; r && !IS_MEMPORT_END(r); r++)
+    if (!IS_MEMPORT_MARKER(r) && r->start == 0x8000 && r->end == 0x8000)
+      shim_il_r_orig = r->handler;
+  for (; w && !IS_MEMPORT_END(w); w++)
+    if (!IS_MEMPORT_MARKER(w) && w->start == 0x4000 && (size_t)w->handler > STATIC_COUNT) {
+      shim_il_w_orig = w->handler;
+      shim_il_w_base = w->start;
+      install_mem_read_handler(cpu, 0x8000, 0x8000, shim_il_r);
+      install_mem_write_handler(cpu, w->start, w->end, shim_il_w);
+      shim_il_cpu = cpu;
+      shim_il_playing = shim_il_reset = 0;
+      shim_il_last = 0;
+      return 1;
+    }
+  return 0;
 }
 
 // Sends `n` times the pair (`a`, `b`) through the board's manual command, with `slices`

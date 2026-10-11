@@ -862,6 +862,17 @@ const WPCS_REFERENCE: u8 = 0x0C;
 /// which rewrites the vpm's copy when it stops. Returns the report stored in the manifest.
 fn cold_boot(cli: &Cli, job: &Job, vpm: &Path) -> Result<serde_json::Value, String> {
     let rom = &job.rom;
+    // A machine that keeps no nvram (Gun Shot: no NVRAM handler, its settings are DIP
+    // switches) has no factory settings to write: it boots the same either way.
+    let name = std::ffi::CString::new(rom.as_str()).map_err(|e| e.to_string())?;
+    if unsafe { ffi::shim_driver_nvram(name.as_ptr()) } == 0 {
+        eprintln!("factory: {rom} keeps no nvram (no NVRAM handler): no cold boot, booted as is");
+        return Ok(serde_json::json!({
+            "vpm": vpm,
+            "nvram": null,
+            "nvram_note": "the machine keeps no nvram (its driver has no NVRAM handler): no cold boot",
+        }));
+    }
     let nvram = vpm.join("nvram").join(format!("{rom}.nv"));
     let cfg = vpm.join("cfg").join(format!("{rom}.cfg"));
     for f in [&nvram, &cfg] {

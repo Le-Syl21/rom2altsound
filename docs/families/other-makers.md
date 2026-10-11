@@ -31,15 +31,20 @@ replaces the default. That is, unless said otherwise:
 ## <a name="sndbrd_spinb"></a>SNDBRD_SPINB
 
 Spinball / Inder sound board (two Z80, two MSM5205 or MSM6585) · PinMAME interface `SPINB`
-(`src/wpc/spinb.c`) · status ⚠️ · 27 sets, 16 games, 14 sound ROM ids, 1985-1996, Inder
+(`src/wpc/spinb.c`) · status ✅ · 27 sets, 16 games, 14 sound ROM ids, 1985-1996, Inder
 (Spain), Spinball (Spain) · e.g. Bushido (`bushido`), Mach 2, Jolly Park, Verne's World
 
-Two hardware lines share the interface: Spinball's (`spinbgames.c`: bushido, mach2,
-jolypark, vrnwrld, 7 sets), whose manual command is the interface's own
-`spinb_sndCmd_w`, and Inder's (`indergames.c`, `bowlgames.c`: 20 sets, brvteam to
-metalman), whose machine inits replace it (`sndbrd_setManCmd`: `snd_w`, `snd2_w`, in
-`src/wpc/inder.c`). rom2altsound tells them apart at run time (shim.c `shim_spinb_own`)
-and names the second `"INDER"` (`board_typestr`).
+Three hardware lines share the family. Spinball's (`spinbgames.c`: bushido, mach2,
+jolypark, vrnwrld; `bowlgames.c`: gunshot; 8 sets), whose manual command is the
+interface's own `spinb_sndCmd_w`; Inder's sound boards (`indergames.c`, `bowlgames.c`:
+lapbylap to metalman, 15 sets), whose machine inits replace it (`sndbrd_setManCmd`: `snd_w`,
+`snd2_w`, in `src/wpc/inder.c`); and Inder's first two machines (Brave Team, Canasta '86,
+4 sets), which name the SPINB board in their game data but start none: their game CPU
+writes its sound chip itself. rom2altsound tells them apart at run time (shim.c
+`shim_spinb_own`, `shim_spinb_latch_cpus`, `shim_inder_cpu_sound`) and names them
+`"SPINB"`, `"INDER"` (a sound CPU polls the latch), `"INDER2"` (Lap By Lap: the latch with
+an NMI), `"INDER0"` and `"INDER1"` (no board: the game's SN76489 or AY8910)
+(`board_typestr`, `Extractor::end_boot`).
 
 ### Spinball (`"SPINB"`)
 
@@ -48,7 +53,8 @@ and names the second `"INDER"` (`board_typestr`).
   feeding its own ADPCM chip from its sample ROMs: MSM5205 on Bushido and Mach 2
   (`SPINB_msm5205Int`), MSM6585 on Jolly Park and Verne's World (`SPINB_msm6585Int`); an
   8051 runs the DMD. A step volume (`digvol_w`, written by the music CPU at `A000`, 0 to
-  142 steps, applied to both ADPCM chips; `SPINBlocals.volume` starts at 122).
+  142 steps, applied to both ADPCM chips; `SPINBlocals.volume` starts at 122). Gun Shot (a
+  shooting game, 1996) has one Z80 and one MSM6585, no display and no NVRAM.
 - **Commands**: the game's Z80 writes the command byte to a latch at `6C20` or `CC20`
   (`soundbd_w`, in the game CPU's memory map): **not through `sndbrd_data_w`**, so nothing
   is logged at boot. Both sound CPUs poll that latch at `8000` (`sndcmd_r`; no interrupt,
@@ -76,43 +82,113 @@ and names the second `"INDER"` (`board_typestr`).
   `shim_mancmd_pairs`, 30 timeslices after each byte: with 4, only 24 of 142 steps
   reached `digvol_w`). The level the game itself sets later (its volume setting) is not
   known.
+- **Factory boot**: Gun Shot keeps no nvram (its driver has no NVRAM handler, the settings
+  are DIP switches): the cold boot, which waited for an nvram the game never writes and
+  failed the run, is skipped for any such machine (`cold_boot`, shim.c
+  `shim_driver_nvram`).
 - **Loops**: audio, sequencer state (both Z80s' RAM).
 - **Measured** (survey settings, [board support](../board-support.md)): bushido 31 of 40,
-  mach2 40 of 40, jolypark 40 of 40 (-32 to -8 LUFS), vrnwrld 40 of 40, all from
-  silence, no board reset.
+  mach2 40 of 40, jolypark 40 of 40 (-32 to -8 LUFS), vrnwrld 40 of 40, gunshot 10 of 40
+  (it failed before), all from silence, no board reset. These are every command the
+  programs have: Bushido's effects program takes `01`..`20` (`a-sonido.bin`, dispatch
+  `008C`..`011F`; `0C` and `0F` are no effect) and its music program only `0C` and `0F`
+  (`d-musica.bin` `00B7`), so `81`..`A0` are its 31 sounds and `A1`..`A9` play nothing;
+  Gun Shot's program takes `01`..`0A` (`m-177_gun_shot_rom_1`, dispatch `006C`), its 10.
 - **In VPinball**: **the pack cannot play**: the game writes its latch directly, never
   through `sndbrd_data_w`, so AltSound receives nothing (bushido: no command in 45 s of
   attract mode with a coin and start); its generation (0) has no libaltsound case either.
 
-### Inder (`"INDER"`)
+### Inder's sound boards (`"INDER"`, `"INDER2"`)
 
-- **Commands**: `snd2_w` stores the byte in a latch and pulses the sound CPU's NMI (the
-  INDER2 machine: Lap By Lap...), `snd_w` only stores it (`inder.c`); on the MSM5205
-  machines (INDERS1: Moon Light, Pin Clown, Corsario, Mundial, Atleta...) the Z80 polls
-  the latch at `8000`, as Spinball's programs do (their successors): read in corsario's
-  sound program (`a-corsar.bin`, poll at `009D`), a byte with bit 7 set is a command
-  (`cmd & 3F`, `8F` stops), and **while bit 7 is clear the program plays command `0C`,
-  its background music** (`00A8` → `0268`).
-- **What rom2altsound sends**: the common method (one byte per command, `01`..`FF`), stop
-  `00` (`BUILTIN_STOPS`, since the version after 0.2.3).
-- **Measured** (survey settings): lapbylap 28 of 40, all from silence, no board reset (30
-  of 40, 2 not from silence, 40 resets with the reset as the stop). moonlght, pinclown,
-  corsario, atleta: 40 of 40 but all at one level, none from silence: the background
-  music, under every command. canasta and brvteam: "no sound board on this machine" (their
-  SN76489 is not started as a board).
-- **Limits and what is missing**, tried on corsario: `8F` as the stop silences the
-  background, and an effect sent as `8x 00` then plays from silence, but the `00` that
-  releases the latch starts the background again under it; with `8F` as the release
-  (`8x 8F`) the effect is cut at once, and a byte left with bit 7 set replays from its
-  start (a stutter, -58 LUFS). The background is the game's own state between commands;
-  separating it from the effects needs a release value that neither restarts nor
-  interrupts, not found.
-- **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436
-  and older: their libaltsound has no case for generation 0 (none) and joins the bytes two
-  by two ([In VPinball](common.md#in-vpinball)); the Inder machines write one byte per
-  command through `sndbrd_data_w`, the byte the sweep sends (the family stays marked not
-  playable on the site because of its Spinball machines, above); `ind250cc` sent no sound command in 45 s of attract
-  mode with a coin and start, so nothing was measured.
+- **Hardware** (`inder.c`): the MSM5205 boards, a Z80 at 2.5 MHz feeding an MSM5205 from
+  four 64 KB sample ROMs through an 8255 (ports A and B: the sample address, port C: the
+  MSM5205's reset and strobe; `INDERS0`: Moon Light; `INDERS1`: Clown, Corsario, Mundial
+  90, Atleta, 250 c.c.; `INDERS1RANA`: La Rana), and Metal Man's two of them (`INDERS2`:
+  an effects CPU and a music CPU, as Spinball's, their successors). Lap By Lap
+  (`INDER2`): a Z80 at 2 MHz with two AY8910s.
+- **Commands** (`"INDER"`): the game writes the latch (`snd_w`, at `6C20`, not through
+  `sndbrd_data_w`); the sound CPUs poll it at `8000` (`sndcmd_r`) and take a byte while its
+  bit 7 is set, as Spinball's do. The game sends a command as `8x` and, 4 interrupts
+  later, `00` (corsario's game program: `1D46` writes `cmd | 80`, `173B` writes `00`).
+  The music programs take `cmd & 3F`, the effect programs of La Rana and Metal Man
+  `cmd & 7F` (lists ending at `0D` and `27`).
+- **The background music** of the single-CPU programs (Moon Light, Clown, Corsario,
+  Mundial 90, Atleta, 250 c.c.; read in corsario's `a-corsar.bin`): the main loop
+  (`008D`) reads the latch at `009D`; bit 7 set dispatches the command (`00AB`), bit 7
+  clear plays the background music (`0268`, the same routine as command `0C`), from where
+  it was cut (the position is saved at `0440` when an effect interrupts it): on the
+  machine the music comes back after every effect. A playing sample reads the latch once
+  per byte (`03C2`) and any byte with bit 7 interrupts it; between two samples the program
+  holds the MSM5205 in reset and reads the latch 32 times (`050E`), keeping a byte with
+  bit 7 as the next command. Before, the sweep sent single bytes (`01`..`FF`, stop `00`):
+  every file was the background music (40 of 40, all at one level, none from silence),
+  and `8F` as the stop silenced it only until the `00` that releases the latch.
+- **What rom2altsound sends** (`"INDER"`): as Spinball, every byte with bit 7 set
+  followed by `00` (`spinb_released`). On the single-CPU boards, a hook on the sound
+  CPU's latch read and on its 8255 writes (shim.c `shim_inder_idle_hook`) answers the
+  read the program makes when it has nothing to play with `CF` (`INDER_STOP`: the program
+  takes it as its music stop, `0F`, and stays silent) instead of `00`, so that an effect
+  ends in silence: the program is "playing" from its first sample address write (8255
+  port A or B) until the MSM5205 goes into reset (port C bit 6), and the reads it makes
+  while playing or in reset see the latch as it is. After `8C`, the background music
+  itself, the hook lets the latch be (`INDER_BACKGROUND`), so `8C` records the music as it
+  plays. La Rana's and Metal Man's programs wait for bit 7 when idle, as Spinball's
+  (La Rana gets the hook too, harmless: `CF & 7F` is no effect of its program).
+- **Sound list** (`"INDER"`): `80`..`BF` (64 commands: the low 6 bits; `C0`..`FF` repeat
+  them; `80` is a sound on Moon Light and Clown, their command `00`).
+- **Stop** (`"INDER"`): `CF 00`. `& 3F` = `0F`, the music stop of every program (corsario
+  `02A7`, metalman's `sound_m1.bin` `00EE`), and `& 7F` = `4F`, no effect. `8F` would also
+  play Metal Man's effect `0F`, and `BF` (`& 3F` = `3F`) interrupts its music, which then
+  starts again: its idle loop (`009E`) replays it while the flag `2231` is set, which only
+  `0F` clears.
+- **Lap By Lap** (`"INDER2"`): `snd2_w` stores the byte and pulses the sound CPU's NMI
+  (`0066` -> `0256`); the main loop then takes `cmd & 1F` (`0263`: commands `00`..`15`;
+  `16`..`1F` do nothing). `00`..`0A`, `0D` and `15` are effects (on either AY; those of the
+  first, `0451`, are skipped during a tune or within 5 interrupts of the last one), `0B`,
+  `0C`, `0E`..`14` tunes (`0130`), which end at their end mark (`01E3`); while a tune plays
+  only `0B`..`15` are taken (`028C`). There is no stop command: the sweep is `00`..`1E`,
+  the stop `1F` (`INDER2_IDLE`, taken and ignored), and the board reset that follows a stop
+  that leaves sound playing cuts the rest. Before, the sweep `01`..`FF` with the stop
+  `00` (itself an effect) went past `1F` into repeats of the first commands.
+- **Loops**: audio, sequencer state (the sound CPU's RAM).
+- **Measured** (survey settings): moonlght 18 of 40, pinclown 20, corsario 22, mundial
+  19, atleta 25, ind250cc 19, larana 12, metalman 38, all from silence, no board reset,
+  each the count of commands its program has (dispatch lists read in each sound ROM:
+  corsario `01`..`17` without `0F`; moonlght `00`..`14` without `08`, `0A`, `0F`; Metal
+  Man's `9F` is an effect one sample byte long). lapbylap 20 of 31 (`09` and `0A` play a
+  script that sets the volumes to 0, `16`..`1E` nothing), all from silence. The clones
+  (`*fp`) give the same.
+- **In VPinball**: **the pack cannot play**: as on Spinball's, the game writes its latch
+  directly (`snd_w`, `snd2_w`), never through PinMAME's sound command log, so AltSound
+  receives nothing (`ind250cc`: no command in 45 s of attract mode with a coin and start).
+
+### Inder's first machines (`"INDER0"`, `"INDER1"`): game-driven
+
+- **Hardware**: no sound CPU; the game's Z80 writes an SN76489 at `4B00` (Brave Team,
+  `INDER0`, through `core_revbyte`) or an AY8910 at `4B00`/`4B02` (Canasta '86, `INDER1`).
+  The machine starts no sound board (`sndbrd_0_init` is never called), so the run used to
+  end with "no sound board on this machine".
+- **The sound layer** (`gamesound::inder`, [game-driven boards](common.md#game-driven-boards)):
+  Brave Team's timer interrupt plays three voices, each a pointer to its next note (3
+  chip bytes), a count and a delay; a sound is a 12-byte descriptor (three note lists, the
+  first right after it, and three counts), started by `LD HL,desc; CALL 1617`, which
+  silences the chip (`174D`: 4 bytes from `1613`) and sets the voices
+  (`4010`..`4015`, `400A`..`400F`, `4001`..`4003` on, `4004`/`4006`/`4008` delays). The
+  catalog is every valid descriptor a `LD HL` or `LD DE` names (16; `13D8` reaches some
+  through a table). Canasta's has an effect channel (`CALL 16FB`: tone and volume
+  registers cleared, pointer `4004`, on `4001`) and a music channel (`CALL 173A`: pointer
+  `4011`, on `4002`, delay `4013`), each a script of AY register writes (Lap By Lap's
+  sound program has the same two routines): 13 effect scripts and 3 musics, the operands
+  of `LD HL` before the calls.
+- **Requests and stop**: the routines' own writes, as pokes into the game's memory map
+  (RAM and chip, `Send::Pokes`); the stop turns every voice or channel off and silences
+  the chip as the routines do (SN76489: the 4 bytes of `1613`; AY: mixer off, volumes 0).
+  The ids are the descriptor and script addresses.
+- **Measured** (survey settings): brvteam 16 of 16 (15 files, 1 blip; `1C8C` is a sound
+  whose notes are volume-off bytes), canasta 15 of 16 (`1D30` is the game's silencing
+  script: volumes 0), all from silence; the free play clones the same.
+- **In VPinball**: no command reaches AltSound (none exists); the packs are a recording
+  of the game's sounds, keyed by their internal ids.
 
 ## <a name="sndbrd_nuova"></a>SNDBRD_NUOVA
 
