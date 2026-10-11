@@ -53,7 +53,10 @@ between two idle bytes, as the games send it.
   0-4 and 6 on World Cup and Disco Fever) goes out as `FF`, the byte, `FF`, one send every
   4 frames: CB1 makes its edge on the command and drops on the idle byte that follows. An
   idle byte is sent as is, so Firepower's sounds.dat commands (`00 1F`) become
-  `FF 00 FF 1F`. On World Cup and Disco Fever, `80` in a command is the control line
+  `FF 00 FF 1F`. Since 0.3 the sweep follows the section (as on every board but DCS):
+  a section command and a swept byte are the same command when they differ only by the
+  trailing idle byte (`Extractor::list_key`: `001F` is `00`), so Firepower plays each of
+  its 31 commands once, under the section's ids and names. On World Cup and Disco Fever, `80` in a command is the control line
   instead (`S3_CTRL`): `s67s_ctrl_w` with `00`, then `FF` (the line on, then off: the game
   writes its solenoids 1-8 there inverted, `s4_sol1_8_w`), the data lines idle; data bit 7
   never reaches these boards, so `80` repeats no command.

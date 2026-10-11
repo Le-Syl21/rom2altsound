@@ -203,4 +203,66 @@ row give the before and after of the survey run. In short:
 What is left, and why (each family's notes say what was tried):
 
 - **Game-driven, not everything**: `sam_iv` (its own program has no sound code) and
-  `mideartp` (a bad dump).
+  `mideartp` (a bad dump): both are now `not_applicable` (see [the catalog](catalog.md#not-applicable)).
+
+## Production runs (the catalog pilot, 0.3)
+
+The survey above says whether sounds come out. The catalog's loudness needs the full list
+at the production settings: the factory boot, every command of the board (sounds.dat's
+section then the sweep), `--max-secs 120`, `--loop-max-secs 240`. A pilot of 24 sets over
+the families, `rom2altsound <sets> -j2 --drop-audio --skip-done`, 8-core host, October
+2026 (wall: 3 h 39 min; 16 MB kept):
+
+| set | family | wall | expected / written | not written | LUFS (all) | median file | factory volume |
+|---|---|---|---|---|---|---|---|
+| afm_113b | DCS95 | 288 s | 589 / 576 | silent 13 | -40.3 | -39.9 | `55AA6798` 12/31 |
+| mm_109c | DCS95 | 376 s | 893 / 871 | silent 22 | -39.2 | -39.7 | `55AA6798` 12/31 |
+| rs_l6 | DCS | 481 s | 480 / 455 | silent 25 | -40.1 | -39.8 | `55AA6798` 12/31 |
+| tz_94h | WPCS | 3238 s | 476 / 314 | silent 159, blip 2, stop 1 | -20.4 | -18.7 | `790CF3` 12/31 |
+| fh_l9 | WPCS | 1757 s | 473 / 226 | silent 246, stop 1 | -19.5 | -16.6 | `790CF3` 12/31 |
+| apollo13 | DE2S | 2431 s | 459 / 267 | silent 189, blip 3 | -57.2 | -55.7 | `FE2C` 3/31 |
+| monopoly | DE2S | 1930 s | 459 / 328 | silent 130, blip 1 | -26.3 | -23.9 | `FE2C` 3/31 |
+| gnr_300 | DE2S | 2110 s | 251 / 161 | silent 75, volume 15 | -16.5 | -17.4 | (pot: full scale) |
+| lotr | DE3S | 2707 s | 717 / 108 | silent 609 (dead board) | - | - | `FE26` 9/31 |
+| whirl_l3 | S11 | 1395 s | 510 / 189 | blip 219, silent 101, stop 1 | -20.1 | -17.8 | (no stage) |
+| esha_la3 | S11 | 2051 s | 511 / 238 | silent 144, blip 128, stop 1 | -19.7 | -20.5 | (no stage) |
+| frpwr_l2 | S67S | 81 s | 31 / 30 | silent 1 | -14.7 | -15.0 | (none) |
+| badgirls | GTS80B | 3539 s | 255 / 168 | silent 87 | -19.5 | -25.0 | (none) |
+| cueball | GTS3 | 1417 s | 255 / 129 | silent 126 | -23.3 | -20.8 | (none) |
+| jolypark | SPINB | 114 s | 122 / 83 | silent 39 | - | - | power-on step volume |
+| bttf_a28 | DE1S | 1306 s | 255 / 252 | silent 3 | -18.0 | -16.2 | (none) |
+| tmachzac | ZAC13136 | 143 s | 127 / 116 | silent 8, blip 3 | -15.8 | -13.6 | (none) |
+| meteor | ST300 | 162 s | 16 / 16 | | -11.6 | -11.0 | (game level) |
+| flashgdn | BY61 | 76 s | 222 / 37 | silent 184, stop 1 | -11.6 | -17.7 | (not emulated) |
+| shock | TAITO | 304 s | 255 / 220 | silent 35 | -23.2 | -28.0 | (none) |
+| bsv103 | CAPCOMS | 283 s | 1024 / 191 | silent 832, blip 1 | -24.3 | -20.2 | (pot as booted) |
+| acd_168h | SAM | 49 s | 412 calls / 405 | 7 calls without a stream | (static -11.3) | (static) | DAC `E8E8` |
+| twd_160h | SAM | 33 s | 408 calls / 399 | 9 calls without a stream | (static -14.7) | (static) | DAC `D0D0` |
+| sam_iv | ASTRO | 0 s | not applicable | | | | |
+
+What it shows:
+
+- **The figures make sense against each other.** apollo13 is the quietest (its factory
+  default is level 3 of 31: -57 LUFS); Attack from Mars and Medieval Madness, both at the DCS
+  factory level 12, are within 1.1 LU (-40.3, -39.2), Road Show too (-40.1); the WPCS games
+  at their factory 12 sit near -20, the boards without a volume stage between -24 and -12.
+- **Funhouse's `7A xx` bank**: 108 sounds its sounds.dat section leaves out (226 written,
+  against 118 from the section's range alone).
+- **lotr (DE3S): the AT91 dies in emulation.** After `FC85` (sounds.dat "thunk sound") it
+  plays nothing more, board reset or not, throttled or not; `FC96` ("thwak") does the same.
+  Both now go last (`BOARD_KILLERS`), and any other board that goes silent for good is
+  detected (`coverage.board_dead`: every file replayed at the factory volume came out
+  silent) and counted as such; its files then stay at the reference volume and the catalog
+  gives it no `lufs`. The other DE3S games have not been run in full: expect more of these.
+- **In a game** (a harness on the tool's own libpinmame: cold boot, coins, Start, the
+  output recorded; the sound recognised by its level envelope): GTS80B badgirls plays its
+  game music `18` at -20.49 LUFS where its file reads -20.48 over the same 30 s, and its coin
+  sound `09` at the file's level; GTS3 cueball plays its coin sound `5B` at the file's true
+  peak (-11.16 dBTP both). Spinball jolypark's attract music plays 32.5 dB below its file
+  (the game steps the volume down; [Spinball](families/other-makers.md)), Stern SAM
+  acd_168h's game music at -13.1 LUFS against the pack's -11.3, a coin sound 6.6 dB below
+  its file ([Stern SAM](families/stern-sam.md#sndbrd_none_sam)): those two get no `lufs`.
+- **Cost**: from 25 s (SAM) to 59 min (badgirls: 41 sounds run to the 240 s loop search)
+  per set; 30 MB to 1.1 GB of audio per set before it is dropped, and under 1.5
+  MB kept (the manifest and the CSVs; 4 MB for twd_160h).
+

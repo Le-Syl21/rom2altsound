@@ -89,8 +89,12 @@ Monopoly (`monopole`)
   Which of the two a board is: `ffi::is_data_east` (the game's generation is one of
   `GEN_DE`, `GEN_DEDMD16/32/64`), `Extractor::is_de_board`.
 - **Sound list**: no sounds.dat section; the sweep is `01`..`FB` (`sweep`, `"BSMT"`
-  branch). `FC`..`FF` are left out: `FF xx` plays the same sound as `xx` and `FC xx` starts
-  a loop for every `xx` (probed on apollo13, gnr_300, xfiles; `BSMT_LAST`). On Data East
+  branch), and on Whitestar (not Data East) since 0.3 the second bank `FE 30`..`FF` after
+  it: on monopoly 121 of `FE30`..`FEFB` play, none of them a twin of its single byte (the
+  pair probe, `xx` and `FE xx` in one run), and the games send them (simpprty `FE BC`);
+  `FE 10`..`2F` is the master volume. `FC`..`FF` as single bytes are left out: `FF xx`
+  plays the same sound as `xx` and `FC xx` starts a loop for every `xx` (probed on
+  apollo13, gnr_300, xfiles; `BSMT_LAST`). On Data East
   the music volume bytes `21`..`2F` are swept too: they end as `no_sound` or a blip
   because the music volume is set back before each command, and the real sounds among them
   are kept (gnr_300 `2E`, a loop).
@@ -163,9 +167,16 @@ Whitestar "CPU/Sound Board II" with an Atmel AT91 (ARM7) · PinMAME interface `A
   Whitestar volume range `FE 10`..`2F`.
 - **Sound list**: unlike every other family here, the DE3S games have sounds.dat
   sections (`lotr`, `ripleys`, `elvis`, `sopranos`, `nascar`, `gprix`; 155 of the 156 sets
-  by the prefix rule), so their list is that section's, with names (`build_commands`);
+  by the prefix rule), so their list starts with that section's, with names (`build_commands`);
   each two-byte entry goes out as two `sndbrd_manCmd` calls 4 frames apart
-  (`game_cmd`). A set without a section would get `01`..`FB` (`sweep`, `"BSMT" | "AT91"`).
+  (`game_cmd`). Since 0.3 the sweep follows the section (`sweep`, `"AT91"`): the
+  two-byte space `FC 00`..`FF`, `FD 00`..`FF` and `FE 30`..`FF`, 720 commands minus the
+  three the board's queue drops (`FC FC`, `FD FD`, `FE FE`: `scmd_w` ignores a byte equal
+  to the last one, for the game as for the tool), the ones the section names not played
+  twice (lotr: 625 named, 111 more swept). Measured on lotr: `FD xx`, `FF xx` and `xx`
+  alone play the same sound (`02`, `10`, `30`, `45`, `80`: the same length within 2 %, the
+  same loudness within 0.3 LU), so `FF xx` and the single bytes are not swept; `FE 00`..`0F`
+  play nothing.
 - **Stop, boot and resets**: `00` (`BUILTIN_STOPS`), which the games send at boot (lotr:
   `00 00 FD 00` first). Until 0.2.3 there was none, and the stop was a board reset
   (`shim_reset_audio_cpus` pulses the AT91's reset line), which does not empty the
@@ -186,6 +197,16 @@ Whitestar "CPU/Sound Board II" with an Atmel AT91 (ARM7) · PinMAME interface `A
   elvis 40 of 40, sopranos 40 of 40, nascar 40 of 40, all from silence, no board reset
   (before the stop `00`: 24 of lotr's and 31 of elvis's files started over what was
   playing).
+- **Commands that kill the board** (0.3 pilot, the first full run of a DE3S game): on lotr,
+  after `FC85` (sounds.dat "thunk sound") the AT91 plays nothing more: `FD02`, `FC85`,
+  `FD30` in one run leave `FD30` silent, with a board reset in between and with
+  `--throttled` too; `FC96` ("thwak") does the same. The full run had written 108 sounds,
+  none after `FC85`. Both now go last, after every other pass (`BOARD_KILLERS`,
+  `Pass::Last`); a board that goes silent for good anyway is detected (every file played
+  again at the factory volume comes out silent: `Extractor::dead_boards`), its later
+  commands counted as `board_dead` in the coverage, and the catalog gives the set no
+  `lufs`. Whether the game ever sends these, and whether the real board survives them, is
+  not known; the other DE3S games have not been run in full.
 - **Limits and what is missing**: because `scmd_w` drops a repeated byte, an `FD xx`
   command sent right after the `FE 11 FD` refresh loses its `FD` and reaches the board as
   `xx` alone; measured on elvis, `02` alone and `FD 02` play the same "Main Theme" at the

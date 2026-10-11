@@ -2,6 +2,61 @@
 
 ## Unreleased
 
+- **The catalog becomes the loudness reference: every entry's average loudness at the
+  factory volume, and its coverage.** `rom2altsound catalog --manifests <runs>` reads the
+  `manifest.json` of extraction runs (and the `factory-boot.json` of `--boot-only` runs):
+  each entry gets `loudness` (`lufs`, the R128 integrated loudness of every written file
+  back to back, the main figure; `lufs_excluding_loops`, `median_file_lufs`,
+  `true_peak_dbtp`, seconds, files, the factory volume the files are at and where it comes
+  from, the run's tool version and settings, `current`) and `coverage` (where the command
+  list came from, how many commands, written, and the reason for every one not written);
+  each set gets its factory volume, and a set whose factory volume differs from its
+  entry's measured set gets its own figures, or a null `lufs` saying it was not extracted.
+  `--plan <dir>` writes the set lists of a whole-catalog run (`measure.txt`, `boot.txt`,
+  `differs.txt`). The site shows a LUFS column. The format: [docs/catalog.md](docs/catalog.md).
+- **Stern SAM is not given a loudness.** Measured in a started game in PinMAME (acd_168h:
+  coins, Start, the ball in the shooter lane), the output is a music bed at -13.1 LUFS where
+  the pack's files read -11.3 LUFS together at the same factory attenuation, and a coin
+  sound plays 6.6 dB below its file: the static decode leaves out the game's bus levels and
+  mix. The catalog keeps the static figures apart (`static_decode`) and leaves `lufs` null,
+  with a caveat; the SAM manifest says so too (`loudness.in_game`).
+- **Every command of the board, also where sounds.dat has a section.** The sweep now runs
+  after the section's named commands on every board but DCS (which already adds its ROM
+  track catalog): Funhouse gets its `7A xx` bank, Twilight Zone, Creature and Doctor Who the
+  commands their sections leave out, Earthshaker and Firepower their whole command space
+  (Firepower's `001F` is the swept `00`: played once), the DE3S games (155 sets) the
+  two-byte space. **DE3S**: the sweep is `FC xx`, `FD xx` and `FE 30`..`FF` (717
+  commands; `FC FC`, `FD FD`, `FE FE` never reach the board, whose queue drops a repeated
+  byte; measured on lotr: `FD xx`, `FF xx` and `xx` alone play the same sound, `FE 00`..`0F`
+  nothing). **Whitestar**: `FE 30`..`FF` is a second bank of sounds (monopoly: 121 of
+  `FE30`..`FEFB` play, none a twin of its single byte), now swept after `01`..`FB`.
+- **Coverage in every manifest**: `coverage` (`sources` with their sizes, `expected`,
+  `tried`, `with_sound`, `written`, and `not_written` by reason: `silent`, `blip`,
+  `stop_command`, `volume_command`, `undumped_sample_rom`, `empty_after_trimming`,
+  `not_tried`; Stern SAM: the calls of its call table), and `measurement` (the tool, its
+  version, the measurement method number and the settings the figures depend on).
+- **A board that dies in emulation no longer passes for silence.** lotr's AT91 plays
+  nothing more after `FC85` ("thunk sound") or `FC96` ("thwak"), board reset or not: the
+  first full DE3S run wrote 108 sounds, none after `FC85`. Such commands now go last, after
+  every other pass, and a board whose files all come out silent when played again at the
+  factory volume is reported (`coverage.board_dead`, its later commands counted
+  `board_dead`); its files stay at the reference volume, and the catalog gives no `lufs` to
+  a set whose files are not at the factory volume (`at_reference_volume`).
+- **Spinball (jolypark, vrnwrld): not the game's level.** The tool steps the volume back up
+  to PinMAME's power-on level after the game's boot steps it down; in attract mode PinMAME
+  plays jolypark's music 32.5 dB below the file. The manifest says so (`recorded_volume`)
+  and the catalog gives them no `lufs`. GTS80B (badgirls) and GTS3 (cueball), checked the
+  same way in a game, play at their files' level.
+- **Not applicable instead of FAILED**: `sam_iv`, `mideartp`, `tts_l1`, `tts_l2`,
+  `bstrk_l1`, `tstrk_l1`, `xforce` (without `--sound-rom-from`) and the `sam1_flashb_*`
+  boot flashes end with a manifest saying why there is nothing to extract, and exit 0; the
+  catalog marks them, and the entries without a sound board, `not_applicable`.
+- **Whole-catalog runs**: `--drop-audio` deletes each ROM's WAV files once it is done
+  (keeping the manifest, the CSVs and the boot reports), `--skip-done` skips the ROMs whose
+  folder holds a current result (resumable runs), `--boot-only` reads a set's factory
+  volume (cold boot, warm boot, stop before the first sound; `factory-boot.json`).
+  `rom2altsound loudness <wav>` measures a recording as the manifests do.
+
 - **Stern SAM: the older firmware's sounds (246 sets gave none).** The script interpreter
   is an array of handlers indexed by the opcode, and the older firmware numbers the same
   handlers differently: read in each generation's program, there are four (17 handlers,

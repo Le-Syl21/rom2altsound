@@ -145,6 +145,10 @@ rom2altsound catalog ~/vpinball/roms --out docs/catalog.json
 python3 docs/build_site.py
 ```
 
+With the manifests of extraction runs (`--manifests <dir>`), each entry also gets the
+loudness of its sounds at the game's factory volume and its coverage: see
+[the catalog](docs/catalog.md), which also gives the whole-catalog run.
+
 Then copy the ROM's folder next to your table, as `<table folder>/altsound/<rom>/` (for
 example `Tables/Attack from Mars/altsound/afm_113b/`), and turn on the AltSound plugin in
 VPinball.
@@ -782,6 +786,10 @@ nombres), puis les pages autour :
 rom2altsound catalog ~/vpinball/roms --out docs/catalog.json
 python3 docs/build_site.py
 ```
+
+Avec les manifestes de passes d'extraction (`--manifests <dossier>`), chaque entrée reçoit
+aussi le volume sonore de ses sons au volume d'usine du jeu et sa couverture : voir
+[le catalogue](docs/catalog.md) (en anglais), qui donne aussi la passe sur tout le catalogue.
 
 Copiez ensuite le dossier de la ROM à côté de votre table, en
 `<dossier de la table>/altsound/<rom>/` (par exemple

@@ -93,8 +93,20 @@ Walking Dead LE (`twd_160h`)
   265 of trn_150's 270 calls play the same audio in trn_174; fg_1200af (14) 1529 files;
   wpt_106a (early 14) 1110 files, 599 calls. acd_168h's files are byte-identical to
   before.
+- **In a game** (0.3, a measurement harness on the tool's own libpinmame, acd_168h cold
+  booted: four coins, Start (`KEYCODE_1`) once credited, troughs 18-21 closed, nothing
+  else touched): PinMAME's output in a started game, the ball in the shooter lane, is a
+  music bed at **-13.1 LUFS** (110 s, stereo as VPX plays it), where the pack's files
+  together read -11.3 LUFS at the same factory attenuation, and the songs one by one about
+  -9.8 to -11.8 LUFS. A coin sound recognised in the recording (the level envelope of
+  `s00F6` matches within 0.7 dB) plays **6.6 dB** below its file at the factory
+  attenuation. So the static files are louder than the game plays them, by an amount that
+  depends on the sound (the game's bus levels and mix), and the catalog does not give a
+  SAM entry a `lufs`: its figures are under `static_decode`, with a caveat
+  ([the catalog](../catalog.md#stern-sam)).
 - **Limits and what is missing**: only acd_168h was checked in depth against the study
-  script; the scripts' volume ramps and the game's mixing are not reproduced; the factory volume follows PinMAME's
+  script; the scripts' volume ramps and the game's mixing are not reproduced (above: 2 to
+  7 dB too loud against a game on acd_168h); the factory volume follows PinMAME's
   linear reading of the DAC register, about 10 dB louder than the datasheet at `E8`
   ([Limits](../how-it-works.md#limits)).
 - **In VPinball**: **the pack does not play.** PinMAME's AltSound is fed by sound

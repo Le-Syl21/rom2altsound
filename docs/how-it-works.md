@@ -14,7 +14,9 @@ rom2altsound <rom>... [--roms <dir>] [--out <dir>] [--jobs N] [--no-factory | --
              [--limit N] [--boot-secs S] [--boot-max-secs S] [--max-secs S] [--loop-max-secs S]
              [--no-sound-secs S] [--stop 0xHHHH] [--dc-block] [--vpm <dir>] [--no-altsound]
              [--merge-twins] [--intro-loop-secs S] [--check-ducking]
+             [--boot-only] [--drop-audio] [--skip-done]
 rom2altsound loop-scan [--hint SECS | --hint-frames F] <wav>...    # the loop detector alone
+rom2altsound loudness [--from S] [--to S] <wav>...       # a WAV measured as the manifests are
 rom2altsound dcs-effects <region.bin> <rom> [--json F]   # DCS track programs (diagnostic)
 rom2altsound duck-fit <M.wav> <C.wav> <MC.wav> <at_secs> [--win S]  # music gain under a sound
 rom2altsound drift-check <A.wav> <B.wav>                 # does a board replay sample-exactly?
@@ -1400,7 +1402,10 @@ channels), and `twin` (`residual_db`,
 With names applied (see "Sound names"): `sounds_dat_name` on a renamed sound, and `names`
 at the top level.
 
-At the top level: `sound_rom_id` (see "Sound names"), `mode` (`factory` or `normal`), `factory` (vpm, saved nvram path and size,
+At the top level: `measurement` (the tool, its version, the measurement `method` number
+and the settings the figures depend on: see [the catalog](catalog.md#staleness)),
+`coverage` (where the command list came from and what became of every command: see
+[the list of commands](families/common.md#the-list-of-commands)), `sound_rom_id` (see "Sound names"), `mode` (`factory` or `normal`), `factory` (vpm, saved nvram path and size,
 cold boot report), the boards, `boot` (length, what ended it, every byte per board as
 `seconds:byte`), `factory_volume` (factory mode) or `game_volume` (the last command per board
 and kind: master, DCS channel, Data East music), `volume_init` (what the files were recorded
@@ -1433,6 +1438,28 @@ level is that of the file as written (`volume_init`, e.g. `factory 55AA6798 (fro
 reference 55AAEF10, -22.44 dB)` or `reference 55AAEF10`): in factory mode, measured on the
 recording and moved by the board's gain; `clipped_samples` and `master_volume_check` are
 those of the recording.
+
+### Measurement runs
+
+For the catalog's loudness ([the catalog](catalog.md#building-it)), three options make a
+run over thousands of sets possible on an ordinary disk:
+
+- `--drop-audio`: once a ROM is done, its WAV files are deleted (`batch::drop_audio`) and
+  `manifest.json`, the CSVs and the boot reports are kept: every figure the catalog reads.
+  No listening page is written. The run prints what each ROM freed.
+- `--skip-done`: a ROM whose folder already holds a current result is not run again
+  (`batch::is_done`): its `manifest.json` (with `--boot-only`, its `factory-boot.json`)
+  has the same `measurement` as this run's, and it wrote sounds or found the set not
+  applicable. A stopped run is resumed by running the same command again.
+- `--boot-only`: the factory boot (cold, then warm from the factory nvram), stopped before
+  the first sound; `factory-boot.json` holds the boot report and `factory_volume`, the
+  master volume the game set. It reads the factory volume of a set whose sound ROM is
+  extracted under another set (the volume is the CPU ROM's).
+
+A set with nothing to extract (`catalog::not_applicable`: `sam_iv`, `mideartp`, `tts_l1`,
+`tts_l2`, `bstrk_l1`, `tstrk_l1`, `xforce` without `--sound-rom-from`, the
+`sam1_flashb_*` boot flashes) gets a `manifest.json` with `not_applicable` and its reason,
+and the run counts it as done, not failed.
 
 ## ROM verification
 

@@ -81,7 +81,14 @@ an NMI), `"INDER0"` and `"INDER1"` (no board: the game's SN76489 or AY8910)
   step volume) play at. The steps go out within a few frames (`Send::Pairs`, shim.c
   `shim_mancmd_pairs`, 30 timeslices after each byte: with 4, only 24 of 142 steps
   reached `digvol_w`). The level the game itself sets later (its volume setting) is not
-  known.
+  known. **Measured in PinMAME** (0.3, a harness on the tool's libpinmame, jolypark cold
+  booted then left in attract mode for 90 s; coins and Start sent, the game did not start
+  without its trough switches): the output stays at -60 LUFS, and its background music,
+  recognised by its level envelope (`8C`, within 0.5 dB), plays **32.5 dB below** the
+  tool's file. So the files are not at the level VPinball plays: the manifest's
+  `recorded_volume` says `PinMAME's power-on step volume`, and the catalog gives jolypark
+  and vrnwrld no `lufs` (their levels go under `at_reference_volume`, with a caveat).
+  Whether a started game steps the volume back up is not known.
 - **Factory boot**: Gun Shot keeps no nvram (its driver has no NVRAM handler, the settings
   are DIP switches): the cold boot, which waited for an nvram the game never writes and
   failed the run, is skipped for any such machine (`cold_boot`, shim.c
@@ -641,7 +648,8 @@ e.g. X Force (`xforce`), Space Team (`spcteam`)
   banks; with no dump they read `FF` and `40`..`7F` are silent (rms 0.5 LSB, the
   mixer's dither; `40` a click under 0.5 ms), carried by rom2altsound's PinMAME until it is
   merged.
-- **Limits and what is missing**: the sample ROMs (`40`..`7F` silent); the music variants
+- **Limits and what is missing**: the sample ROMs (`40`..`7F` silent, counted as
+  `undumped_sample_rom` in the manifest's `coverage`, not as silent commands); the music variants
   without a found loop are cut at `--max-secs`; the channel 1 drone above. VPinball plays
   with the PinMAME it is built with: until #729-#731 are merged and pinned there, the game
   plays the drums-only tunes and no effects (and on a PinMAME without #731, nothing).

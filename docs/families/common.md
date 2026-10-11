@@ -81,13 +81,29 @@ set to 0, so the emulation runs as fast as the host allows.
 
 - **sounds.dat**: if PinMAME's `release/sounds.dat` has a section whose header starts
   with the game's name or its parent's (`src/soundsdat.rs`, `game_entries`, the prefix
-  rule of PinMAME's `readCmds`), its commands are played, with their names. Only 20
+  rule of PinMAME's `readCmds`), its commands are played first, with their names. Only 20
   sections exist in the PinMAME submodule, so most families have none.
-- **Raw sweep** otherwise (`src/extract.rs`, `sweep`): the single bytes `01`..`FF` for
-  every interface the function does not name (DCS, BSMT/AT91, BY51/BY32, BYSNT and
-  WPCS have their own ranges). `00` is not swept: on most boards it is a stop or an
-  idle value. The ranges are printed before the run and in `manifest.json` (`sweep`).
+- **Raw sweep** (`src/extract.rs`, `sweep`): the single bytes `01`..`FF` for every
+  interface the function does not name (DCS, BSMT/AT91, BY51/BY32, BYSNT and WPCS have
+  their own ranges). `00` is not swept: on most boards it is a stop or an idle value. A
+  sounds.dat section is a list someone typed, not the board's command space (Funhouse's
+  has no `7A xx` bank, the DE3S sections name 390 to 625 of the 717 two-byte commands), so
+  since 0.3 the sweep runs **on top of** the section on every board but DCS (whose ROM
+  track catalog is added instead): the swept commands the section does not name follow
+  the named ones (`build_commands`; a section's `001F` and the swept `00` are the same
+  command on the System 3-7 boards, `list_key`). The ranges are printed before the run and
+  in `manifest.json` (`sweep`).
 - `--only` and `--limit` restrict the list.
+- **Coverage** (`manifest.json` `coverage`): where the list came from (`sources`: the
+  section, the sweep's command space, the DCS track catalog or the game's sound layer,
+  with their sizes), how many commands that is (`expected`, the union), and what became of
+  each: `written`, or a class in `not_written`: `silent` (nothing came out, after the
+  retry), `blip` (under 20 ms once trimmed), `stop_command` and `volume_command` (the
+  board's stop, its master or music volume: silent as expected), `undumped_sample_rom`
+  (Tecnoplay `40`..`7F`, whose sample ROMs were never dumped), `empty_after_trimming`,
+  `not_tried` (`--limit`). `written` plus the classes equals `expected`. Stern SAM counts
+  the calls of the ROM's call table instead (`some_samples_without_a_stream`,
+  `no_sample_with_a_stream`).
 
 ## End of a sound
 

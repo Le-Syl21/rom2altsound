@@ -53,8 +53,9 @@ latches it and raises the IRQ (`s11js_ctrl_w(0,0)`). rom2altsound sends each byt
 **Sound list.** One sounds.dat section covers this generation: `esha_la3` (Earthshaker,
 155 entries, two-byte entries `bb cc` = board, command), which the prefix rule
 (`soundsdat::game_entries`) applies to the 9 Earthshaker sets (their parent is
-`esha_la3`). Every other game is swept raw: `01`..`FF` per board (`sweep`, the default
-range), so 510 commands on a two-board machine. `00` is the stop and is not swept.
+`esha_la3`). Every game is swept raw: `01`..`FF` per board (`sweep`, the default range), so
+510 commands on a two-board machine; on Earthshaker (since 0.3) after its 155 named
+commands, the ones they name not played twice. `00` is the stop and is not swept.
 
 **Twins.** Several commands can map to one sound (whirl_l3 `0x0001` = `0x0004`); they are
 marked as twins but kept ([how it works](../how-it-works.md#limits)). Repeated sounds are
@@ -218,7 +219,8 @@ e.g. Diner (`diner_l4`), Pool Sharks (`pool_l7`), Bugs Bunny's Birthday Ball (`b
   `cslatch2_w`), which the game's boot uses up.
 - **Sound list**: `01`..`FF`. `fh_pa1` takes the `fh_l9` section of sounds.dat by the
   parent rule, which lists the WPCS commands of the production Funhouse, not this
-  board's: not checked.
+  board's: its names may be wrong, but since 0.3 the sweep `01`..`FF` follows the
+  section, so every command of the board is played.
 - **Stop, boot and resets**: `20` (`BUILTIN_STOPS`, `WMSS11C`), reset fallback.
 - **Volume**: full scale, not scaled; DAC AC-coupled.
 - **Loops**: audio, then sequencer state (8 KB).
