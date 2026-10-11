@@ -800,7 +800,7 @@ impl App {
                                         }
                                     });
                                 }
-                                ui.add(egui::Label::new(RichText::new(&o.help).small()).wrap());
+                                ui.add(egui::Label::new(RichText::new(&o.help)).wrap());
                                 ui.end_row();
                             }
                         });
