@@ -931,12 +931,18 @@ pub struct Plan {
     /// one already measured (`--manifests`), else the game's head set (no parent), else
     /// the first.
     pub measure: Vec<String>,
-    /// The other sets found of those entries: their factory volume (`--boot-only`).
+    /// The other sets found of those entries, in the families with a decoded master volume
+    /// (`MASTER_VOLUME_LABELS`): their factory volume (`--boot-only`).
     pub boot: Vec<String>,
     /// Sets whose factory volume differs from their entry's measured set, with no
     /// extraction of their own.
     pub differs: Vec<String>,
 }
+
+/// The families whose master volume `volume::decode` reads from the game's commands: the
+/// only ones whose sets sharing a sound ROM can ship with different factory volumes (the
+/// others record at the board's only level, or at the level the game's boot leaves).
+pub const MASTER_VOLUME_LABELS: &[&str] = &["DCS", "DCS95", "DCSP2K", "WPCS", "DE2S", "DE3S"];
 
 pub fn plan(entries: &[Entry]) -> Plan {
     let mut p = Plan::default();
@@ -954,6 +960,10 @@ pub fn plan(entries: &[Entry]) -> Plan {
             .or_else(|| found.first());
         let Some(head) = head else { continue };
         p.measure.push(head.name.clone());
+        // Only the families whose master volume the tool decodes can differ by set.
+        if !MASTER_VOLUME_LABELS.contains(&e.label.as_str()) {
+            continue;
+        }
         for s in found.iter().filter(|s| s.name != head.name) {
             p.boot.push(s.name.clone());
             if s.loudness.as_ref().is_some_and(|l| l.lufs.is_none()) {

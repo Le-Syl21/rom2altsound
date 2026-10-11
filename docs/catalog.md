@@ -152,3 +152,31 @@ python3 docs/build_site.py
 CSVs and the boot reports: every figure the catalog reads. `--skip-done` skips a ROM whose
 folder already has a current result (same `measurement`, sounds written or not
 applicable), so a stopped run starts again where it was.
+
+### Why a full extraction of the sets whose volume differs
+
+`boot.txt` holds only the sets of the families whose master volume the tool decodes (DCS,
+DCS95, Pinball 2000, WPCS, Whitestar, DE3S: `catalog::MASTER_VOLUME_LABELS`); on the
+others every set records at the board's only level. Measured with `--boot-only` on every
+set of those families' multi-set entries (884 sets, October 2026): **45 sets (5.1 %) in
+17 entries** ship with another factory volume than their entry's head set, nearly all of
+them free-play or home ROMs (`afm_f20`, `tz_f19`, `t2_f19`, `wcs_f50`, `dm_dt101`: level 30
+or 31 where the head set has 12) and two real revisions (Harley-Davidson 1.08 and later:
+`FE2A`, level 5 against 15; `xfiles304`: `FE2B`). No DE3S set differs. A full extraction of
+those 45 costs about 21 job-hours (+10 % on the whole run) and measures what PinMAME plays
+at that volume, clipping included (`afm_f20` at level 30: -16.3 LUFS against -40.3 for
+`afm_113b` at 12); a volume law (dB per level, measured on each sound ROM) would cost a
+replay pass on every one of the ~170 sound ROMs with a master volume, and its levels near
+the top are where the emulated output clips, so it would be the less exact of the two.
+The `--boot-only` pass itself costs 9 s a set on average (25 s on DE3S).
+
+### Cost of the whole run
+
+From the pilot (24 sets over the families, [board support](board-support.md#production-runs-the-catalog-pilot-03)):
+25 s (Stern SAM) to 59 min (GTS80B badgirls) per set, 1193 sets in `measure.txt`: about
+215 job-hours, **about 4.5 days at `-j2`** on the 8-core host, Whitestar, WPCS, GTS80B and
+DE3S taking two thirds of it (their musics run to the 240 s loop search; the DE3S AT91 runs
+at x1.5 real time). Then `--boot-only` on 738 sets (about 1 hour at `-j2`) and the sets
+whose volume differs (about 10 hours at `-j2`): **5 days in all**. Disk: at most two sets'
+audio at a time (up to 1.1 GB each) before `--drop-audio` deletes it, and under 1.5 MB kept
+per set: about 1 GB for the whole catalog.

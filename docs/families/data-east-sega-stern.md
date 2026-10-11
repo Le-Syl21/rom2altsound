@@ -89,8 +89,9 @@ Monopoly (`monopole`)
   Which of the two a board is: `ffi::is_data_east` (the game's generation is one of
   `GEN_DE`, `GEN_DEDMD16/32/64`), `Extractor::is_de_board`.
 - **Sound list**: no sounds.dat section; the sweep is `01`..`FB` (`sweep`, `"BSMT"`
-  branch), and on Whitestar (not Data East) since 0.3 the second bank `FE 30`..`FF` after
-  it: on monopoly 121 of `FE30`..`FEFB` play, none of them a twin of its single byte (the
+  branch), and on Whitestar (not Data East) since 0.3 the second bank `FE 30`..`FB` after
+  it (not `FE FC`..`FF`: `FC`..`FF` are the prefixes and the volume's end byte, and the
+  monopoly pilot, which sent them, left the board silent for good): on monopoly 121 of `FE30`..`FEFB` play, none of them a twin of its single byte (the
   pair probe, `xx` and `FE xx` in one run), and the games send them (simpprty `FE BC`);
   `FE 10`..`2F` is the master volume. `FC`..`FF` as single bytes are left out: `FF xx`
   plays the same sound as `xx` and `FC xx` starts a loop for every `xx` (probed on

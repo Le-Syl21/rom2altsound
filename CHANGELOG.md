@@ -28,8 +28,9 @@
   two-byte space. **DE3S**: the sweep is `FC xx`, `FD xx` and `FE 30`..`FF` (717
   commands; `FC FC`, `FD FD`, `FE FE` never reach the board, whose queue drops a repeated
   byte; measured on lotr: `FD xx`, `FF xx` and `xx` alone play the same sound, `FE 00`..`0F`
-  nothing). **Whitestar**: `FE 30`..`FF` is a second bank of sounds (monopoly: 121 of
-  `FE30`..`FEFB` play, none a twin of its single byte), now swept after `01`..`FB`.
+  nothing). **Whitestar**: `FE 30`..`FB` is a second bank of sounds (monopoly: 121 of
+  them play, none a twin of its single byte), now swept after `01`..`FB` (`FE FC`..`FF`
+  left the board silent for good in the pilot).
 - **Coverage in every manifest**: `coverage` (`sources` with their sizes, `expected`,
   `tried`, `with_sound`, `written`, and `not_written` by reason: `silent`, `blip`,
   `stop_command`, `volume_command`, `undumped_sample_rom`, `empty_after_trimming`,

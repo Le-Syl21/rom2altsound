@@ -6130,10 +6130,13 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                     ),
                 )
             }
-            // Whitestar (not Data East): `FE 30`..`FF` is a second bank of sounds, distinct
+            // Whitestar (not Data East): `FE 30`..`FB` is a second bank of sounds, distinct
             // from the single bytes (monopoly: 121 of FE30..FEFB play, none a twin of its
             // single byte; the game sends them, simpprty `FE BC`). `FE 10`..`2F` is the
-            // master volume.
+            // master volume. The second byte stops at `FB`, as the single bytes do: `FC`..`FF`
+            // are the prefixes and the volume's end byte, and the monopoly pilot, which sent
+            // `FE FC`..`FE FF`, left the board silent for good after them (its five factory
+            // offset replays came out silent; FE30..FEFB alone, in a probe, did not).
             "BSMT" if !ffi::is_data_east() => (
                 vec![
                     (
@@ -6143,12 +6146,12 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                         singles(1..=BSMT_LAST),
                     ),
                     (
-                        "FE30..FEFF (the second bank)".to_string(),
-                        (0x30..=0xFFu8).map(|x| vec![0xFE, x]).collect(),
+                        format!("FE30..FE{BSMT_LAST:02X} (the second bank)"),
+                        (0x30..=BSMT_LAST).map(|x| vec![0xFE, x]).collect(),
                     ),
                 ],
                 format!(
-                    "board {b} ({typestr}): bytes 01..{BSMT_LAST:02X} (00 = stop; FC..FF start two-byte commands, FE 10..2F FD = volume), then the second bank FE30..FEFF"
+                    "board {b} ({typestr}): bytes 01..{BSMT_LAST:02X} (00 = stop; FC..FF start two-byte commands, FE 10..2F FD = volume), then the second bank FE30..FE{BSMT_LAST:02X}"
                 ),
             ),
             "BSMT" => (

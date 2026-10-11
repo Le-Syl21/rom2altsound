@@ -221,7 +221,7 @@ the families, `rom2altsound <sets> -j2 --drop-audio --skip-done`, 8-core host, O
 | tz_94h | WPCS | 3238 s | 476 / 314 | silent 159, blip 2, stop 1 | -20.4 | -18.7 | `790CF3` 12/31 |
 | fh_l9 | WPCS | 1757 s | 473 / 226 | silent 246, stop 1 | -19.5 | -16.6 | `790CF3` 12/31 |
 | apollo13 | DE2S | 2431 s | 459 / 267 | silent 189, blip 3 | -57.2 | -55.7 | `FE2C` 3/31 |
-| monopoly | DE2S | 1930 s | 459 / 328 | silent 130, blip 1 | -26.3 | -23.9 | `FE2C` 3/31 |
+| monopoly | DE2S | 2042 s | 455 / 329 | silent 125, blip 1 | -51.0 | -48.6 | `FE2C` 3/31 |
 | gnr_300 | DE2S | 2110 s | 251 / 161 | silent 75, volume 15 | -16.5 | -17.4 | (pot: full scale) |
 | lotr | DE3S | 2707 s | 717 / 108 | silent 609 (dead board) | - | - | `FE26` 9/31 |
 | whirl_l3 | S11 | 1395 s | 510 / 189 | blip 219, silent 101, stop 1 | -20.1 | -17.8 | (no stage) |
@@ -229,7 +229,7 @@ the families, `rom2altsound <sets> -j2 --drop-audio --skip-done`, 8-core host, O
 | frpwr_l2 | S67S | 81 s | 31 / 30 | silent 1 | -14.7 | -15.0 | (none) |
 | badgirls | GTS80B | 3539 s | 255 / 168 | silent 87 | -19.5 | -25.0 | (none) |
 | cueball | GTS3 | 1417 s | 255 / 129 | silent 126 | -23.3 | -20.8 | (none) |
-| jolypark | SPINB | 114 s | 122 / 83 | silent 39 | - | - | power-on step volume |
+| jolypark | SPINB | 112 s | 122 / 83 | silent 39 | - | - | power-on step volume |
 | bttf_a28 | DE1S | 1306 s | 255 / 252 | silent 3 | -18.0 | -16.2 | (none) |
 | tmachzac | ZAC13136 | 143 s | 127 / 116 | silent 8, blip 3 | -15.8 | -13.6 | (none) |
 | meteor | ST300 | 162 s | 16 / 16 | | -11.6 | -11.0 | (game level) |
@@ -242,10 +242,16 @@ the families, `rom2altsound <sets> -j2 --drop-audio --skip-done`, 8-core host, O
 
 What it shows:
 
-- **The figures make sense against each other.** apollo13 is the quietest (its factory
-  default is level 3 of 31: -57 LUFS); Attack from Mars and Medieval Madness, both at the DCS
+- **The figures make sense against each other.** apollo13 and monopoly are the quietest
+  (their factory default is level 3 of 31: -57 and -51 LUFS; in a game PinMAME's output
+  stays around -51 to -65 dBFS rms, [Whitestar volume](families/data-east-sega-stern.md)); Attack from Mars and Medieval Madness, both at the DCS
   factory level 12, are within 1.1 LU (-40.3, -39.2), Road Show too (-40.1); the WPCS games
   at their factory 12 sit near -20, the boards without a volume stage between -24 and -12.
+- **monopoly: `FE FC`..`FF` silenced the board.** The first pilot run swept the second
+  bank up to `FEFF`; after `FE FC`..`FF` (the prefixes and the volume's end byte as a second
+  byte) the board played nothing more, and the five files played again at the factory
+  volume came out silent, so the files stayed at the reference volume. The bank now stops
+  at `FEFB` (rerun above: 329 files, factory offset -24.75 dB).
 - **Funhouse's `7A xx` bank**: 108 sounds its sounds.dat section leaves out (226 written,
   against 118 from the section's range alone).
 - **lotr (DE3S): the AT91 dies in emulation.** After `FC85` (sounds.dat "thunk sound") it
