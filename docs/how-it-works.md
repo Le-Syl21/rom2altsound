@@ -928,27 +928,57 @@ then compared with the driver's.
   count is the largest stride for which at least half of the groups of entries hold one
   pointer (5 on acd_168h: 1054 samples x 5 languages, all five the same on this US ROM);
 - **script**: `05 <voice mask> <voices> <len32>` (length in FIQ ticks) then opcodes, each
-  with a fixed operand count (`sam::SCRIPT_ARGS`; bytes above `10` are padding). Every one
-  of acd_168h's 1054 distinct scripts parses to its end:
+  with a fixed operand count (`sam::SCRIPT_ARGS`; bytes above `10` are padding). The counts
+  are the program's own: from AC/DC 1.68 on, the interpreter's handler array is a list of
+  (handler, operand count) pairs (acd_168h, file `0x2e350`), and the older handlers consume
+  the same bytes (read in their code). In the latest numbering:
 
 | op | operands | meaning |
 |---|---|---|
-| `00` | - | end |
+| `00` | - | end: wait for the voices and the length, free the voices |
 | `01` | 2 | ? (`01 00 00`, `01 00 01`) |
 | `02` | 2 | `<voice> <bus>` routing (music = bus 3) |
-| `03` | 1 | loop: back to the `07` mark |
+| `03` | - | loop: back to the `07` mark (`07`'s count: 0 = for ever, the only value used) |
 | `04` | 2 | bus link |
-| `06` | - | ? (once) |
-| `07` | 1 | loop start mark |
+| `05` | 6 | the script header |
+| `06` | - | no-op |
+| `07` | 1 | loop start mark `<count>` |
 | `08` | 4 | u32 marker the game polls |
-| `09` | 15 | volume ramp `<bus> <period u32> <steps u32> <start> <delta> <final>` |
+| `09` | 15 | volume ramp `<target> <period u32> <steps u32> <i16> <i16> <i16>` |
 | `0a` | 5 | start a stream: `<voice> <banked ptr32>` (replaces the voice's stream) |
-| `0b` | 2 | channel stop stub (samples 1-8) |
+| `0b` | 1 | stop the voices in the mask |
+| `0c` | 2 | `<voice> <value>`, a per-voice setting (unused) |
 | `0d` | 4 | u32 song position the game polls: `song << 24 \| chunk index` |
-| `0e` | 1 | stop the voices in the mask |
+| `0e` | 1 | no-op |
 | `0f` | 4 | wait N ticks |
 | `10` | 1 | wait until the voices in the mask have finished |
 
+- **firmware generations**: the interpreter calls `handlers[opcode]`, and the older
+  firmware has fewer handlers, in another order (`sam::LAYOUTS`; handler arrays found in the
+  program of each of the 398 images present, four shapes and no other):
+
+| layout | handlers | opcodes (latest numbering of each) | sets |
+|---|---|---|---|
+| 17 | 17 | as above | AC/DC, Avatar 2.00, Avengers, Iron Man 1.81 on, Metallica, Mustang, Spider-Man 2.61 and Vault Edition, Star Trek, TRON 1.74, Transformers 1.80, The Walking Dead, X-Men (from AC/DC 1.68 on, the array holds (handler, operand count) pairs) |
+| 15 | 15 | `00`-`05`, `06`=`07`, `07`=`09`, `08`=`0a`, `09`=`0b`, `0a`=`0c`, `0b`=`08`, `0c`=`0e`, `0d`=`0f`, `0e`=`10` (no no-op, no song position) | 24, Avatar 1.x, Batman Dark Knight, Big Buck Hunter, CSI, Indiana Jones, Iron Man 1.00-1.60, NBA, Rolling Stones, Shrek, Spider-Man 2.00-2.60, Transformers up to 1.70, TRON up to 1.70, Wheel of Fortune 6.02h |
+| 14 | 14 | as 15 up to `0a`, `0b`=`0e`, `0c`=`0f`, `0d`=`10` (no marker either) | Family Guy, Pirates of the Caribbean, Simpsons Kooky Carnival 1.05/2.00, Spider-Man 1.x, Wheel of Fortune up to 5.00, World Poker Tour 1.11 on |
+| 14-early | 14 | `00`, `01`, `02`=`03`, `03`=`04`, `04`=`05` (the header), `05`=`07`, `06`=`09`, `07`=`0a`, `08`=`0b`, `09`=`0c`, `0a`=`0e`, `0b`=`02`, `0c`=`0f`, `0d`=`10` | World Poker Tour 1.03-1.09, Simpsons Kooky Carnival 9nj and 1.03 |
+
+  The same samples have byte-for-byte the same scripts across generations, only the opcode
+  bytes differ: trn_150's sample 21 is `02 00 46 08 00 <ptr> 0e 01 00`, trn_174's
+  `02 00 46 0a 00 <ptr> 10 01 00`. Each image's layout is found from its scripts
+  (`sam::detect_layout`): for each header opcode (`05`, `04`), the directory of scripts with
+  that header, then the layout under which the most scripts read cleanly (end on `00` or
+  `03`, no unknown opcode, every stream pointer on a valid header, padding after the end).
+  On trn_150, trn_174, acd_168h, fg_1200af and wpt_106a the right layout reads 99.5 to
+  100 % of the scripts, a wrong one 2 % at most. On all 375 images with sound data, the
+  layout found from the scripts is the one of the handler array found in the program.
+  Read with the wrong numbering, an image starts no stream at all (226 sets did, and
+  reported success): a directory whose scripts start no stream is now an error.
+- **same samples across generations**: trn_150 (15) against trn_174 (17): 1097 files have
+  identical audio (1.74 inserts one song at sample `0445`, shifting the next 20 ids, and
+  changes samples `019D`-`019E`), and 265 of trn_150's 270 calls play exactly the same
+  audio in trn_174 (which has 286).
 - **stream**: `u32 samples, u16 1, u8 divisor, u8 divisor`, then IMA ADPCM, 4 bits, low
   nibble first, the standard step table, predictor and index from 0 at the start of every
   stream; 24000 / divisor Hz (24 kHz, 12 kHz for most voices);

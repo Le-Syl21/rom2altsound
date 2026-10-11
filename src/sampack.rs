@@ -652,17 +652,26 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
     let cat = sam::catalog(&rom)?;
     let catalog_secs = t_cat.elapsed().as_secs_f64();
     eprintln!(
-        "SAM: directory at 0x{:x} ({} words, {} languages), {} scripts ({} sound streams, {} music scripts, {} stubs), {} calls ({:.1} s)",
+        "SAM: directory at 0x{:x} ({} words, {} languages), {} scripts read with the {}-opcode layout ({} read cleanly; {} sound streams, {} music scripts, {} stubs), {} calls ({:.1} s)",
         cat.directory.start,
         cat.directory.n,
         cat.nlang,
         cat.scripts,
+        cat.layout.name,
+        cat.clean_scripts,
         cat.sounds.len(),
         cat.music.len(),
         cat.stubs,
         cat.calls.len(),
         catalog_secs
     );
+    if cat.clean_scripts * 2 < cat.scripts {
+        eprintln!(
+            "SAM: WARNING: only {} of {} scripts read cleanly with the {}-opcode layout: \
+             this firmware's script format may not be fully understood",
+            cat.clean_scripts, cat.scripts, cat.layout.name
+        );
+    }
 
     // File names: sounds after their first owner, music after its sample.
     let rom_name = job.rom.as_str();
@@ -1082,6 +1091,8 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
                 "music": cat.music.len(),
                 "stubs": cat.stubs,
                 "unknown_opcodes": cat.unknown_opcodes,
+                "opcode_layout": cat.layout.name,
+                "read_cleanly": cat.clean_scripts,
             },
             "call_table": call_table,
             "songs": songs,

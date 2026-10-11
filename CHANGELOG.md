@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Stern SAM: the older firmware's sounds (246 sets gave none).** The script interpreter
+  is an array of handlers indexed by the opcode, and the older firmware numbers the same
+  handlers differently: read in each generation's program, there are four (17 handlers,
+  the latest; 15: `08` starts a stream instead of `0a`, `07` ramps instead of `09`; 14: no
+  marker either; and an early 14 with the routing at `0b` and a script header `04`). Each
+  image's numbering is found from its scripts (the one under which they read cleanly), and
+  on all 375 images with sound data it is the one of the handler array in the program. 217
+  sets (World Poker Tour 1.11 on, Pirates, Family Guy, Wheel of Fortune, Indiana Jones,
+  Batman, CSI, NBA, Shrek, 24, Big Buck Hunter and the older Spider-Man, TRON,
+  Transformers and Iron Man) decoded 0 streams and reported OK, Avatar 1.x and Rolling
+  Stones (9 sets) only a few music scripts misread as loops with no stream in them; World
+  Poker Tour 1.03-1.09 and Simpsons Kooky Carnival 9nj / 1.03 (20 sets) failed with "no SAM
+  sample directory found". Sets read right: 129 to 375 of 375 (the 5 boot flashes have no
+  sound data); call
+  tables read: 179,536 to 190,277 calls. trn_150: 1100 files (0 before), 1097 identical to
+  trn_174's, 265 of its 270 calls play the same audio in 1.74; fg_1200af 1529; wpt_106a
+  1110. A directory whose scripts start no stream is now an error, and fewer than half of
+  the scripts reading cleanly a warning. The operand counts are now the program's own
+  (from AC/DC 1.68 on the handler array holds them): `03` has none, `0b` stops the voices
+  of its mask (1 operand, it no longer ends the parse), `0c` has 2; acd_168h's files are
+  byte-identical. The catalog gives each SAM entry its `streams` and `opcodes` layout.
+
 - **Spinball / Inder (SPINB, 27 sets): every set now extracts, each sound from silence.**
   Read in the sound programs (and in Corsario's game program for how it sends): Inder's
   MSM5205 boards poll their latch as Spinball's do (a byte counts while its bit 7 is set,

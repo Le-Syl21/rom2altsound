@@ -230,6 +230,12 @@ pub struct Sounds {
     pub samples: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub music: Option<usize>,
+    /// Stern SAM: the distinct sound streams (music chunks apart), and the firmware's
+    /// script opcode layout ([`sam::Layout`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub streams: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opcodes: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -416,6 +422,8 @@ pub fn count_sounds(e: &Entry, fetch: &dyn Fn(u32, u64) -> Option<Vec<u8>>) -> O
                 slots: Some(slots as usize),
                 samples: None,
                 music: None,
+                streams: None,
+                opcodes: None,
             })
         }),
         "DCSP2K" => {
@@ -434,6 +442,8 @@ pub fn count_sounds(e: &Entry, fetch: &dyn Fn(u32, u64) -> Option<Vec<u8>>) -> O
                 slots: Some(slots as usize),
                 samples: None,
                 music: None,
+                streams: None,
+                opcodes: None,
             })
         }
         "NONE (Stern SAM)" => {
@@ -446,6 +456,8 @@ pub fn count_sounds(e: &Entry, fetch: &dyn Fn(u32, u64) -> Option<Vec<u8>>) -> O
                 slots: None,
                 samples: Some(samples.len()),
                 music: Some(cat.music.len()),
+                streams: Some(cat.sounds.len()),
+                opcodes: Some(cat.layout.name),
             })
         }
         _ => None,

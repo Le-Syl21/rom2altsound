@@ -22,6 +22,12 @@
 //!   of sample ids the call picks from. The call is what the game code asks for.
 //!
 //! Music is sequenced: a song script chains 1-2.5 s chunks, one `0a` each.
+//!
+//! The opcode numbers above are those of the latest firmware. The older firmware numbers
+//! the same operations differently ([`Layout`]): the script interpreter is an array of
+//! handlers indexed by the opcode, and each generation's array was read in its program
+//! (17, 15 or 14 handlers, two orders of 14). Each image's numbering is found from its
+//! scripts ([`detect_layout`]) and every script is read back into the latest numbering.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -215,8 +221,10 @@ impl ScriptHead {
     }
 }
 
-pub fn script_at(rom: &[u8], o: usize) -> Option<ScriptHead> {
-    if o + 7 > rom.len() || rom[o] != 0x05 {
+/// The script header at `o`, whose first byte is the layout's header opcode `op`
+/// ([`Layout::header`]: 05, or 04 on the earliest firmware).
+pub fn script_at(rom: &[u8], o: usize, op: u8) -> Option<ScriptHead> {
+    if o + 7 > rom.len() || rom[o] != op {
         return None;
     }
     let (mask, voices) = (rom[o + 1], rom[o + 2]);
@@ -240,8 +248,8 @@ pub struct Directory {
 }
 
 /// The longest run (first 8 MB, 4-byte aligned) of u32 words that are 0 or banked
-/// pointers to a valid script, without its leading and trailing zeros.
-pub fn find_directory(rom: &[u8]) -> Option<Directory> {
+/// pointers to a valid script (header opcode `op`), without its leading and trailing zeros.
+pub fn find_directory(rom: &[u8], op: u8) -> Option<Directory> {
     let lim = rom.len().min(BANK) & !3;
     let mut cache: HashMap<u32, bool> = HashMap::new();
     // (start, words, pointers, zeros at the end)
@@ -261,7 +269,7 @@ pub fn find_directory(rom: &[u8]) -> Option<Directory> {
             Some(false)
         } else if (w >> 24) <= 15 {
             let p = *cache.entry(w).or_insert_with(|| {
-                banked(w, rom.len()).is_some_and(|o| o >= 0x1000 && script_at(rom, o).is_some())
+                banked(w, rom.len()).is_some_and(|o| o >= 0x1000 && script_at(rom, o, op).is_some())
             });
             p.then_some(true)
         } else {
@@ -421,56 +429,130 @@ pub fn find_call_table(rom: &[u8], nsamples: usize) -> Option<Vec<Call>> {
 
 // ------------------------------------------------------------------------------- scripts
 
-/// Operand bytes of each script opcode (decoded on acd_168h: every one of its 1054
-/// scripts parses to its end with this table). Bytes above 0x10 are skipped (0xFF pads).
+/// Operand bytes of each script opcode, in the latest firmware's numbering. The program
+/// holds this very table: from AC/DC 1.68 on, the interpreter's handler array is made of
+/// (handler, operand count) pairs (acd_168h at 0x2e350), and these are its counts; the
+/// handlers of the older firmware consume the same counts (read in their code).
+/// Bytes above 0x10 are skipped (0xFF pads).
 pub const SCRIPT_ARGS: [Option<usize>; 17] = [
-    Some(0),  // 00 end: wait for the ramps / len32, free the voices
+    Some(0),  // 00 end: wait for the voices and len32, free the voices
     Some(2),  // 01 ? (01 00 00 / 01 00 01)
     Some(2),  // 02 voice/bus routing: 02 <voice> <bus> (music = bus 3)
-    Some(1),  // 03 loop: jump back to the 07 mark
+    Some(0),  // 03 loop: back to the 07 mark (07's count: 0 = for ever)
     Some(2),  // 04 bus-to-bus link
     Some(6),  // 05 script header (05 <mask> <voices> <len32>)
-    Some(0),  // 06 ?
-    Some(1),  // 07 loop start mark
+    Some(0),  // 06 no-op
+    Some(1),  // 07 loop start mark: 07 <count>
     Some(4),  // 08 u32 marker the game polls
     Some(15), // 09 volume ramp: <bus> <period u32> <steps u32> <start> <delta> <final>
     Some(5),  // 0a start stream: 0a <voice> <banked ptr32>
-    Some(2),  // 0b channel stop stub
-    Some(0),  // 0c unused
+    Some(1),  // 0b stop the voices in mask
+    Some(2),  // 0c per-voice setting: 0c <voice> <value>
     Some(4),  // 0d u32 song position the game polls: song << 24 | chunk index
-    Some(1),  // 0e stop the voices in mask
+    Some(1),  // 0e no-op with one operand
     Some(4),  // 0f wait u32 FIQ ticks (4000 Hz)
     Some(1),  // 10 wait until the voices in mask have finished
 ];
 
-/// One opcode: the opcode (None: unknown, the parse stopped) and operands.
+/// A firmware generation's numbering of the script opcodes.
+///
+/// Read in each generation's program: the script interpreter calls `handlers[opcode]`, and
+/// the handlers are the same code from one generation to the next (same operand bytes
+/// consumed, same fields written), only their order and number change. Measured on
+/// trn_150 (15 handlers at 0x322d0), trn_174 (17 at 0x31ab4), fg_1200af (14 at 0x33b28)
+/// and wpt_106a (14 at 0x317dc, another order). Over the 398 SAM images present, the
+/// handler arrays found have these four shapes and no other.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Layout {
+    /// "17", "15", "14" or "14-early" (the number of handlers).
+    pub name: &'static str,
+    /// The latest numbering's opcode of each opcode of this firmware.
+    pub map: &'static [u8],
+}
+
+impl Layout {
+    /// The latest numbering's opcode of `raw`, if this firmware has it.
+    pub fn canonical(&self, raw: u8) -> Option<u8> {
+        self.map.get(raw as usize).copied()
+    }
+    /// This firmware's script header opcode (05, or 04 on the earliest firmware).
+    pub fn header(&self) -> u8 {
+        self.map.iter().position(|&c| c == 0x05).unwrap() as u8
+    }
+}
+
+/// The firmware generations, the latest first (it wins a tie).
+pub const LAYOUTS: [Layout; 4] = [
+    // AC/DC, Avatar 2.00, Metallica, TRON 1.74, Star Trek, The Walking Dead, X-Men...
+    Layout {
+        name: "17",
+        map: &[
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+            0x0e, 0x0f, 0x10,
+        ],
+    },
+    // 24, Batman Dark Knight, Big Buck Hunter, CSI, Indiana Jones, Iron Man up to 1.60, NBA,
+    // Rolling Stones, Shrek, Spider-Man 2.x, TRON up to 1.70, Transformers up to 1.70...:
+    // no 06 no-op and no song position; the marker is 0b.
+    Layout {
+        name: "15",
+        map: &[
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x07, 0x09, 0x0a, 0x0b, 0x0c, 0x08, 0x0e, 0x0f,
+            0x10,
+        ],
+    },
+    // Family Guy, Pirates, Spider-Man 1.x, Wheel of Fortune, World Poker Tour 1.11 on...:
+    // no marker either.
+    Layout {
+        name: "14",
+        map: &[
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x07, 0x09, 0x0a, 0x0b, 0x0c, 0x0e, 0x0f, 0x10,
+        ],
+    },
+    // World Poker Tour up to 1.09, Simpsons Kooky Carnival 9nj / 1.03: the routing opcode
+    // is 0b and the others move down by one, the script header is 04.
+    Layout {
+        name: "14-early",
+        map: &[
+            0x00, 0x01, 0x03, 0x04, 0x05, 0x07, 0x09, 0x0a, 0x0b, 0x0c, 0x0e, 0x02, 0x0f, 0x10,
+        ],
+    },
+];
+
+/// One opcode, in the latest numbering: the opcode (None: unknown, the parse stopped) and
+/// operands.
 #[derive(Debug, Clone)]
 pub struct Op {
     pub op: Option<u8>,
     pub args: Vec<u8>,
 }
 
-/// The opcodes of the script at `o` (after its 7-byte header) up to `end`; stops after
-/// 00 (end), 03 (loop), 0b (stop stub) or an unknown opcode.
-pub fn parse_script(rom: &[u8], o: usize, end: usize) -> Vec<Op> {
+/// The opcodes of the script at `o` (after its 7-byte header) up to `end`, in the latest
+/// numbering; stops after 00 (end), 03 (loop) or an unknown opcode.
+pub fn parse_script(rom: &[u8], o: usize, end: usize, layout: &Layout) -> Vec<Op> {
+    parse_script_end(rom, o, end, layout).0
+}
+
+/// [`parse_script`], and the offset where the parse stopped.
+fn parse_script_end(rom: &[u8], o: usize, end: usize, layout: &Layout) -> (Vec<Op>, usize) {
     let end = end.min(rom.len());
     let mut p = o + 7;
     let mut ops = Vec::new();
     while p < end {
-        let op = rom[p];
-        if op > 0x10 {
+        let raw = rom[p];
+        if raw > 0x10 {
             p += 1;
             continue;
         }
-        let n = SCRIPT_ARGS[op as usize];
-        match n {
+        let op = layout.canonical(raw);
+        match op.and_then(|c| SCRIPT_ARGS[c as usize]) {
             Some(n) if p + 1 + n <= end => {
                 ops.push(Op {
-                    op: Some(op),
+                    op,
                     args: rom[p + 1..p + 1 + n].to_vec(),
                 });
                 p += 1 + n;
-                if matches!(op, 0x00 | 0x03 | 0x0b) {
+                if matches!(op, Some(0x00 | 0x03)) {
                     break;
                 }
             }
@@ -483,7 +565,77 @@ pub fn parse_script(rom: &[u8], o: usize, end: usize) -> Vec<Op> {
             }
         }
     }
-    ops
+    (ops, p)
+}
+
+/// Whether the script at `o` reads cleanly with `layout`: it ends (00 or 03) with no
+/// unknown opcode, every stream it starts has a valid header, and what follows its end
+/// (up to `next`, the next script) is padding (0xFF).
+fn reads_cleanly(rom: &[u8], o: usize, next: usize, layout: &Layout) -> bool {
+    let (ops, p) = parse_script_end(rom, o, next.min(o + 0x1_0000), layout);
+    let ended = ops
+        .last()
+        .is_some_and(|l| matches!(l.op, Some(0x00 | 0x03)));
+    let streams_ok = ops.iter().filter(|op| op.op == Some(0x0a)).all(|op| {
+        banked(u32_at(&op.args, 1), rom.len()).is_some_and(|q| stream_any(rom, q).is_some())
+    });
+    // A loop's 03 is followed by the 00 that ends the script (never reached).
+    let mut lo = p.min(rom.len());
+    if ops.last().is_some_and(|l| l.op == Some(0x03))
+        && rom
+            .get(lo)
+            .is_some_and(|&b| layout.canonical(b) == Some(0x00))
+    {
+        lo += 1;
+    }
+    let hi = next.min(lo + 16).min(rom.len()).max(lo);
+    ended && streams_ok && rom[lo..hi].iter().all(|&b| b == 0xFF)
+}
+
+/// The directory's script offsets, sorted, each with the next one (or the image's end).
+fn script_bounds(rom: &[u8], words: &[u32]) -> Vec<(usize, usize)> {
+    let mut offs: Vec<usize> = words
+        .iter()
+        .filter(|&&w| w != 0)
+        .filter_map(|&w| banked(w, rom.len()))
+        .collect();
+    offs.sort_unstable();
+    offs.dedup();
+    (0..offs.len())
+        .map(|i| (offs[i], offs.get(i + 1).copied().unwrap_or(rom.len())))
+        .collect()
+}
+
+fn directory_words(rom: &[u8], d: &Directory) -> Vec<u32> {
+    (0..d.n).map(|i| u32_at(rom, d.start + 4 * i)).collect()
+}
+
+/// The image's firmware generation: for each script header opcode, the directory of
+/// scripts with that header; then the layout under which the most of its scripts read
+/// cleanly ([`reads_cleanly`]; on the images measured the right layout reads 99.5 to 100 %
+/// of them, a wrong one 2 % at most, and on all 375 images with sound data the layout found
+/// is the one of the handler array in the program). Returns the layout, its directory and
+/// the number of scripts that read cleanly.
+pub fn detect_layout(rom: &[u8]) -> Option<(&'static Layout, Directory, usize)> {
+    let mut best: Option<(&'static Layout, Directory, usize)> = None;
+    let mut headers: Vec<u8> = LAYOUTS.iter().map(Layout::header).collect();
+    headers.dedup();
+    for h in headers {
+        let Some(dir) = find_directory(rom, h) else {
+            continue;
+        };
+        let bounds = script_bounds(rom, &directory_words(rom, &dir));
+        for layout in LAYOUTS.iter().filter(|l| l.header() == h) {
+            let clean = bounds
+                .iter()
+                .filter(|&&(o, next)| reads_cleanly(rom, o, next, layout))
+                .count();
+            if best.as_ref().is_none_or(|b| clean > b.2) {
+                best = Some((layout, dir, clean));
+            }
+        }
+    }
+    best.filter(|b| b.2 > 0)
 }
 
 /// A script with several streams chained, or a loop: music (songs and loop beds).
@@ -806,6 +958,9 @@ pub struct Catalog {
     pub scripts: usize,
     pub stubs: usize,
     pub unknown_opcodes: usize,
+    /// The firmware's opcode numbering, and how many distinct scripts read cleanly with it.
+    pub layout: &'static Layout,
+    pub clean_scripts: usize,
 }
 
 impl Catalog {
@@ -836,11 +991,11 @@ impl Catalog {
 
 /// Reads the directory, the scripts and the call table of a SAM image.
 pub fn catalog(rom: &[u8]) -> Result<Catalog, String> {
-    let directory = find_directory(rom)
-        .ok_or("no SAM sample directory found in the image (not a SAM sound layout?)")?;
-    let words: Vec<u32> = (0..directory.n)
-        .map(|i| u32_at(rom, directory.start + 4 * i))
-        .collect();
+    let (layout, directory, clean_scripts) = detect_layout(rom).ok_or(
+        "no SAM sample directory found in the image, or none of its scripts reads with a \
+         known opcode layout (not a SAM sound layout?)",
+    )?;
+    let words = directory_words(rom, &directory);
     let nlang = guess_nlang(&words);
     let entries: Vec<Entry> = words
         .iter()
@@ -880,9 +1035,10 @@ pub fn catalog(rom: &[u8]) -> Result<Catalog, String> {
     // A stream's owners in directory order: walk the entries, not the scripts.
     let mut script_ops: HashMap<usize, Vec<Op>> = HashMap::new();
     for &so in &order {
-        let ops = parse_script(rom, so, next[&so]);
+        let ops = parse_script(rom, so, next[&so], layout);
         unknown_opcodes += ops.iter().filter(|o| o.op.is_none()).count();
-        let head = script_at(rom, so).expect("directory pointers are valid scripts");
+        let head =
+            script_at(rom, so, layout.header()).expect("directory pointers are valid scripts");
         if is_sequenced(&ops) {
             let timeline = timeline(rom, &ops);
             let role = music_role(&timeline);
@@ -910,7 +1066,7 @@ pub fn catalog(rom: &[u8]) -> Result<Catalog, String> {
                     sounds.push(SoundStream {
                         stream: st,
                         owners: vec![(e.sample, e.lang)],
-                        script: script_at(rom, e.script).unwrap(),
+                        script: script_at(rom, e.script, layout.header()).unwrap(),
                     });
                 }
             }
@@ -942,6 +1098,18 @@ pub fn catalog(rom: &[u8]) -> Result<Catalog, String> {
     }
     let nsamples = words.len() / nlang + 1;
     let calls = find_call_table(rom, nsamples).unwrap_or_default();
+    // A directory whose scripts start no stream at all is a format this reader does not
+    // understand (an older firmware read with the wrong numbering gave exactly that):
+    // an error, never an empty pack.
+    let chunks: usize = music.iter().map(|m| m.timeline.events.len()).sum();
+    if sounds.is_empty() && chunks == 0 {
+        return Err(format!(
+            "{} scripts in the SAM directory but none starts a sound stream (opcode layout {}): \
+             the script format is not understood",
+            order.len(),
+            layout.name
+        ));
+    }
     Ok(Catalog {
         directory,
         nlang,
@@ -952,6 +1120,8 @@ pub fn catalog(rom: &[u8]) -> Result<Catalog, String> {
         scripts: order.len(),
         stubs,
         unknown_opcodes,
+        layout,
+        clean_scripts,
     })
 }
 
@@ -986,6 +1156,14 @@ pub mod tests {
     }
 
     pub fn synthetic() -> Synthetic {
+        synthetic_in(&LAYOUTS[0])
+    }
+
+    /// [`synthetic`] with the opcodes of `layout` (the song has no position opcode when the
+    /// layout has none).
+    pub fn synthetic_in(layout: &Layout) -> Synthetic {
+        let raw = |c: u8| layout.map.iter().position(|&x| x == c).map(|p| p as u8);
+        let op = |c: u8| raw(c).unwrap();
         let mut rom = vec![0xFFu8; 3 * BANK];
         let (nlang, nsamp) = (5usize, 12usize);
         let dir_off = 0x12_0048;
@@ -1006,7 +1184,7 @@ pub mod tests {
         };
         let put_script = |rom: &mut Vec<u8>, sp: &mut usize, body: &[u8], len32: u32, mask: u8| {
             let o = *sp;
-            let mut s = vec![5, mask, 1];
+            let mut s = vec![layout.header(), mask, 1];
             s.extend_from_slice(&len32.to_le_bytes());
             s.extend_from_slice(body);
             rom[o..o + s.len()].copy_from_slice(&s);
@@ -1021,9 +1199,9 @@ pub mod tests {
             let pcm = tone(n, rate, 220.0 * (1 + s % 5) as f64, 12000.0);
             let o = put_stream(&mut rom, &mut dp, &pcm, div);
             originals.push((o, pcm));
-            let mut body = vec![0x0a, 0x00];
+            let mut body = vec![op(0x0a), 0x00];
             body.extend_from_slice(&ptr(o).to_le_bytes());
-            body.extend_from_slice(&[0x10, 0x01, 0x0f, 0x04, 0, 0, 0, 0x00]);
+            body.extend_from_slice(&[op(0x10), 0x01, op(0x0f), 0x04, 0, 0, 0, op(0x00)]);
             let len32 = (n as f64 * div as f64 / BASE_RATE as f64 * FIQ_HZ as f64).round() as u32;
             let so = put_script(&mut rom, &mut sp, &body, len32, 1 << (s % 3));
             let speech = s % 4 == 0;
@@ -1043,22 +1221,24 @@ pub mod tests {
         }
         // The song: three 24 kHz chunks, loop mark after the first one.
         let mut chunks = Vec::new();
-        let mut body = vec![0x01, 0, 0, 0x02, 0, 3];
+        let mut body = vec![op(0x01), 0, 0, op(0x02), 0, 3];
         for (i, f) in [330.0, 440.0, 550.0].iter().enumerate() {
             let pcm = tone(6000 + 1000 * i, BASE_RATE, *f, 9000.0);
             let o = put_stream(&mut rom, &mut dp, &pcm, 1);
             originals.push((o, pcm));
             chunks.push(o);
             if i == 1 {
-                body.extend_from_slice(&[0x07, 0x00]);
+                body.extend_from_slice(&[op(0x07), 0x00]);
             }
-            body.push(0x0d);
-            body.extend_from_slice(&((1u32 << 24) | (i as u32 + 1)).to_le_bytes());
-            body.extend_from_slice(&[0x0a, 0x00]);
+            if let Some(position) = raw(0x0d) {
+                body.push(position);
+                body.extend_from_slice(&((1u32 << 24) | (i as u32 + 1)).to_le_bytes());
+            }
+            body.extend_from_slice(&[op(0x0a), 0x00]);
             body.extend_from_slice(&ptr(o).to_le_bytes());
-            body.extend_from_slice(&[0x10, 0x01]);
+            body.extend_from_slice(&[op(0x10), 0x01]);
         }
-        body.extend_from_slice(&[0x03, 0x00]);
+        body.extend_from_slice(&[op(0x03), op(0x00)]);
         let so = put_script(&mut rom, &mut sp, &body, 3000, 1);
         let song_sample = nsamp as u16;
         for lang in 0..nlang {
@@ -1264,7 +1444,7 @@ pub mod tests {
         s.extend_from_slice(&(st as u32).to_le_bytes());
         s.extend_from_slice(&[0x10, 0x01, 0x03, 0x00, 0x0a]);
         rom[..s.len()].copy_from_slice(&s);
-        let ops = parse_script(&rom, 0, 0x100);
+        let ops = parse_script(&rom, 0, 0x100, &LAYOUTS[0]);
         let codes: Vec<Option<u8>> = ops.iter().map(|o| o.op).collect();
         assert_eq!(
             codes,
@@ -1282,11 +1462,58 @@ pub mod tests {
         assert_eq!(tl.loop_start, Some(0));
         assert_eq!(tl.loop_end, Some(100));
         assert_eq!(music_role(&tl), "teaser");
-        // An unknown opcode stops the parse.
-        rom[7] = 0x0c;
+        // A byte above 0x10 is padding; an opcode the firmware does not have stops the parse.
+        rom[7] = 0x06;
         rom[8] = 0x11;
-        let ops = parse_script(&rom, 0, 9);
-        assert_eq!(ops.last().unwrap().op, Some(0x0c));
+        let ops = parse_script(&rom, 0, 9, &LAYOUTS[0]);
+        assert_eq!(ops.last().unwrap().op, Some(0x06));
+        rom[7] = 0x0e;
+        let ops = parse_script(&rom, 0, 9, &LAYOUTS[2]);
+        assert_eq!(ops.last().unwrap().op, None);
+    }
+
+    #[test]
+    fn every_layout_is_detected_and_reads_the_same_sounds() {
+        let reference = catalog(&synthetic().rom).unwrap();
+        assert_eq!(reference.layout.name, "17");
+        for layout in &LAYOUTS {
+            let s = synthetic_in(layout);
+            let c = catalog(&s.rom).unwrap();
+            assert_eq!(c.layout, layout, "{}", layout.name);
+            assert_eq!(c.clean_scripts, c.scripts, "{}", layout.name);
+            assert_eq!(c.unknown_opcodes, 0, "{}", layout.name);
+            let offs = |c: &Catalog| c.sounds.iter().map(|x| x.stream.off).collect::<Vec<_>>();
+            assert_eq!(offs(&c), offs(&reference), "{}", layout.name);
+            assert_eq!(c.music.len(), 1);
+            let chunks: Vec<usize> = c.music[0].timeline.events.iter().map(|e| e.1.off).collect();
+            assert_eq!(chunks, s.song_chunks, "{}", layout.name);
+            assert_eq!(c.music[0].timeline.loop_start, Some(6000));
+            // Read with the latest numbering, an older image's scripts start no stream.
+            if layout.name != "17" && layout.header() == 0x05 {
+                let bounds = script_bounds(&s.rom, &directory_words(&s.rom, &c.directory));
+                let streams: usize = bounds
+                    .iter()
+                    .map(|&(o, n)| {
+                        script_streams(&s.rom, &parse_script(&s.rom, o, n, &LAYOUTS[0])).len()
+                    })
+                    .sum();
+                assert_eq!(streams, 0, "{}", layout.name);
+            }
+        }
+    }
+
+    #[test]
+    fn a_directory_without_streams_is_an_error() {
+        let mut s = synthetic();
+        // Every stream header broken: the scripts point to nothing playable.
+        for (o, _) in s.originals.clone() {
+            s.rom[o + 6] = 9;
+        }
+        let e = catalog(&s.rom).err().expect("no stream: an error");
+        assert!(
+            e.contains("not understood") || e.contains("no SAM sample directory"),
+            "{e}"
+        );
     }
 
     #[test]

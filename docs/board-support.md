@@ -49,7 +49,7 @@ are the system zips; 2796 of the 2961 sets are there).
 | family (`SNDBRD_*`) | PinMAME board | sets | games | sound ROM ids | years | makers | sets in the full set | test ROM | status | notes / what is missing |
 | family (`SNDBRD_*`) | PinMAME board | sets | games | sound ROM ids | years | makers | sets in the full set | test ROM | status | notes / what is missing |
 |---|---|---|---|---|---|---|---|---|---|---|
-| NONE (Stern SAM) | - | 406 | 27 | 0 | 2006-2024 | Stern, Stern/Destruk | 398 | acd_170h | ✅ | no sound board to drive: the sounds are read from the flash image (README, Stern SAM): 1036 files from acd_170h |
+| NONE (Stern SAM) | - | 406 | 27 | 0 | 2006-2024 | Stern, Stern/Destruk | 398 | acd_170h | ✅ | no sound board to drive: the sounds are read from the flash image (README, Stern SAM): 1036 files from acd_170h; the four firmware generations' script numberings are read (226 older sets gave no sound stream and said OK, 20 early World Poker Tour / Simpsons sets found no directory): every one of the 375 images with sound data now decodes its streams (trn_150 1100 files, fg_1200af 1529, wpt_106a 1110) |
 | DE2S | BSMT | 307 | 48 | 59 | 1991-2026 | Stern, Sega | 297 | jupk_513, swtril43 | ✅ | Data East BSMT (jupk_513: 23 of 40) and Sega/Stern Whitestar (swtril43: 25 of 40), both with the BSMT2000's own program; the earlier run had gnr_300 (21 of 40) and monopole (40 of 40) |
 | WPCS | WPCS | 219 | 25 | 35 | 1990-2026 | Bally, Williams | 212 | tz_92 | ✅ | 37 of 40 (README: Twilight Zone, The Addams Family) |
 | DCS | DCS | 191 | 19 | 39 | 1993-2026 | Williams, Bally | 187 | ij_l7, tom_13 | ✅ | first run of pre-WPC95 DCS: ij_l7 40 of 40, tom_13 39 of 40, all from silence; same board code as DCS95 |

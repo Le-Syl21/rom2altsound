@@ -40,6 +40,19 @@ Walking Dead LE (`twd_160h`)
   **music**, rendered on a 24 kHz timeline (chunks joined gaplessly, their first ADPCM
   samples smoothed; roles `teaser`, `main`, `full`, `resume`, `bed`). No silence detection
   or twin test is needed: each stream is decoded once.
+- **Firmware generations**: the script interpreter is an array of handlers indexed by the
+  opcode, and the older firmware has fewer handlers in another order: 17 (the numbering
+  above; AC/DC, Metallica, TRON 1.74, The Walking Dead...), 15 (24, Batman, CSI, Indiana
+  Jones, NBA, Shrek, TRON up to 1.70...: `08` starts a stream, `07` ramps), 14 (Family Guy,
+  Pirates, Wheel of Fortune, World Poker Tour 1.11 on...) and an early 14 whose script
+  header is `04` (World Poker Tour 1.03-1.09, Simpsons Kooky Carnival 9nj and 1.03), each
+  read in the program's handler array (`sam::LAYOUTS`, [how it
+  works](../how-it-works.md#stern-sam)). `sam::detect_layout` picks, per image, the layout
+  under which its scripts read cleanly; on all 375 images with sound data it is the one of
+  the handler array in the program (20 early, 129 with 14 handlers, 97 with 15, 129 with
+  17). Until this was read, the 226 sets of the 15- and 14-handler generations decoded no
+  stream and reported success, and the 20 early ones found no directory; a directory
+  whose scripts start no stream is now an error.
 - **Stop, boot and resets**: no stop, no reset. Two boots in PinMAME, cold (child process,
   no nvram) then warm from the cold boot's nvram (`sampack::boot`, `factory`), each until
   the DAC has been quiet for 3 s after `--boot-secs`, only to read the DAC writes.
@@ -62,7 +75,12 @@ Walking Dead LE (`twd_160h`)
   call id, music rows on channel 0 (looping ones `LOOP` 100, the extended ones `LOOP` 0),
   the rest polyphonic, `DUCK` 100, `STOP` 0; a sample whose languages differ is a
   callout. The scripts' own volume ramps (opcode `09`) and the game's mixing are not
-  reproduced.
+  reproduced. The ramps are per script, not a bus level: about 870 of trn_174's 1115
+  scripts carry the same ones (targets 0 and 1 set to 33 and 40 at once, then stepped by
+  1 every 36 and 15 ticks), so they hardly change one sound against another; their
+  operands' meaning (the FIQ mixer's side) is not read. The levels that would matter for loudness, the game's
+  music and effects buses (`02 <voice> <bus>`), are set by the game's code, not by the
+  scripts.
 - **Measured** ([how it works](../how-it-works.md#stern-sam), CHANGELOG 0.2.2): acd_168h:
   1054 samples x 5 languages, 951 sound streams (1854 s), 8 stub scripts, 86 music
   scripts (24 songs, 268.5 minutes, 39 loops); 1129 pack rows for 412 calls, 561 files;
@@ -70,8 +88,13 @@ Walking Dead LE (`twd_160h`)
   1037 files reach full scale as decoded, none at the factory volume (-11.3 LUFS in all,
   loudest true peak +0.3 dBTP). Checked sample for sample against the study script
   `sam_study.py`. Cost: 49 s wall, peak RSS 956 MB. Board support: acd_170h, 1036 files.
-- **Limits and what is missing**: only acd_168h was checked in depth; the scripts' volume
-  ramps and the game's mixing are not reproduced; the factory volume follows PinMAME's
+- **Measured, older firmware** (`--no-factory`): trn_150 (15) 1061 sound streams, 39
+  music scripts, 1100 files, against trn_174 (17) 1061, 41, 1102: 1097 files identical,
+  265 of trn_150's 270 calls play the same audio in trn_174; fg_1200af (14) 1529 files;
+  wpt_106a (early 14) 1110 files, 599 calls. acd_168h's files are byte-identical to
+  before.
+- **Limits and what is missing**: only acd_168h was checked in depth against the study
+  script; the scripts' volume ramps and the game's mixing are not reproduced; the factory volume follows PinMAME's
   linear reading of the DAC register, about 10 dB louder than the datasheet at `E8`
   ([Limits](../how-it-works.md#limits)).
 - **In VPinball**: **the pack does not play.** PinMAME's AltSound is fed by sound
