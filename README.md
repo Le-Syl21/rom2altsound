@@ -399,9 +399,14 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
     in attract mode and asked for each sound as its own code does; the stop is the game's
     own. Verified on the 15 Stern SB-300 programs (308 sounds, MOD sets included) and its
     Astro board tester, on the five Atari generation 1 games and the three generation 2
-    ones, and on Goofy Hoops (63 effects, 9 songs): every file from silence. The ids are
-    the game's internal sound ids (a script address, a sound number, a sequence address),
-    not commands; loops come from the audio only; the volume is the one the game plays
+    ones, and on Goofy Hoops (63 effects, 9 songs): every file from silence. The SB-300
+    with its speech board (Flight 2000, Free Fall, Lightning, Split Second, Catacomb,
+    Orbitor 1) the same way, its scripts saying their words (the game's speech switch,
+    off in PinMAME's default DIPs, set for each of them), and the speech ROM's other words
+    alone: 296 of 312 sounds on the six games. Tabart's L'Hexagone too, whose sound board
+    plays on the playfield switches it reads itself: its switches are closed one by one
+    (14 of 15 sounds). The ids are the game's internal sound ids (a script address, a
+    sound number, a sequence address, a speech word, a switch number), not commands; loops come from the audio only; the volume is the one the game plays
     at. **These packs do not play in VPinball**: no command reaches AltSound on these
     machines. They are a recording of the game's sounds, to listen to, measure and keep
     (see [game-driven boards](docs/families/common.md#game-driven-boards)).
@@ -1053,8 +1058,15 @@ reste joué en parallèle.
     celui du jeu. Vérifié sur les 15 programmes Stern SB-300 (308 sons, jeux MOD compris)
     et son testeur de cartes Astro, sur les cinq jeux Atari de génération 1 et les trois
     de génération 2, et sur Goofy Hoops (63 effets, 9 musiques) : chaque fichier part du
-    silence. Les identifiants sont les identifiants de son internes du jeu (une adresse
-    de script, un numéro de son, une adresse de séquence), pas des commandes ; les boucles
+    silence. La SB-300 avec sa carte de voix (Flight 2000, Free Fall, Lightning, Split
+    Second, Catacomb, Orbitor 1) de la même façon, ses scripts disant leurs mots (le
+    commutateur de voix du jeu, coupé dans les DIP par défaut de PinMAME, est mis pour
+    chacun d'eux), et les autres mots de la ROM de voix seuls : 296 sons sur 312 sur les
+    six jeux. L'Hexagone de Tabart aussi, dont la carte son joue sur les contacts du
+    plateau qu'elle lit elle-même : ses contacts sont fermés un à un (14 sons sur 15). Les
+    identifiants sont les identifiants de son internes du jeu (une adresse de script, un
+    numéro de son, une adresse de séquence, un mot, un numéro de contact), pas des
+    commandes ; les boucles
     ne viennent que de l'audio ; le volume est celui auquel le jeu joue. **Ces packs ne se
     jouent pas dans VPinball** : aucune commande n'atteint AltSound sur ces machines. Ce
     sont des enregistrements des sons du jeu, à écouter, mesurer et conserver (voir

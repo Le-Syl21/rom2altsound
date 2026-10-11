@@ -220,52 +220,68 @@ Van Ham (Royal) · e.g. Formula 1 (`formula1`)
 ## <a name="sndbrd_tabart"></a>SNDBRD_TABART
 
 Christian Tabart L'Hexagone board (Z80 + YM2203 + YM3526) · PinMAME interface `TABART`
-(`src/wpc/tabart.c`) · status ⚠️ · 1 set, 1 game, 1 sound ROM id, 1986, Christian Tabart
-(France) · e.g. L'Hexagone (`hexagone`)
+(`src/wpc/tabart.c`) · status ✅ (switch-driven) · 1 set, 1 game, 1 sound ROM id, 1986,
+Christian Tabart (France) · e.g. L'Hexagone (`hexagone`)
 
 - **Hardware**: Gottlieb System 1 game hardware (`gts1.c`); a Z80 at 3.58 MHz
   (`tabart1_readmem`, RAM `4000`-`407F`, `MRA_RAM`), a YM2203 (its ports read the
-  command and the switch returns) and a YM3526.
-- **Commands**: the game writes its sound lines with `sndbrd_0_data_w` (`gts1.c`;
-  `tabart_data_w`: `data ^ 0xC7`) and the switch strobe with `sndbrd_0_ctrl_w`, which on
-  strobe 1 raises the Z80's NMI. The manual handler `tabart_manCmd_w` (sub-type 0)
-  **alternates**: one call stores the byte as the value read on YM2203 port B
-  (`manCmd`), the next one sets the command byte and pulses the NMI (`toggle`).
-- **Sound list**: raw sweep `01`..`FF`, one byte per command: with the alternation, every
-  other command of the sweep only stores a byte, and the next one plays with the byte
-  before it. The toggle is kept across board resets (`sndlocals` is only cleared in
-  `tabart_init`).
-- **Loops**: audio, sequencer state (Z80 RAM).
-- **Measured**: `hexagone`, 31 of 40, 22 not from silence, 5 distinct levels, then "still
-  not silent after 3 waits" ([board support](../board-support.md)).
-- **Limits and what is missing**: tried after 0.2.3 and dropped: each command as a pair
-  through the toggle (`00`, then the line state as `tabart_data_w` stores it, `data ^
-  C7`), then the idle `10` the same way (hexagone's boot: `58` between `10`s): 8 of 40,
-  all the same held sound at -19.4 LUFS, 105 board resets. Read in hexagone's sound program
-  (`hexagone.bin`, Z80) since: the board is not driven by command numbers. Its NMI
-  (`0066`, raised by the game's switch strobe 1, `tabart_ctrl_w`) reads YM2203 port B,
-  the switch returns of the strobed row (`ym2203_port_b_r`: `swMatrix[swStrobe]`), and
-  port A, the game's lines (`0E`, kept at `4022`); the next four YM2203 timer interrupts
-  (`01BD`, count at `4020`) read rows 2 to 5 as the game's strobe moves on. The main loop
-  (`0376`) then finds the newly closed switches (`0209`: the rows XOR their last state)
-  and plays the sound of each of eleven of them (table `02E7`: `47 17 07 06 16 03 13 12
-  42 32 02`, row and column), plus one per chime line (bits 0-2, the game's 10, 100 and
-  1000 chimes, `04B6`) and the outhole (bit 4, switch 66). The two sound DIP bits (lines
-  bits 5 and 6, `core_getDip(3) & 0x90` in `gts1.c` `snd_w`) choose the mode: both off,
-  the program only plays its tune (`04CE`), which is what PinMAME plays from 1 s into
-  the boot with the default DIPs (measured: a continuous tune for 40 s, the game
-  running). With the game halted, nothing strobes the rows: port B gives the manual
-  command's byte, and the lines only reach the board at each strobe-1 NMI. Getting the
-  switch sounds out would mean closing switches with the game's strobe running, and
-  AltSound could not key them anyway: they never pass through a sound command (the
-  stream AltSound sees is the line writes, chimes and game state). Left as is.
-- **In VPinball**: **the pack does not play as written, in any VPinball so far**: what is logged is the line and chime state (`gts1.c` `snd_w`), not `tabart_manCmd_w`'s pairs the pack is keyed by; and up to 10.8.1-5436 libaltsound has no case for
-  generation 0 (none) and joins the bytes two by two ([In
-  VPinball](common.md#in-vpinball)). Measured on `hexagone`: the game sent `50 50 50...`,
-  AltSound looked up `5050`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
-  looks up `0050`. AltSound gets the game's line writes (`data` before the `^ 0xC7`
-  of `tabart_data_w`), not the manual handler's pairs.
+  game's lines and the switch returns) and a YM3526.
+- **Not a command board.** The game writes its lines with `sndbrd_0_data_w` (`gts1.c`
+  `snd_w`, on a lamp change: game over, tilt, the three chime solenoids and the sound DIPs;
+  `tabart_data_w`: `data ^ 0xC7`) and its switch strobe with `sndbrd_0_ctrl_w`, which on
+  strobe 1 raises the Z80's NMI. The sound program (`hexagone.bin`, read with a Z80
+  disassembler) plays on what it sees of the playfield: its NMI (`0066`) reads YM2203
+  port B, the switch returns of the strobed row, and port A, the game's lines (`$4022`);
+  the next four YM2203 timer interrupts (`01BD`) read rows 2 to 5 as the game's strobe
+  moves on. The main loop (`0381`) finds a newly closed switch (`0209`: each row XOR its
+  last state, AND the new one) and, with the outhole open (port A bit 4: tabart.c
+  `core_getSw(66)`), plays the routine of the table at `1083` for it (`044D`: row × `12`,
+  bit × 2; `1080` is "none"). Eleven of them (table `02E7`: drop targets) play once until
+  their bank opens again. With the outhole closed (the bonus count), each chime line plays
+  the chimes' routine (`03D3` → `04B6`). The two sound DIPs (port A bits 5 and 6, `snd_w`:
+  `core_getDip(3) & 0x90`, "Sound 1" and "Sound 2" in `gts1games.c`) choose the mode: both
+  giving `00` the program plays its tune over and over (`04CE`: every sound in turn), `20`
+  a background tune after each sound (`0422`), `40` a call about every minute (`03E8`),
+  `60` both. The manual handler (`tabart_manCmd_w`, sub-type 0) alternates a byte for port
+  B and a pulse of the NMI: no command reaches the program that way.
+- **PinMAME's switch returns**: `ym2203_port_b_r` returned `swMatrix` as is, while the
+  returns are active low (the game CPU reads a closed switch as 0, `gts1.c` `port_w`) and
+  the program inverts what it reads (`00AE`, `012C`: `CPL`), as it inverts the manual
+  command (which `ym2203_port_b_r` already returns inverted). Every open switch looked
+  closed: after each sound CPU reset all of them made an edge at once, which played a
+  switch's sound and, with PinMAME's default DIPs (mode `60`), the background tunes after
+  it (the "tune" heard from 1 s into the boot before), a switch played its sound when it
+  opened, and the drop target banks never reset. Fixed in the fork (`tabart-switch-returns`, merged into
+  `bsmt2000-lle`): `~swMatrix[swStrobe]`. With it, the boot is silent and a switch plays
+  when it closes.
+- **What rom2altsound sends** (`src/gamesound.rs`, `tabart`; the game-driven method, the
+  game left running in attract mode for its strobe): both sound DIPs off (DIP bank 3 bits
+  4 and 7 cleared: mode `40`, no tune, no background), then the lines the game writes in
+  attract mode with them (`00`, through `sndbrd_data_w`, once: the game writes them only on
+  a lamp change). A sound is a switch closed for 100 ms, then opened (`PinmameSetSwitch`):
+  one per routine of the table (the first switch that plays it); the chimes are the 10's
+  chime line on, then off (`sndbrd_data_w` `04`, then `00`) with the outhole (switch 66)
+  held closed around it. **Stop**: the board reset (the program has no stop; a routine
+  plays to its end, and the reset also restarts the minute's call).
+- **Ids**: PinMAME's switch number, its decimal digits as hex digits (`0x41` is switch
+  41: `m2sw`, bit × 10 + row), and `0xC4` for the chimes. They are not sound commands:
+  AltSound never receives them.
+- **Measured** (`--max-secs 5`): hexagone 14 of 15, all from silence, all different (0.8
+  to 4.9 s; 10 run to the 5 s cap, their tunes are longer); before: a raw sweep, 31 of 40,
+  22 not from silence, 5 distinct levels.
+- **Limits**: switch 1's routine (`05FB`, notes on the YM2203 from the data at `0EF4`)
+  writes its instrument and keys its notes (traced on the YM2203's ports) but PinMAME's
+  output stays at the idle level: no file, not explained. The background tunes of mode
+  `20` (`0879`, `088F`, `08A5`, `08BB`, chosen by the timer count) and the tune of mode
+  `00` (every routine in turn) are not recorded; the minute's call is switch 70's routine
+  (`05D2`).
+- **In VPinball**: **the pack does not play, in any VPinball so far**: what is logged is
+  the line and chime state (`gts1.c` `snd_w`), and the pack's ids are switch numbers;
+  up to 10.8.1-5436 libaltsound has no case for generation 0 (none) and joins the bytes two
+  by two ([In VPinball](common.md#in-vpinball)). Measured on `hexagone`: the game sent `50
+  50 50...`, AltSound looked up `5050`; with one byte per command
+  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball
+  master from 3abe805) it looks up `0050`.
 
 ## <a name="sndbrd_tabart2"></a>SNDBRD_TABART2
 

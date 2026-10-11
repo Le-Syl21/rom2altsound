@@ -85,7 +85,7 @@
     "ST100": "one_byte",
     "ST100B": "one_byte",
     "ST300": "gamedriven",
-    "ST300V": "unlogged",
+    "ST300V": "gamedriven",
     "TABART": "raw",
     "TABART2": "partial",
     "TAITO_SINTETIZADOR": "partial",

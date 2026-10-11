@@ -261,8 +261,6 @@ const JVH_IDLE: u8 = 0x3F;
 const GEN_GTS1: u64 = 0x1_0000_0000;
 /// `SNDBRD_BY45BP` is `SNDBRD_TYPE(..., 1)`: the Cheap Squeak behind Baby Pac-Man's video board.
 const BY45BP_SUBTYPE: c_int = 1;
-/// `SNDBRD_ST300V` is `SNDBRD_TYPE(31, 1)`: the ST300 interface with the speech board.
-const ST300V_SUBTYPE: c_int = 1;
 /// `SNDBRD_BY56` is `SNDBRD_TYPE(5, 1)`: the BY51 interface, variant 1 (wpc/sndbrd.h).
 const BY56_SUBTYPE: c_int = 1;
 /// `SNDBRD_BY51N` is `SNDBRD_TYPE(5, 2)`: Bell Games' -51N, also named "BY51" by PinMAME.
@@ -470,7 +468,18 @@ enum Send {
     /// Game-driven sound: one of the game's own routines, called (`shim_m68k_call`), taken
     /// again at the next frame while the game's CPU is not in a state to take it.
     Call(gamesound::Call),
+    /// A playfield switch (PinMAME's number) closed (`true`) or opened (`PinmameSetSwitch`).
+    Switch(c_int, bool),
+    /// Game-driven sound: the bits `mask` of the game's RAM byte set (`true`) or cleared.
+    RamBits(u32, u8, bool),
+    /// Game-driven sound: waits while the script pointer at the first address is on one of
+    /// the ranges, then clears the bits (`Request::ClearAfter`).
+    ClearAfter(u32, [(u16, u16); gamesound::MAX_RANGES], u32, u8),
 }
+
+/// How long a `Request::Switch` holds its switch closed: a few rows of the game's switch
+/// strobe, as a ball rolling over it or hitting it.
+const SWITCH_HOLD_MS: u32 = 100;
 
 /// How many frames a `Send::Call` waits for the game's CPU before it is given up (10 s).
 const CALL_MAX_WAIT_FRAMES: u32 = 600;
@@ -480,6 +489,26 @@ fn requests(r: &Request) -> Vec<Send> {
     match r {
         Request::Pokes(p) => pokes(p),
         Request::Call(c) => vec![Send::Call(*c)],
+        Request::Switch(sw) => vec![
+            Send::Switch(c_int::from(*sw), true),
+            Send::Wait(SWITCH_HOLD_MS),
+            Send::Switch(c_int::from(*sw), false),
+        ],
+        Request::Board(bytes) => bytes
+            .iter()
+            .map(|&b| Send::Byte(0, c_int::from(b)))
+            .collect(),
+        Request::Reset => vec![Send::Reset],
+        Request::Lines(v) => vec![Send::Data(0, c_int::from(*v))],
+        Request::SwitchState(sw, on) => vec![Send::Switch(c_int::from(*sw), *on)],
+        Request::Seq(v) => v.iter().flat_map(requests).collect(),
+        Request::RamBits { addr, mask, on } => vec![Send::RamBits(*addr, *mask, *on)],
+        Request::ClearAfter {
+            ptr,
+            ops,
+            addr,
+            mask,
+        } => vec![Send::ClearAfter(*ptr, *ops, *addr, *mask)],
     }
 }
 
@@ -2055,6 +2084,34 @@ impl Extractor {
                     self.call_waits = 0;
                     Some(0)
                 }
+                Send::Switch(sw, on) => {
+                    unsafe { ffi::PinmameSetSwitch(sw, c_int::from(on)) };
+                    Some(0)
+                }
+                Send::ClearAfter(ptr, ops, addr, mask) => {
+                    let cpu = unsafe { ffi::shim_game_cpu() };
+                    let mut p = [0u8; 2];
+                    unsafe { ffi::shim_cpu_read(cpu, ptr, 2, p.as_mut_ptr()) };
+                    let at = u16::from_be_bytes(p);
+                    if at != 0 && ops.iter().any(|&(lo, hi)| (lo..=hi).contains(&at)) {
+                        // Still on the script: next frame.
+                        self.sender.push_front(s);
+                        return;
+                    }
+                    let mut b = [0u8];
+                    unsafe { ffi::shim_cpu_read(cpu, addr, 1, b.as_mut_ptr()) };
+                    let v = b[0] & !mask;
+                    unsafe { ffi::shim_game_pokes(cpu, &addr, &v, 1) };
+                    Some(0)
+                }
+                Send::RamBits(addr, mask, on) => {
+                    let cpu = unsafe { ffi::shim_game_cpu() };
+                    let mut b = [0u8];
+                    unsafe { ffi::shim_cpu_read(cpu, addr, 1, b.as_mut_ptr()) };
+                    let v = if on { b[0] | mask } else { b[0] & !mask };
+                    unsafe { ffi::shim_game_pokes(cpu, &addr, &v, 1) };
+                    Some(0)
+                }
                 Send::Pokes(p, n) => {
                     let p = &p[..n as usize];
                     let addr: Vec<c_uint> = p.iter().map(|p| p.addr).collect();
@@ -2979,17 +3036,35 @@ impl Extractor {
             );
         if game_driven {
             let typestr = ffi::cstr(unsafe { ffi::sndbrd_typestr(0) }).unwrap_or_default();
+            let subtype = unsafe { ffi::shim_board_type(0) } & 0xFF;
             let image = if typestr == "TMS320AV120" {
                 ffi::user1_region().unwrap_or_default()
+            } else if gamesound::in_sound_program(&typestr) {
+                ffi::cpu_region(unsafe { ffi::shim_audio_cpu(0) }).unwrap_or_default()
             } else {
                 ffi::cpu_region(unsafe { ffi::shim_game_cpu() }).unwrap_or_default()
             };
-            match gamesound::find(&typestr, image) {
+            // The ST300V's speech ROM (stsnd.h `VSU100_ROMREGION`, REGION_CPU2).
+            let speech = if subtype == gamesound::ST300V_SUBTYPE && typestr == "ST300" {
+                ffi::region_after_cpu1(1).unwrap_or_default()
+            } else {
+                &[]
+            };
+            match gamesound::find(&typestr, subtype, image, speech) {
                 Ok(layer) => {
                     eprintln!(
                         "  board 0 ({}): no sound command; the game's own sound layer: {}",
                         self.families[0], layer.what
                     );
+                    for d in &layer.dips {
+                        let old = unsafe { ffi::PinmameGetDIP(d.bank) };
+                        let new = (old & !d.mask) | (d.value & d.mask);
+                        unsafe { ffi::PinmameSetDIP(d.bank, new) };
+                        eprintln!("  DIP bank {}: {old:02X} -> {new:02X}", d.bank);
+                    }
+                    for r in &layer.setup {
+                        self.sender.extend(requests(r));
+                    }
                     eprintln!("  game CPU left running (its attract mode)");
                     self.game = Some(layer);
                 }
@@ -3055,6 +3130,21 @@ impl Extractor {
                 && unsafe { ffi::shim_board_type(b) } & 0xFF == BY45BP_SUBTYPE
             {
                 unsafe { ffi::shim_by45_p21(0) };
+            }
+            if self.families[b as usize] == "WMSS67"
+                && unsafe { ffi::shim_board_type(b) } & 0xFF & S3_CTRL_SUBS != 0
+            {
+                // World Cup and Disco Fever: the board's Sound Dip 2 (s4.h, on in PinMAME by
+                // default) sets bit 6 of the byte the program reads low (`s67s_cmd_w`), and
+                // with it low each program takes one path only (`s3wcs_sounds`,
+                // `s3dfs_sounds`). Off, both paths are reached: the sounds the board can
+                // play under either setting.
+                let dips = unsafe { ffi::PinmameGetDIP(0) };
+                unsafe { ffi::PinmameSetDIP(0, dips & !S3_SOUND_DIP2) };
+                eprintln!(
+                    "  board {b} (WMSS67): Sound Dip 2 off (DIP bank 0 {dips:02X} -> {:02X})",
+                    dips & !S3_SOUND_DIP2
+                );
             }
             if two_nibbles(&self.families[b as usize]) {
                 let f = &self.families[b as usize];
@@ -4970,6 +5060,16 @@ impl Extractor {
                 Send::Ctrl(b, v) => format!("ctrl_w({b},{v:02X})"),
                 Send::Reset => "board reset".into(),
                 Send::Wait(ms) => format!("wait {ms} ms"),
+                Send::Switch(sw, on) => {
+                    format!("switch {sw} {}", if *on { "closed" } else { "opened" })
+                }
+                Send::RamBits(addr, mask, on) => format!(
+                    "game RAM {addr:04X} bits {mask:02X} {}",
+                    if *on { "set" } else { "cleared" }
+                ),
+                Send::ClearAfter(ptr, _, addr, mask) => format!(
+                    "game RAM {addr:04X} bits {mask:02X} cleared once the script pointer {ptr:04X} leaves the script"
+                ),
                 Send::Call(c) => format!(
                     "game routine call ({} bytes of code, lock {:X})",
                     c.len, c.lock
@@ -5326,7 +5426,22 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
         Some("GPSM3") => return addressed(mask, board, &gpsm3_framed(bytes)),
         Some("WMSS67") => {
             let sub = unsafe { ffi::shim_board_type(board) } & 0xFF;
-            return addressed(mask, board, &s67s_framed(sub, bytes));
+            if sub & S3_CTRL_SUBS == 0 {
+                return addressed(mask, board, &s67s_framed(sub, bytes));
+            }
+            let t = target(mask, board);
+            return bytes
+                .iter()
+                .flat_map(|&b| {
+                    if b == S3_CTRL {
+                        // The control line on, then off: one edge of CB1 with the data
+                        // lines idle (`s67s_ctrl_w`, the game's `~solenoids 1-8`).
+                        vec![Send::Ctrl(t, 0x00), Send::Ctrl(t, 0xFF)]
+                    } else {
+                        addressed(mask, board, &s67s_framed(sub, &[b]))
+                    }
+                })
+                .collect();
         }
         _ => {}
     }
@@ -5401,6 +5516,21 @@ fn s67s_framed(sub: c_int, bytes: &[u8]) -> Vec<u8> {
         .collect()
 }
 const S67S_IDLE: u8 = 0xFF;
+/// The World Cup (`8`) and Disco Fever (`16`) sub-types: one bit of the byte their program
+/// reads comes from the board's control port, not from the sound lines (wmssnd.c
+/// `s67s_ctrl_w`: bit 6 of the control byte as bit 5 on World Cup, bit 4 as bit 7 on Disco
+/// Fever). The game writes its solenoids 1-8 there, inverted (s4.c `s4_sol1_8_w`): the line
+/// is solenoid 7 on World Cup, solenoid 5 on Disco Fever, active when the solenoid is on.
+const S3_CTRL_SUBS: c_int = 8 | 16;
+/// In a World Cup or Disco Fever command, `80` is not a byte on the sound lines but a pulse
+/// of the control line (`s67s_ctrl_w` with `00`, then `FF`), the data lines idle: data bit
+/// 7 does not reach these boards (`s67s_cmd_w` keeps bits 0-3, 4 and 6), so `80` would
+/// only repeat `00`. World Cup plays a sound on it; on Disco Fever it is the prefix of four
+/// sounds (`80 0E`...).
+const S3_CTRL: u8 = 0x80;
+/// System 3's Sound Dip 2 (s4.h: DIP bank 0, `02`, on by default): `s67s_cmd_w` sets bit 6
+/// of the byte the program reads when it is off.
+const S3_SOUND_DIP2: c_int = 0x02;
 /// Whether the `WMSS67` board of sub-type `sub` reads byte `b` as idle (`s67s_cmd_w`, the
 /// bits that reach the program: five on System 4-7, seven on `S7S_ND`, bits 0-4 and, on
 /// the World Cup and Disco Fever boards, 6 on System 3).
@@ -5510,10 +5640,8 @@ fn spinb_level(mask: u8, board: c_int) -> Vec<Send> {
 /// writes, then the lines back to idle (sahalove's boot: `48`, then `00`), through the
 /// game's own path, `sndbrd_data_w`, whose handler (tabart.c `tabart_data_w`) reorders and
 /// inverts the lines; the manual command would store the byte as is (every file was the
-/// same held tone). Hexagone's board (sub-type 0), which reads the lines in an NMI the
-/// game's switch strobe raises, keeps the common method: tried as pairs through the manual
-/// command's toggle (`tabart_manCmd_w`), the line, then the idle `10`, every command gave
-/// the same held sound (8 of 40).
+/// same held tone). Hexagone's board (sub-type 0) takes no command: it plays on the
+/// playfield switches it reads itself, and is game-driven (`gamesound::tabart`).
 fn tabart_sends(t: c_int, b: u8) -> Vec<Send> {
     vec![Send::Data(t, c_int::from(b)), Send::Data(t, 0)]
 }
@@ -5618,17 +5746,6 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                     "board {b} (ZAC1370): bytes FE down to 80, each strobed with bit 7 (the board reads the command inverted: 01..7F; FF, command 00, is the stop)"
                 ),
             ),
-            // Stern SB-300 with the VS-1000 speech board: the manual command is the speech
-            // path (stsnd.c `st300_man_w`): `40 | word` starts one of the S14001A's 64 words,
-            // `80` and up set its speed and volume. The timers are the game's own (see the
-            // family's notes): nothing else to sweep.
-            "ST300" if unsafe { ffi::shim_board_type(b) } & 0xFF == ST300V_SUBTYPE => (
-                vec![(
-                    "40..7F (the speech chip's 64 words)".to_string(),
-                    singles(0x40..=0x7F),
-                )],
-                format!("board {b} (ST300, VS-1000 speech): bytes 40..7F, the S14001A's 64 words"),
-            ),
             // Game Plan MSU-1: the 15 nibbles (`gpsm_framed`); MSU-3: the bytes made of two
             // different nibbles, neither `F` (`gpsm3_framed`).
             // Playmatic Zira (`PLAYZ`): the game writes bits 4-6 of its lamp output to the
@@ -5697,6 +5814,16 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                 let sub = unsafe { ffi::shim_board_type(b) } & 0xFF;
                 let (range, list): (&str, Vec<Vec<u8>>) = if sub & 1 != 0 {
                     ("00..7E (seven command bits, 7F = idle)", singles(0x00..=0x7E))
+                } else if sub & 8 != 0 {
+                    (
+                        "10, 5E 5D 5B 57, 40+5E..40+50 (ten), 80 (the control line): World Cup's 16 sounds",
+                        s3wcs_sounds(),
+                    )
+                } else if sub & 16 != 0 {
+                    (
+                        "0E 0D 0B 07 0F, 40..4E, 80+0E 80+0D 80+0B 80+07 (80: the control line): Disco Fever's 24 sounds",
+                        s3dfs_sounds(),
+                    )
                 } else if sub & 4 != 0 {
                     (
                         "00..1F, 40..5E (bits 0-4 and 6; 5F = idle)",
@@ -5823,6 +5950,46 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
         }
     }
     (v, notes, ranges)
+}
+
+/// World Cup's sound program (`481_s0_world_cup.716`, interrupt handler `7F15`), read with
+/// a 6800 disassembler. The byte it reads (`s67s_cmd_w`, sub-type 8|4|2) carries the low
+/// data nibble in bits 0-3, data bit 6 in bit 4, the control line (`s67s_ctrl_w`) in bit 5,
+/// data bit 4 in bit 7. With bit 7 low (data bit 4 low) it only stores the byte as a prefix
+/// flag (`$0B`; a second one clears it). Otherwise, inverted: data bit 6 low plays one
+/// sound (`7EF5`, whatever the nibble); the control line plays another (`7EA0` with `B9`);
+/// else the inverted nibble minus one picks, after a prefix (or with the board's Sound Dip
+/// 2 on, bit 6 low), a pitch in the table at `7FDA` for the sound at `7EA0` (15 entries,
+/// ten different), without one a routine of the table at `7FB1`, of which only the first
+/// eight are code (four different: `7E89` five times, `7E7B`, `7E76`, `7E9B`; the other
+/// seven words jump into nothing, nibbles `6`..`0`). The board reset after each sound
+/// clears the prefix (`7E1E`). Each sound once: `10`; `5E 5D 5B 57`; the prefix `40`, then
+/// `5E 5D 5C 5B 57 56 55 54 53 50`; `80`.
+fn s3wcs_sounds() -> Vec<Vec<u8>> {
+    let mut v = vec![vec![0x10]];
+    v.extend([0x5E, 0x5D, 0x5B, 0x57].map(|b| vec![b]));
+    v.extend([0x5E, 0x5D, 0x5C, 0x5B, 0x57, 0x56, 0x55, 0x54, 0x53, 0x50].map(|b| vec![0x40, b]));
+    v.push(vec![S3_CTRL]);
+    v
+}
+
+/// Disco Fever's sound program (`483_s0_disco_fever.716`, interrupt handler `7F45`). The
+/// byte it reads (sub-type 16|4|2): the low data nibble in bits 0-3, data bit 6 in bit 4,
+/// the board's DIP in bit 6, the control line (`s67s_ctrl_w`) in bit 7. Inverted, it
+/// ignores the idle byte; the control line alone sets a flag (`$09` = 5) and waits. Without
+/// the flag, data bit 6 high (and Sound Dip 2 off, bit 6 high: the tool's setting) plays
+/// one of 15 numbered sounds, the inverted nibble minus one (`7E6A` with the pair of the
+/// table at `7FD0`): `40`..`4E`. Else a priority decoder: the lowest low bit of the byte
+/// read inverted (bits 0-4) picks a routine of the table at `7FE0`, the flag adding 5: `0E
+/// 0D 0B 07` and `0F` (data bit 6 low), then with the flag `80 0E`, `80 0D`, `80 0B`, `80
+/// 07` (with the flag and `0F`, entry 9 is the word `0000`: not sent). The other commands
+/// of `00`..`0F` repeat these (the survey before heard `00`, `02`, `04`... alike: same
+/// lowest bit).
+fn s3dfs_sounds() -> Vec<Vec<u8>> {
+    let mut v: Vec<Vec<u8>> = [0x0E, 0x0D, 0x0B, 0x07, 0x0F].map(|b| vec![b]).to_vec();
+    v.extend((0x40..=0x4E).map(|b| vec![b]));
+    v.extend([0x0E, 0x0D, 0x0B, 0x07].map(|b| vec![S3_CTRL, b]));
+    v
 }
 
 /// Joctronic's two sound programs take different commands (both queue every non-zero byte
@@ -6277,6 +6444,22 @@ pub(crate) fn write_wav(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn system_3_sound_lists_play_each_sound_once() {
+        let wc = s3wcs_sounds();
+        assert_eq!(wc.len(), 16);
+        assert!(wc.contains(&vec![0x40, 0x50]) && wc.contains(&vec![S3_CTRL]));
+        let df = s3dfs_sounds();
+        assert_eq!(df.len(), 24);
+        assert!(df.contains(&vec![S3_CTRL, 0x07]) && !df.contains(&vec![S3_CTRL, 0x0F]));
+        // Data bit 7 never reaches these boards: the marker repeats no command.
+        assert!(
+            wc.iter()
+                .chain(&df)
+                .all(|c| c.iter().all(|&b| b & 0x80 == 0 || b == S3_CTRL))
+        );
+    }
 
     #[test]
     fn p2k_words() {

@@ -288,8 +288,14 @@ registers over time, and sends no sound command: Stern's SB-300
 Hoops ([ROMSTAR](capcom-romstar.md#sndbrd_romstar)). There is nothing to sweep: a byte
 sent to these boards is a register value, not a sound. What every one of these programs
 has is a sound layer: a routine that plays a sound and a request the rest of the game uses
-to ask for one. `src/gamesound.rs` reads that layer in the game's program image (the game
-CPU's memory region, Romstar's `REGION_USER1`):
+to ask for one. Two more families are driven the same way. The SB-300 with its speech
+board ([ST300V](stern-early.md#sndbrd_st300v)) has the ST300's scripts, which also say its
+words; the speech ROM's other words go through the speech path alone. Tabart's L'Hexagone
+([TABART](other-makers.md#sndbrd_tabart)) has a sound CPU, but no command: its program
+plays on the playfield switches and chime lines it reads itself, so its layer is read in
+the sound program, and a sound is asked for by closing a switch. `src/gamesound.rs` reads
+that layer in the game's program image (the game CPU's memory region, Romstar's
+`REGION_USER1`, L'Hexagone's sound CPU region):
 
 - **The request**: what the game's own code writes or calls to start a sound: a script
   pointer and a delay byte in RAM (Stern), a counter, a slot or a pending count per sound
@@ -316,10 +322,16 @@ The extraction then differs from the method above in four places
   arguments as the game does, call the routine, restore the registers and return with
   `RTE`; the shim enters them as an exception would, when the 68306 is in supervisor mode
   with its interrupts unmasked, outside the game's sound code, and with the sound
-  system's lock word at 0 (the state in which the game's own code makes the call).
+  system's lock word at 0 (the state in which the game's own code makes the call). On
+  the ST300V a speech script is preceded by the game's speech switch (its RAM copy of DIP
+  S17, `Send::RamBits`), cleared once the script pointer leaves the script
+  (`Send::ClearAfter`); on L'Hexagone a switch is closed then opened
+  (`PinmameSetSwitch`, `Send::Switch`), after the sound DIPs are set once (`Layer::dips`,
+  `PinmameSetDIP`) and the lines the game writes with them sent once (`Layer::setup`).
 - **The ids** are the game's own internal sound ids: a script address (Stern), a counter
   and its length or a slot number (Atari generation 1), a sound number (Atari generation
-  2), a sequence address (Romstar). They are written in `altsound.csv` as they are, but
+  2), a sequence address (Romstar), a speech word (ST300V, `0x0040` + the word), a switch
+  number (L'Hexagone). They are written in `altsound.csv` as they are, but
   they are not sound commands: AltSound never receives them (no command reaches it on
   these machines), so **the packs cannot play in VPinball**. They are a recording of every
   sound of the game, for listening, measurement and archive, and for the loudness of each
