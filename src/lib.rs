@@ -457,7 +457,13 @@ pub fn cli_main() {
         };
         // A set with nothing to extract: said so in its manifest, not a failure.
         let borrowing = cli.sound_rom_from.is_some();
-        if let Some(why) = catalog::not_applicable(&job.rom).filter(|_| !borrowing) {
+        let why = catalog::not_applicable(&job.rom).or_else(|| {
+            drivers::load()
+                .iter()
+                .find(|d| d.name.eq_ignore_ascii_case(&job.rom))
+                .and_then(catalog::driver_not_applicable)
+        });
+        if let Some(why) = why.filter(|_| !borrowing) {
             let m = serde_json::json!({
                 "measurement": measurement(&cli),
                 "rom": job.rom,

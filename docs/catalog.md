@@ -113,7 +113,12 @@ Sets with nothing to extract are `not_applicable` with the reason, not failures:
 (the tester's own program has no sound code), `mideartp` (a bad dump), `tts_l1`/`tts_l2`
 (sound ROMs never dumped), `bstrk_l1`/`tstrk_l1` (chimes), the `sam1_flashb_*` boot
 flashes, `xforce` (sound and sample ROMs never dumped; `--sound-rom-from spcteam` gives an
-approximate pack), and every `NONE (other)` entry (no sound board).
+approximate pack), every set whose sound ROMs PinMAME lists all as `NO_DUMP`
+(`catalog::driver_not_applicable`: the board has no program to run; 12 sets in October
+2026: `blackbl2`, the unreleased `brooks`, the prototype `cv_d52`, `eballch2`, the
+`hh_4`/`hh_4a`/`hh_4b` speech mods, `ladyshot`/`ldyshot2`, `movmastr`, `mrblkz80`,
+`myststar`), and every `NONE (other)` entry (no sound
+board).
 `rom2altsound <set>` writes a manifest with `not_applicable` for them and exits 0.
 
 ## Staleness

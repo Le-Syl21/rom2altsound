@@ -120,6 +120,19 @@ pub fn not_applicable(set: &str) -> Option<&'static str> {
     })
 }
 
+/// A set with nothing to extract because PinMAME lists every one of its sound ROMs as
+/// `NO_DUMP` (the board has no program to run): Black Belt's Squawk & Talk version
+/// (`blackbl2`), Brooks & Dunn (`brooks`, never released), Cirqus Voltaire's prototype
+/// `cv_d52`. The sets [`not_applicable`] names keep their own reason.
+pub fn driver_not_applicable(d: &Driver) -> Option<&'static str> {
+    not_applicable(&d.name).or_else(|| {
+        let mut sound = d.roms.iter().filter(|r| r.sound && !r.optional).peekable();
+        (sound.peek().is_some() && sound.all(|r| r.no_dump)).then_some(
+            "its sound ROMs were never dumped (NO_DUMP in PinMAME): the board has no program and plays nothing; `--sound-rom-from <set>` can stand in a compatible set's (docs/catalog.md#not-applicable)",
+        )
+    })
+}
+
 /// A family with nothing to extract: no sound board to drive.
 pub fn family_not_applicable(label: &str) -> Option<&'static str> {
     (label == "NONE (other)").then_some(
@@ -467,7 +480,7 @@ pub fn entries(drivers: &[Driver], inp: &Inputs) -> Vec<Entry> {
                     year: d.year.clone(),
                     found: inp.found.get(&d.name).copied().unwrap_or(Found::Absent),
                     names: inp.dat.game_entries(&d.name, d.parent.as_deref()).len(),
-                    not_applicable: not_applicable(&d.name),
+                    not_applicable: driver_not_applicable(d),
                     factory_volume: None,
                     loudness: None,
                 })
@@ -1708,6 +1721,22 @@ mod tests {
         assert!(not_applicable("sam1_flashb_0310").is_some());
         assert!(not_applicable("afm_113b").is_none());
         assert!(family_not_applicable("NONE (other)").is_some());
+        let undumped = |name: &str| RomFile {
+            crc: None,
+            sha1: None,
+            no_dump: true,
+            ..rom(name, 0, "", true)
+        };
+        let mut d = driver("blackbl2", Some("blackblt"), "1986", Vec::new());
+        d.roms = vec![rom("cpu_u2.cpu", 1, "a", false), undumped("blb_u2.snd")];
+        assert!(driver_not_applicable(&d).unwrap().contains("never dumped"));
+        // One dumped sound ROM, or none at all (Stern SAM), is something to extract.
+        d.roms.push(rom("blb_u3.snd", 2, "b", true));
+        assert!(driver_not_applicable(&d).is_none());
+        d.roms.retain(|r| !r.sound);
+        assert!(driver_not_applicable(&d).is_none());
+        d.name = "tts_l1".into();
+        assert!(driver_not_applicable(&d).unwrap().contains("bowlgames.c"));
     }
 
     #[test]
