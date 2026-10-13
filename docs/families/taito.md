@@ -119,8 +119,14 @@ e.g. Titan (`titan`), Hawkman (`hawkman`), Fire Action (`fireact`), Cavaleiro Ne
 - **Measured**: `titan`, 38 of 40 ([board support](../board-support.md)), the same with
   the stop `00` (11 board resets instead of 45: these programs lower CB1 themselves, so
   they took commands without it). No full run is recorded.
-- **Limits**: only the quick survey; loops and the full sweep are not checked on a full
-  run.
+- **The Votrax after a board reset**: the SC-01 says its latched phoneme until the next
+  one, and the programs write none at reset (cavnegro's reset, `1801`, sets the PIA up and
+  goes idle; its speech commands are `21`..`70`, `1C85`). A phrase the tool's CPU reset cut
+  (`51`, a looping phrase the stop `00` does not end) left a 0.61 s phoneme droning under
+  every later file, and the full run gave up after three waits for quiet. Since then the
+  board reset also resets the sound chips (`CHIP_RESET`) and gives the Votrax the STOP
+  phoneme `3F` (`shim_reset_sound_chips`).
+- **Limits**: loops are checked on cavnegro only.
 - **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
   their libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)). Measured on `cavnegro`: the game sent `00 39 00 3A`,

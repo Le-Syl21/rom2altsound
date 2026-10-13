@@ -13,6 +13,7 @@
 #include "cpu/adsp2100/adsp2100.h"
 #include "sound/3812intf.h"
 #include "sound/fmopl.h"
+#include "sound/votrax.h"
 
 // Rebuild the board interface table exactly as src/wpc/sndbrd.c does (same X-macro list,
 // index = board type >> 8), so that we can look at a board's manual-command handler.
@@ -74,9 +75,17 @@ int shim_reset_audio_cpus(void) {
 // For a board whose audio CPU reset leaves a chip sounding: Tecnoplay's Y8950 keeps a voice
 // whose release rate the program set to 0 at its last level, and only a chip reset clears it.
 // The Y8950 has no reset in the sound interface table (sndintrf.c): reset it by hand.
+// Neither has the Votrax SC-01, which holds its last phoneme until the next one is latched:
+// Taito's Sintevox programs never write one at reset (cavnegro, `1801`), so a phrase cut by
+// the CPU reset droned on under every later sound. It is given the STOP phoneme (3F).
 void shim_reset_sound_chips(void) {
   int i, n;
   sound_reset();
+#if HAS_VOTRAXSC01
+  for (i = 0; i < MAX_SOUND && Machine->drv->sound[i].sound_type; i++)
+    if (Machine->drv->sound[i].sound_type == SOUND_VOTRAXSC01)
+      votraxsc01_w(0, 0x3f);
+#endif
 #if HAS_Y8950
   for (i = 0; i < MAX_SOUND && Machine->drv->sound[i].sound_type; i++)
     if (Machine->drv->sound[i].sound_type == SOUND_Y8950) {

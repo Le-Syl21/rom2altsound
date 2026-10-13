@@ -322,8 +322,10 @@ const CTRL_RESET: &[&str] = &["DCS", "DCSP2K", "WPCS"];
 /// Boards whose sound chips are reset with the audio CPU: Tecnoplay's program loads a voice
 /// with a release rate of 0 on channel 1 after an effect or a tune note (the second voice of
 /// a one-voice instrument is all zeros), which PinMAME's Y8950 holds at its last level for
-/// good (an 80 Hz drone), and the CPU reset does not touch the chip.
-const CHIP_RESET: &[&str] = &["TECNOPLAY"];
+/// good (an 80 Hz drone), and the CPU reset does not touch the chip. Taito's Sintevox: the
+/// Votrax SC-01 keeps saying the phoneme it had when the CPU reset cut a phrase (cavnegro
+/// `51`, a 0.61 s drone under every later file), `shim_reset_sound_chips` stops it.
+const CHIP_RESET: &[&str] = &["TECNOPLAY", "TAITO"];
 /// Pinball 2000: the pan of a request, the middle (game.rom `DCSRequest`'s `vol_pan` low
 /// byte; the game's boot requests use it).
 const P2K_PAN_CENTER: u16 = 0x7F;
