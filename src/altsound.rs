@@ -881,10 +881,15 @@ pub fn aligned_residual(a: &[f64], b: &[f64]) -> (f64, f64) {
 /// Finds twins among the written sounds. Each sound is compared to the earlier sounds
 /// that are not twins themselves; the first that passes all three tests is its original.
 pub fn find_twins(out_dir: &Path, sounds: &[SoundInfo]) -> Vec<Twin> {
+    // Only the length and the loudness of each original stay in memory: a twin must match
+    // both almost exactly, so an original's audio is read back from its file only for the
+    // rare sound that passes them. Keeping every original's audio instead ran a ROM whose
+    // sounds all loop to the search limit (Cosmic Princess) out of memory.
     struct Cand {
         index: usize,
         lufs: f64,
-        audio: Vec<f64>,
+        frames: usize,
+        path: std::path::PathBuf,
     }
     let mut originals: Vec<Cand> = Vec::new();
     let mut twins = Vec::new();
@@ -892,17 +897,29 @@ pub fn find_twins(out_dir: &Path, sounds: &[SoundInfo]) -> Vec<Twin> {
         let (Some(file), Some(lufs)) = (&s.file, s.lufs) else {
             continue;
         };
-        let Some((samples, ch)) = read_wav(&out_dir.join(file)) else {
+        let path = out_dir.join(file);
+        let Some(frames) = wav_frames(&path) else {
             continue;
         };
-        let audio = mono(&samples, ch);
+        let mut audio: Option<Vec<f64>> = None;
+        let mut unreadable = false;
         let found = originals.iter().find_map(|o| {
-            let length_diff = o.audio.len().abs_diff(audio.len());
+            let length_diff = o.frames.abs_diff(frames);
             let lufs_diff = (o.lufs - lufs).abs();
             if length_diff > TWIN_MAX_LENGTH_DIFF || lufs_diff > TWIN_MAX_LUFS_DIFF {
                 return None;
             }
-            let (residual_db, lag) = aligned_residual(&o.audio, &audio);
+            if audio.is_none() {
+                match read_wav(&path) {
+                    Some((samples, ch)) => audio = Some(mono(&samples, ch)),
+                    None => {
+                        unreadable = true;
+                        return None;
+                    }
+                }
+            }
+            let (samples, ch) = read_wav(&o.path)?;
+            let (residual_db, lag) = aligned_residual(&mono(&samples, ch), audio.as_deref()?);
             (residual_db <= TWIN_MAX_RESIDUAL_DB).then_some(Twin {
                 index,
                 of: o.index,
@@ -914,10 +931,23 @@ pub fn find_twins(out_dir: &Path, sounds: &[SoundInfo]) -> Vec<Twin> {
         });
         match found {
             Some(t) => twins.push(t),
-            None => originals.push(Cand { index, lufs, audio }),
+            None if !unreadable => originals.push(Cand {
+                index,
+                lufs,
+                frames,
+                path,
+            }),
+            None => {}
         }
     }
     twins
+}
+
+/// Frames in a WAV file, from its header.
+fn wav_frames(path: &Path) -> Option<usize> {
+    hound::WavReader::open(path)
+        .ok()
+        .map(|r| r.duration() as usize)
 }
 
 /// Writes the pack into `out_dir` (where the WAVs already are) and annotates
