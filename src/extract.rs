@@ -226,6 +226,9 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("GPS1", &[0x0F]),
     ("GPS2", &[0x0F]),
     ("GPS4", &[0x00]),
+    // Playmatic's tone board has no CPU to reset: a byte with low nibble 0 turns the tones
+    // off (`play1s_data_w`), unless a fade is running, which ends by itself in 0.5 s.
+    ("PLAY1", &[0x00]),
     ("CAPCOMS", &[0xDA, 0x02, 0x03, 0x01]),
     // game.rom `DCSQuietAllTracks`: 55AE, then the mask of the six channels in the high byte.
     ("DCSP2K", &[0x55, 0xAE, 0x3F, 0x00]),

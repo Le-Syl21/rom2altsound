@@ -29,20 +29,22 @@ Lap (`lastlap`), Night Fever (`ngtfever`)
   whose low nibble is 0 stops the tones, unless a fade is running.
 - **Sound list**: raw sweep `01`..`FF`: 16 tone combinations x fade/no fade, repeated for
   each value of bits 5-7 (which the board ignores): the twin test pairs the repeats.
-- **Stop, boot and resets**: the stop is a board reset, but the machine has no audio CPU
-  (the only CPU is the game's CDP1802), so `shim_reset_audio_cpus` resets nothing and a
-  held tone (bit 4 set) keeps sounding. The board's own stop is a byte with low nibble
-  `0` (`play1s_data_w`, else branch).
+- **Stop, boot and resets**: `00` (`BUILTIN_STOPS`): a byte with low nibble `0` turns
+  the tones off (`play1s_data_w`, else branch), unless a fade is running, which ends by
+  itself (0.5 s). Before, the stop was a board reset, but the machine has no audio CPU
+  (the only CPU is the game's CDP1802), so `shim_reset_audio_cpus` reset nothing and a
+  held tone (bit 4 set) kept sounding: the full runs of `bigtown` and `chance` stopped
+  after three waits for quiet (`11`, the first held tone, never ended).
 - **Volume**: the mixer level the fade leaves; full at the start of each new command
   (`sndlocals.volume = 100`).
 - **Loops**: audio only (no sound CPU, no state to read); a held tone is a steady
   waveform that the audio method can find.
 - **DUCK / STOP / CHANNEL**: defaults.
 - **Measured**: `spcgambl`, 39 of 40, 15 not from silence: a tone held between commands
-  ([board support](../board-support.md)).
-- **Limits and what is missing**: no stop. The cheapest fix, from `play1s_data_w`: `00`
-  (or any byte with low nibble 0) as the `PLAY1` stop in `BUILTIN_STOPS`; a fade in
-  progress still ends by itself (0.5 s). The sweep could also stop at `1F`.
+  ([board support](../board-support.md)); with the stop `00`, `bigtown` 240 of 255 (the
+  15 `x0` bytes silent), all from silence, no board reset, -8.3 LUFS.
+- **Limits and what is missing**: the held tones are cut at their loop or at
+  `--max-secs`. The sweep could stop at `1F` (bits 5-7 are the lamps).
 - **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
   their libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)). Measured on `bigtown`: the game sent `00 00 00...`,
