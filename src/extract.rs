@@ -5772,6 +5772,9 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
         Some("DCSP2K") => return p2k_sends(bytes),
         Some("ZAC1370") => return addressed(mask, board, &zac_strobed(bytes)),
         Some("SPINB" | "INDER") => return addressed(mask, board, &spinb_released(bytes)),
+        Some("GPSM") if gpsm_byte_table().is_some() => {
+            return addressed(mask, board, &gpsm3_framed(bytes));
+        }
         Some("GPSM") => return addressed(mask, board, &gpsm_framed(bytes)),
         // Jac Van Ham (not Formula 1's sub-type): the board reads a level on its VIA, and
         // the program acts on a change of it (`jvh_data_w`); each command is followed by
@@ -5946,6 +5949,43 @@ fn gpsm_framed(bytes: &[u8]) -> Vec<u8> {
             }
         })
         .collect()
+}
+
+/// The command table of a Game Plan MSU-1 program that takes a command as a byte, two
+/// nibbles low first (Agents 777's `770snd`, Captain Hook's `780.snd`; Attila's `260.snd`,
+/// from the same source, still takes nibbles), read from the sound CPU's 64 KB region.
+/// Their interrupt handler (`FD34`, read with a 6800 disassembler) acts on a nibble once
+/// it has been on the lines for two interrupts: the idle `F` clears a phase flag (`$62`
+/// bit 7), the first nibble is kept (`$71`), the second one makes the byte (`FD75`:
+/// `ANDA #$0F`, four `ASLA`, plus the first nibble) and plays the routine the table at
+/// `3811` gives for it (3-byte entries, the byte then the routine, up to an `FF`). The
+/// games' boots send `0F 0C 01 0F` (agent777) and `0F 0C 00 0F` (cpthook): `1C` and `0C`.
+/// The bytes are those of the table that can be sent so (two different nibbles, neither
+/// `F`), in the table's order; None for a program without that merge.
+fn gpsm_byte_table() -> Option<Vec<u8>> {
+    let cpu = unsafe { ffi::shim_audio_cpu(0) };
+    gpsm_byte_table_in(ffi::cpu_region(cpu)?)
+}
+
+/// `gpsm_byte_table` on a region: the merge (`84 0F 48 48 48 48`), then within the next
+/// bytes the `LDX #table` (`CE hh ll`) that looks the byte up.
+fn gpsm_byte_table_in(region: &[u8]) -> Option<Vec<u8>> {
+    const MERGE: [u8; 6] = [0x84, 0x0F, 0x48, 0x48, 0x48, 0x48];
+    let at = region.windows(MERGE.len()).position(|w| w == MERGE)? + MERGE.len();
+    let after = region.get(at..at + 12)?;
+    let ldx = after.iter().position(|&b| b == 0xCE)?;
+    let table = u16::from_be_bytes([*after.get(ldx + 1)?, *after.get(ldx + 2)?]) as usize;
+    let mut bytes = Vec::new();
+    for e in region.get(table..)?.chunks(3) {
+        match e[0] {
+            0xFF => return Some(bytes),
+            c if e.len() == 3 && c & 0x0F != 0x0F && c >> 4 != 0x0F && c & 0x0F != c >> 4 => {
+                bytes.push(c)
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Game Plan MSU-3 (`GPSM3`): the same four lines, but a command is a byte sent as two
@@ -6228,6 +6268,24 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
                 vec![("00..0E (the board reads four lines)".to_string(), singles(0x00..=0x0E))],
                 format!("board {b} ({typestr}): nibbles 00..0E (four lines)"),
             ),
+            // The MSU-1 programs that take a byte (`gpsm_byte_table`): the bytes of their
+            // table, sent as the MSU-3's.
+            "GPSM" if gpsm_byte_table().is_some() => {
+                let table = gpsm_byte_table().unwrap_or_default();
+                (
+                vec![(
+                    format!(
+                        "{} bytes of the program's table, two different nibbles, neither F (sent low, high, then the idle F)",
+                        table.len()
+                    ),
+                    table.iter().map(|&c| vec![c]).collect(),
+                )],
+                format!(
+                    "board {b} (GPSM): the {} bytes of the program's command table, sent as low nibble, high nibble, F",
+                    table.len()
+                ),
+            )
+            }
             "GPSM" => (
                 vec![(
                     "00..0E (one nibble between two idle 0F)".to_string(),
@@ -6908,6 +6966,27 @@ pub(crate) fn write_wav(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gpsm_byte_programs_are_told_by_their_merge() {
+        // Agents 777's handler (FD75..FD82) and the head of its table at 3811.
+        let mut r = vec![0u8; 0x10000];
+        let code = [
+            0x84, 0x0F, 0x48, 0x48, 0x48, 0x48, 0xD6, 0x71, 0xC4, 0x0F, 0x1B, 0xCE, 0x38, 0x11,
+        ];
+        r[0xFD75..0xFD75 + code.len()].copy_from_slice(&code);
+        let table = [
+            0x0F, 0x7D, 0x95, 0x01, 0x3A, 0x56, 0x1C, 0x3D, 0x14, 0x22, 0x39, 0x00, 0x25, 0x3C,
+            0xC2, 0xFF,
+        ];
+        r[0x3811..0x3811 + table.len()].copy_from_slice(&table);
+        // 0F (an F nibble) and 22 (two equal nibbles) cannot be sent.
+        assert_eq!(gpsm_byte_table_in(&r), Some(vec![0x01, 0x1C, 0x25]));
+        assert_eq!(gpsm3_framed(&[0x1C]), vec![0x0F, 0x0C, 0x01, 0x0F]);
+        // Attila's program, without the merge, takes nibbles.
+        r[0xFD75] = 0x01;
+        assert_eq!(gpsm_byte_table_in(&r), None);
+    }
 
     #[test]
     fn system_3_sound_lists_play_each_sound_once() {

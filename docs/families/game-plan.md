@@ -142,6 +142,18 @@ Global Warfare (`gwarfare`), Attila The Hun (`attila`), Captain Hook (`cpthook`)
   (`gpsm_framed`); before, one byte per command, never back to `0F`, so the lines kept
   the last nibble and the program played on under every command.
 - **Sound list**: the 15 nibbles `00`..`0E` (`sweep`, `"GPSM"`).
+- **The byte programs**: Agents 777's `770snd` and Captain Hook's `780.snd` (one source
+  with Attila's `260.snd`, read with a 6800 disassembler) take a command as a byte, as the
+  MSU-3: their interrupt handler (`FD34`) acts on a nibble once it has held two
+  interrupts; the idle `F` clears a phase flag (`$62` bit 7), the first nibble is kept
+  (`$71`), the second makes the byte, low nibble first (`FD75`: `ANDA #$0F`, four `ASLA`,
+  plus the first), and plays the routine of the table at `3811` (3-byte entries, the byte
+  then the routine, up to `FF`). Their boots send `0F 0C 01 0F` (agent777, command `1C`)
+  and `0F 0C 00 0F` (cpthook, `0C`); the nibble sweep was all silent on both. rom2altsound
+  tells them by that merge in the sound ROM (`gpsm_byte_table`) and sends the bytes of
+  their table that two different nibbles, neither `F`, can carry, framed as the MSU-3's
+  (`gpsm3_framed`): agent777 32 bytes, cpthook 40 (three of them, `02`..`04`, are the
+  table's no-op).
 - **Stop, boot and resets**: no stop command: a 6802 reset after every sound.
 - **Volume**: set by the board's program (`pia0a_w`), not by the tool: the board's own
   level.
@@ -149,7 +161,9 @@ Global Warfare (`gwarfare`), Attila The Hun (`attila`), Captain Hook (`cpthook`)
   Not measured.
 - **DUCK / STOP / CHANNEL**: defaults.
 - **Measured** ([board support](../board-support.md)): lizard 11 of 15, attila 15 of 15,
-  all from silence (lizard 40 of 40 before, 37 not from silence, all at -14.9 LUFS).
+  all from silence (lizard 40 of 40 before, 37 not from silence, all at -14.9 LUFS);
+  agent777 31 of 32 (-17.3 LUFS), cpthook 36 of 40 (-12.3 LUFS), all from silence (0 of
+  15 with the nibbles).
 - **Limits and what is missing**: the MC6840 emulation is incomplete in PinMAME, so the
   sounds are PinMAME's approximation; no stop known (a 6802 reset after each sound).
 - **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
