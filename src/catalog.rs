@@ -103,6 +103,9 @@ pub fn not_applicable(set: &str) -> Option<&'static str> {
         "sam_iv" => {
             "the S.A.M. IV tester boots a program of its own with no sound code: no sound to ask for (docs/families/stern-early.md)"
         }
+        "detest" | "deleontest4" => {
+            "a Data East test chip on a machine without the sound board (de_a, no sound CPU, no sound ROM in degames.c): no board to drive"
+        }
         "mideartp" => {
             "a prototype whose program ROM is a bad dump in PinMAME: no sound routine to read (docs/families/atari.md)"
         }
@@ -1718,6 +1721,7 @@ mod tests {
         assert!(l.caveat.unwrap().contains("not measured in a game"));
         assert!(!l.current);
         assert!(not_applicable("sam_iv").is_some());
+        assert!(not_applicable("detest").is_some());
         assert!(not_applicable("sam1_flashb_0310").is_some());
         assert!(not_applicable("afm_113b").is_none());
         assert!(family_not_applicable("NONE (other)").is_some());
