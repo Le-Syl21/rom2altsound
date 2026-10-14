@@ -134,7 +134,13 @@ Per command (`Extractor::step`, `Phase::Record`):
 - **Board reset** (`Extractor::reset_boards`): DCS, Pinball 2000 and WPCS through their
   control port (`sndbrd_ctrl_w`, as the game resets them); every other board by pulsing
   the reset line of all the audio CPUs (`shim_reset_audio_cpus`: the CPUs flagged
-  `CPU_AUDIO_CPU`). After a reset the tool waits for 4 s of silence
+  `CPU_AUDIO_CPU`). The reset also puts back the audio CPUs' program ROM as loaded
+  (`shim_save_audio_roms`, at machine start): PinMAME stores a write to an unmapped address
+  into the CPU's memory region, where the ROM is, so a program that runs wild after a
+  command it does not know can write over its own ROM, and no reset would bring it back
+  (the manifest counts such resets, `sound_rom_restores`, and the log says "had written
+  over its own ROM"). A CDP1802 (E.F.O.'s boards) also gets its register file back to
+  its power-on 0: its reset line clears only P, X, R0, Q and IE. After a reset the tool waits for 4 s of silence
   (`QUIET_AFTER_RESET_SECS`; longer for the boards of `REBOOT_SECS`, which ignore
   commands for a while after a reset), at most 10 s more.
 - **When the stop does not silence the board** within 10 s, the boards are reset. If

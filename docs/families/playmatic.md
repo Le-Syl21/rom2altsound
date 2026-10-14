@@ -134,7 +134,19 @@ Playmatic, JocMatic · e.g. Meg-Aaton (`megaaton`), Nautilus (`nautilus`), Mad R
   is known.
 - **Loops**: audio, sequencer state (CDP1802 RAM).
 - **DUCK / STOP / CHANNEL**: defaults.
-- **Measured**: `madrace`, 30 of 40 ([board support](../board-support.md)).
+- **Commands the program does not know**: many swept bytes send it astray (flashman: `30`,
+  `31`, `32`, `43`, `60`, `70`, `82`, `D6`... about 35 of 255): its stack pointer leaves
+  its RAM, and PinMAME stores its stray writes into the ROM image (unmapped writes land in
+  the CPU's region). Before, the board reset could not recover: on flashman the `DIS` at
+  `0000` became `00` (`IDL`), the program never started again, the AY-3-8910s held a
+  1.75 s loop under every file from `35` on, and the full run gave up after three waits for
+  quiet. The reset now puts the ROM back and zeroes the CDP1802's registers, which the
+  program reads without setting (after the crash of `31`, `32` played nothing until then)
+  ([common method](common.md)).
+- **Measured**: `madrace`, 30 of 40 ([board support](../board-support.md)); `flashman`
+  full run, 112 of 255 with sound, 109 files (45 loops), every one from silence, 66 resets
+  that put the ROM back, -12.0 LUFS (-8.1 without loops), 2.3 dBTP (67 files with clipped
+  samples, PinMAME's own mix).
 - **Limits**: only the quick survey.
 - **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
   their libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In

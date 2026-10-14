@@ -351,6 +351,9 @@ fn with_state<R>(f: impl FnOnce(&mut Extractor) -> R) -> Option<R> {
 
 unsafe extern "C" fn on_audio_available(info: *mut ffi::AudioInfo, _: *mut c_void) -> c_int {
     let info = unsafe { &*info };
+    // The emulation thread, before the CPUs run: the sound ROMs as loaded, which a board
+    // reset puts back (`shim_reset_audio_cpus`).
+    unsafe { ffi::shim_save_audio_roms() };
     with_state(|x| {
         x.rate = info.sample_rate as u32;
         x.channels = info.channels as usize;

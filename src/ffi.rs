@@ -118,6 +118,8 @@ unsafe extern "C" {
     pub fn shim_board_flags(board: c_int) -> c_uint;
     pub fn shim_halt_game_cpus(halt: c_int) -> c_int;
     pub fn shim_reset_audio_cpus() -> c_int;
+    pub fn shim_save_audio_roms() -> c_int;
+    pub fn shim_rom_guard_take() -> c_uint;
     pub fn shim_reset_sound_chips();
     pub fn shim_sound_region(len: *mut c_uint) -> *const u8;
     pub fn shim_game_gen() -> u64;

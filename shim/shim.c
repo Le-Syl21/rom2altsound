@@ -4,6 +4,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "driver.h"
 #include "cpuexec.h"
@@ -11,6 +12,7 @@
 #include "wpc/core.h"
 #include "wpc/wmssnd.h"
 #include "cpu/adsp2100/adsp2100.h"
+#include "cpu/cdp1802/cdp1802.h"
 #include "sound/3812intf.h"
 #include "sound/fmopl.h"
 #include "sound/votrax.h"
@@ -59,15 +61,130 @@ int shim_halt_game_cpus(int halt) {
   return n;
 }
 
+// The audio CPUs' program ROM, as loaded. MAME stores a byte written to an address its
+// write map leaves unmapped into the CPU's memory region (memory.c `mwh8_bad`, CPUs of up
+// to 20 address bits), where the ROM is: a sound program that runs wild (Flashman's E.F.O.
+// Sound IV after the swept command 30, its stack pointer out of its RAM) writes over its
+// own ROM, which a real board cannot do, and no reset brings it back (flashman: the `DIS`
+// at the reset address overwritten with 00, `IDL`, so the program never started again and
+// the AY-3-8910s held their last notes under every later file, until the run gave up). The ROM ranges are the read map's MRA_ROM entries that no
+// write map entry covers (or only MWA_ROM/MWA_NOP), 8-bit data buses only.
+#define SHIM_ROM_GUARD_MAX 16
+static struct {
+  int cpu;
+  unsigned start, len;
+  unsigned char *copy;
+} shim_rom_guard[SHIM_ROM_GUARD_MAX];
+static int shim_rom_guard_n;
+static unsigned shim_rom_guard_restored;
+
+static int shim_rom_written_to(int cpu, unsigned start, unsigned end) {
+  const struct Memory_WriteAddress *w =
+      (const struct Memory_WriteAddress *)Machine->drv->cpu[cpu].memory_write;
+  for (; w && !IS_MEMPORT_END(w); w++)
+    if (!IS_MEMPORT_MARKER(w) && w->start <= end && w->end >= start && w->handler != MWA_ROM
+        && w->handler != MWA_NOP)
+      return 1;
+  return 0;
+}
+
+// Saves the audio CPUs' ROM ranges. Call it once the machine exists and before its CPUs run
+// (the audio-available callback). Returns how many ranges are kept.
+int shim_save_audio_roms(void) {
+  int ii, i;
+  for (i = 0; i < shim_rom_guard_n; i++)
+    free(shim_rom_guard[i].copy);
+  shim_rom_guard_n = 0;
+  shim_rom_guard_restored = 0;
+  for (ii = 0; ii < MAX_CPU; ii++) {
+    const struct Memory_ReadAddress *r;
+    unsigned char *base;
+    size_t len;
+    if (!Machine->drv->cpu[ii].cpu_type || !(Machine->drv->cpu[ii].cpu_flags & CPU_AUDIO_CPU)
+        || cpunum_databus_width(ii) != 8 || cpunum_address_bits(ii) > 20)
+      continue;
+    base = memory_region(REGION_CPU1 + ii);
+    len = memory_region_length(REGION_CPU1 + ii);
+    r = (const struct Memory_ReadAddress *)Machine->drv->cpu[ii].memory_read;
+    for (; base && r && !IS_MEMPORT_END(r); r++) {
+      if (IS_MEMPORT_MARKER(r) || r->handler != MRA_ROM || r->end < r->start || r->end >= len
+          || shim_rom_written_to(ii, r->start, r->end) || shim_rom_guard_n == SHIM_ROM_GUARD_MAX)
+        continue;
+      shim_rom_guard[shim_rom_guard_n].copy = malloc(r->end - r->start + 1);
+      if (!shim_rom_guard[shim_rom_guard_n].copy)
+        continue;
+      shim_rom_guard[shim_rom_guard_n].cpu = ii;
+      shim_rom_guard[shim_rom_guard_n].start = r->start;
+      shim_rom_guard[shim_rom_guard_n].len = r->end - r->start + 1;
+      memcpy(shim_rom_guard[shim_rom_guard_n].copy, base + r->start, r->end - r->start + 1);
+      shim_rom_guard_n++;
+    }
+  }
+  return shim_rom_guard_n;
+}
+
+static void shim_rom_guard_restore(int unused) {
+  int i;
+  unsigned k;
+  (void)unused;
+  for (i = 0; i < shim_rom_guard_n; i++) {
+    unsigned char *at = memory_region(REGION_CPU1 + shim_rom_guard[i].cpu) + shim_rom_guard[i].start;
+    for (k = 0; k < shim_rom_guard[i].len; k++)
+      if (at[k] != shim_rom_guard[i].copy[k]) {
+        at[k] = shim_rom_guard[i].copy[k];
+        shim_rom_guard_restored++;
+      }
+  }
+}
+
+#if HAS_CDP1802
+// A CDP1802's reset clears only P, X, R0, Q and IE: its 15 other registers, D, DF, B and T
+// keep what the program left there, and the program has the register file as its working
+// store. E.F.O.'s Sound IV programs set only the ones they need at reset (Flashman, `0002`:
+// R1 to R8, the high bytes of RA and RC) and read others as left (RC's low byte, RE, RF):
+// after a reset that cut a crashed program (Flashman's command 30), command 32 played
+// nothing where it plays after a power-on. The board reset gives them their power-on value,
+// as PinMAME starts the machine (0), once the reset is in.
+static void shim_cdp1802_power_on(int unused) {
+  int ii, r;
+  (void)unused;
+  for (ii = 0; ii < MAX_CPU; ii++)
+    if (Machine->drv->cpu[ii].cpu_type == CPU_CDP1802
+        && (Machine->drv->cpu[ii].cpu_flags & CPU_AUDIO_CPU)) {
+      for (r = CDP1802_R1; r <= CDP1802_Rf; r++)
+        cpunum_set_reg(ii, r, 0);
+      cpunum_set_reg(ii, CDP1802_D, 0);
+      cpunum_set_reg(ii, CDP1802_B, 0);
+      cpunum_set_reg(ii, CDP1802_T, 0);
+      cpunum_set_reg(ii, CDP1802_DF, 0);
+    }
+}
+#endif
+
+// How many ROM bytes the resets of the audio CPUs put back since the last call.
+unsigned shim_rom_guard_take(void) {
+  unsigned n = shim_rom_guard_restored;
+  shim_rom_guard_restored = 0;
+  return n;
+}
+
 // Pulse the reset line of every audio CPU. Used to silence boards that have no
-// known "stop" command. Returns the number of CPUs reset.
+// known "stop" command. Their ROM is put back as loaded (see above), now and once more
+// right after the reset, which a timer applies: a timer of the same time, queued after it.
+// Returns the number of CPUs reset.
 int shim_reset_audio_cpus(void) {
   int ii, n = 0;
+  shim_rom_guard_restore(0);
   for (ii = 0; ii < MAX_CPU; ii++)
     if (Machine->drv->cpu[ii].cpu_type && (Machine->drv->cpu[ii].cpu_flags & CPU_AUDIO_CPU)) {
       cpunum_set_reset_line(ii, PULSE_LINE);
       n++;
     }
+  if (shim_rom_guard_n)
+    timer_set(TIME_NOW, 0, shim_rom_guard_restore);
+#if HAS_CDP1802
+  timer_set(TIME_NOW, 0, shim_cdp1802_power_on);
+#endif
   return n;
 }
 

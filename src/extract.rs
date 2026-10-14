@@ -1352,6 +1352,9 @@ struct Manifest<'a> {
     loudness: LoudnessReport,
     stop: String,
     board_resets: u32,
+    /// Board resets that found the sound program's ROM written over (`shim_save_audio_roms`)
+    /// and put it back as loaded.
+    sound_rom_restores: u32,
     dc_blocked_wav: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     dcs: Option<DcsReport<'a>>,
@@ -1521,6 +1524,7 @@ pub struct Extractor {
     /// The previous sound did not stop, even after a reset.
     dirty: bool,
     pub board_resets: u32,
+    sound_rom_restores: u32,
     /// Sound commands written by the game CPU during boot, as (time, board, byte).
     boot_log: Vec<(u64, c_int, u8)>,
     /// (board, previous byte, byte) seen during boot, and when the last unseen one arrived.
@@ -1636,6 +1640,7 @@ impl Extractor {
             refresh_labels: Vec::new(),
             dirty: false,
             board_resets: 0,
+            sound_rom_restores: 0,
             stop_failures: 0,
             boot_peak: 0,
             trace: None,
@@ -2281,6 +2286,13 @@ impl Extractor {
                 }
                 unsafe { ffi::shim_reset_audio_cpus() };
                 cpu_reset = true;
+                let restored = unsafe { ffi::shim_rom_guard_take() };
+                if restored > 0 {
+                    self.sound_rom_restores += 1;
+                    eprintln!(
+                        "  warning: the sound program had written over its own ROM ({restored} byte(s)): put back as loaded at the board reset"
+                    );
+                }
             }
         }
     }
@@ -5542,6 +5554,7 @@ impl Extractor {
             loudness: self.loudness_report(),
             stop: stop.join(" "),
             board_resets: self.board_resets,
+            sound_rom_restores: self.sound_rom_restores,
             dc_blocked_wav: self.dc_blocked_files(),
             dcs: self.dcs_report(),
             mix_check: self.mix_report.as_ref(),
