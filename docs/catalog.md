@@ -112,7 +112,8 @@ docs say which.
 
 Sets with nothing to extract are `not_applicable` with the reason, not failures: `sam_iv`
 (the tester's own program has no sound code), `detest`/`deleontest4` (Data East test chips,
-on a machine PinMAME runs without the sound board), `mideartp` (a bad dump), `tts_l1`/`tts_l2`
+on a machine PinMAME runs without the sound board), `rush_10` (a custom game on WPC
+hardware with no sound board), `mideartp` (a bad dump), `tts_l1`/`tts_l2`
 (sound ROMs never dumped), `bstrk_l1`/`tstrk_l1` (chimes), the `sam1_flashb_*` boot
 flashes, `xforce` (sound and sample ROMs never dumped; `--sound-rom-from spcteam` gives an
 approximate pack), every set whose sound ROMs PinMAME lists all as `NO_DUMP`

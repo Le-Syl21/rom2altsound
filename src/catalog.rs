@@ -118,6 +118,9 @@ pub fn not_applicable(set: &str) -> Option<&'static str> {
         "xforce" => {
             "its sound ROM and sample ROMs were never dumped: PinMAME plays nothing; `--sound-rom-from spcteam` gives an approximate pack with Space Team's sound program (docs/families/other-makers.md#tecnoplay-xforce)"
         }
+        "rush_10" => {
+            "a custom game on WPC Fliptronics hardware with no sound board (GAME_NO_SOUND, no sound ROM in wpcgames.c): no board to drive"
+        }
         s if s.starts_with("sam1_flashb_") => "a Stern SAM boot flash: no game and no sound data",
         "futurwld" | "futurwldf" | "hod" | "hodf" | "wsports" | "wsportsf" => ZAC1311,
         "galaxyps" => {
