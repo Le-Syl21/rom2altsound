@@ -105,6 +105,12 @@ Stern SB-300 · PinMAME interface `ST300` (`src/wpc/stsnd.c`) · ✅ (game-drive
   stopped (3 of Meteor's). The MOD sets (2010s) whose code moved, Dragonfist MOD 14
   (19 of 19) and Nine Ball's ball-handling MOD (16 of 16) included: the layer is found on
   all 67 sets of the family in the full set.
+- **Not applicable**: Galaxy (Planet Skillshot), `galaxyps` (2011): the mod changed 10
+  bytes of U6's thread code (`58FA`, `5F00`) without fixing the checksum: the boot sums the
+  program ROMs (`1BB1`: 1000-1FFF and 5000-5FFF) and loops for good at `1BC9` when the sum
+  is not 0 (it is 10 here). In PinMAME the game never gets past it, and the interrupt
+  handler that runs the sound scripts never does: a requested script's pointer stays where
+  the tool put it (the full run's 17 scripts all silent). Its scripts are Galaxy's.
 - **Limits**: the 9 that play nothing are either bytes that only look like a thread
   instruction and a script (Cheetah's `580D` and `5858`, words of a table of routine
   addresses) or scripts that need what the game sets during play (Star Gazer's `599C`,

@@ -29,9 +29,11 @@ Sports (`wsports`)
   writes them straight to the discrete circuit (`discrete_sound_w`, in the solenoid
   write path) and never calls `sndbrd_data_w`.
 - **What rom2altsound does**: the board interface exists but is empty, so it has no
-  manual command handler: `Extractor::end_boot` (`shim_board_has_mancmd`) ends the run
-  with "sound board 0 () has no manual command handler in PinMAME: nothing can be
-  driven". No pack.
+  manual command handler. The six sets are not applicable (`catalog::not_applicable`, and
+  the `ZAC1311` entries of the catalog): `rom2altsound futurwld` writes a manifest with
+  `not_applicable` and exits 0. Before, the run ended with "sound board 0 () has no manual
+  command handler in PinMAME: nothing can be driven" (`futurwld` and `futurwldf` failed
+  so in the catalog run of October 2026). No pack.
 - **What would be needed**: driving the four solenoid lines of the discrete circuit,
   which is not a sound command; nothing in rom2altsound does that.
 - **In VPinball**: **the pack cannot play**: AltSound receives nothing from these games
