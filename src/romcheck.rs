@@ -1642,6 +1642,7 @@ mod tests {
             roms,
             cpus: vec![],
             sound_chips: vec![],
+            audio_cpu: true,
             system: false,
             systems: vec![],
         }

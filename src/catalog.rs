@@ -133,11 +133,19 @@ pub fn not_applicable(set: &str) -> Option<&'static str> {
 /// A set with nothing to extract because PinMAME lists every one of its sound ROMs as
 /// `NO_DUMP` (the board has no program to run): Black Belt's Squawk & Talk version
 /// (`blackbl2`), Brooks & Dunn (`brooks`, never released), Cirqus Voltaire's prototype
-/// `cv_d52`. The sets [`not_applicable`] names keep their own reason.
+/// `cv_d52`. Also a set whose machine has a sound CPU but whose definition lists no sound
+/// ROM at all: the CPU's region is never created and PinMAME crashes reading its reset
+/// vector (`rctycnl`: segames.c leaves out the `RCT_SND` its four sibling 7.02 sets list).
+/// The sets [`not_applicable`] names keep their own reason.
 pub fn driver_not_applicable(d: &Driver) -> Option<&'static str> {
     not_applicable(&d.name).or_else(|| {
         let mut sound = d.roms.iter().filter(|r| r.sound && !r.optional).peekable();
-        (sound.peek().is_some() && sound.all(|r| r.no_dump)).then_some(
+        if sound.peek().is_none() {
+            return (d.audio_cpu && !d.system).then_some(
+                "PinMAME's definition of the set lists no sound ROM although its machine has a sound CPU (an omission: rctycnl, Spanish RollerCoaster Tycoon, lacks the RCT_SND of the other 7.02 sets): the CPU has no program and PinMAME crashes at its reset; the parent set, with the same game ROM, has its sounds (docs/catalog.md#not-applicable)",
+            );
+        }
+        sound.all(|r| r.no_dump).then_some(
             "its sound ROMs were never dumped (NO_DUMP in PinMAME): the board has no program and plays nothing; `--sound-rom-from <set>` can stand in a compatible set's (docs/catalog.md#not-applicable)",
         )
     })
@@ -1350,6 +1358,7 @@ mod tests {
             roms,
             cpus: Vec::new(),
             sound_chips: Vec::new(),
+            audio_cpu: true,
             system: false,
             systems: Vec::new(),
         }
@@ -1755,10 +1764,14 @@ mod tests {
         let mut d = driver("blackbl2", Some("blackblt"), "1986", Vec::new());
         d.roms = vec![rom("cpu_u2.cpu", 1, "a", false), undumped("blb_u2.snd")];
         assert!(driver_not_applicable(&d).unwrap().contains("never dumped"));
-        // One dumped sound ROM, or none at all (Stern SAM), is something to extract.
+        // One dumped sound ROM is something to extract.
         d.roms.push(rom("blb_u3.snd", 2, "b", true));
         assert!(driver_not_applicable(&d).is_none());
+        // None at all is something to extract when no CPU needs one (Stern SAM), but not on
+        // a machine with a sound CPU (rctycnl's definition leaves its sound ROMs out).
         d.roms.retain(|r| !r.sound);
+        assert!(driver_not_applicable(&d).unwrap().contains("no sound ROM"));
+        d.audio_cpu = false;
         assert!(driver_not_applicable(&d).is_none());
         d.name = "tts_l1".into();
         assert!(driver_not_applicable(&d).unwrap().contains("bowlgames.c"));

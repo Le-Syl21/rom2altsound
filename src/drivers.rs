@@ -54,6 +54,9 @@ pub struct Driver {
     pub roms: Vec<RomFile>,
     pub cpus: Vec<String>,
     pub sound_chips: Vec<String>,
+    /// The machine has a CPU flagged `CPU_AUDIO_CPU` (a sound board's program CPU).
+    #[serde(skip)]
+    pub audio_cpu: bool,
     /// A shared "system" ROM set, not a game: a set PinMAME flags `NOT_A_DRIVER` that holds
     /// the ROMs several games of a hardware generation load from it (gts80s: System 80's
     /// CPU board ROMs, allied, gp_110...), like MAME's BIOS sets.
@@ -306,6 +309,7 @@ pub fn load() -> Vec<Driver> {
             roms,
             cpus,
             sound_chips,
+            audio_cpu: audio_mask != 0,
             system,
             systems: text(i, 6).split_whitespace().map(Into::into).collect(),
         });

@@ -120,7 +120,9 @@ approximate pack), every set whose sound ROMs PinMAME lists all as `NO_DUMP`
 (`catalog::driver_not_applicable`: the board has no program to run; 12 sets in October
 2026: `blackbl2`, the unreleased `brooks`, the prototype `cv_d52`, `eballch2`, the
 `hh_4`/`hh_4a`/`hh_4b` speech mods, `ladyshot`/`ldyshot2`, `movmastr`, `mrblkz80`,
-`myststar`), every `NONE (other)` entry (no sound
+`myststar`), every set whose machine has a sound CPU but whose definition lists no sound
+ROM at all (PinMAME crashes at the CPU's reset; `rctycnl`, whose segames.c entry leaves
+out `RCT_SND`, the only one in October 2026: its sounds are rctycn's), every `NONE (other)` entry (no sound
 board), and the Zaccaria 1311 entries (`futurwld`, `hod`, `wsports` and their Free Play
 sets: the game fires solenoids into a discrete circuit, no sound command exists), and
 `galaxyps` (a Galaxy mod whose patched ROM fails the program's own checksum at boot: the

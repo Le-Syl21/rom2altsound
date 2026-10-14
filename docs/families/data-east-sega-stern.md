@@ -136,6 +136,11 @@ Monopoly (`monopole`)
   ADPCM state carries over between commands (gnr_300 `67`); a few sounds ignore the master
   volume (apollo13 `5F`, xfiles `1E`, `1F`); the factory volume is the attract-mode one
   ([Limits](../how-it-works.md#limits)).
+- **Not applicable**: RollerCoaster Tycoon (7.02 Spanish), `rctycnl`: segames.c lists only
+  its game and display ROMs, without the `RCT_SND` of the German, French and Italian 7.02
+  sets (upstream PinMAME too), so the sound 6809's region is never created and PinMAME dies
+  of a SIGSEGV at its reset, reading the vector at `FFFE` (`m6809_reset`,
+  `cpu_readmem16`). Its game ROM is rctycn's (`rctcpu.702`), and so are its sounds.
 - **In VPinball**: Data East (`GEN_DE`, `GEN_DEDMD16/32/64`): **plays as written**, one
   byte per id (aar_101: `23 FF 7A FF BF FF` looked up as `0023 007A 00BF`). Whitestar
   (`GEN_WS`, `WS_1`, `WS_2`): libaltsound joins `FC`..`FF` with the next byte, takes `FE

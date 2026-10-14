@@ -11,6 +11,11 @@
   "not_applicable":N}`. The steps are the window program's own (each ROM's process writes
   them to a file the parent reads back); the other messages go to stderr and each ROM's
   log to its `rom2altsound.log`, also with `--jobs 1`. The format: README, "Usage".
+- **`rctycnl` is not applicable instead of a crash.** PinMAME's definition of the Spanish
+  RollerCoaster Tycoon 7.02 lists no sound ROM (segames.c leaves out the `RCT_SND` its
+  sibling sets list), so its sound 6809 has no region and the cold boot died of a SIGSEGV
+  at the CPU's reset. A set whose machine has a sound CPU and no sound ROM at all is now
+  `not_applicable` (`catalog::driver_not_applicable`); its sounds are rctycn's.
 - **`rom2altsound sounds-dat`: a PinMAME sounds.dat from the extraction reports.**
   `--manifests <runs>` (repeatable, as `catalog`), `--names <file|dir>` (names files),
   `--sounds-dat` (the file to start from, PinMAME's by default), `--out`. PinMAME's file is
