@@ -807,11 +807,11 @@ mod st300 {
         let framed = (speech && !thread_ops.is_empty() && (v.ops)(0x0C) == Op::Jump)
             .then(|| framed_speech(m, base, ptr))
             .flatten();
-        if let Some(f) = framed {
-            if !thread_ops.contains(&f.op) {
-                thread_ops.push(f.op);
-                thread_ops.sort_unstable();
-            }
+        if let Some(f) = framed
+            && !thread_ops.contains(&f.op)
+        {
+            thread_ops.push(f.op);
+            thread_ops.sort_unstable();
         }
         let mut framed_refs = std::collections::BTreeSet::new();
         // Every place the program refers to a script from: thread instructions, direct
@@ -1028,10 +1028,10 @@ mod st300 {
                     }
                 }
                 // The speed and volume of the frame the game builds around a script.
-                if let Some(f) = framed.filter(|_| framed_refs.contains(&(g.id as usize))) {
-                    if (v.ops)(f.head[1]) == Op::Voice {
-                        *voices.entry(f.head[1]).or_default() += 1;
-                    }
+                if let Some(f) = framed.filter(|_| framed_refs.contains(&(g.id as usize)))
+                    && (v.ops)(f.head[1]) == Op::Voice
+                {
+                    *voices.entry(f.head[1]).or_default() += 1;
                 }
             }
             let voice = voices
