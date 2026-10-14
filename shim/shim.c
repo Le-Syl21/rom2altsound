@@ -188,20 +188,50 @@ int shim_reset_audio_cpus(void) {
   return n;
 }
 
+#if HAS_VOTRAXSC01
+// The STOP phoneme the board reset gives the SC-01 is ours, not the program's: the busy
+// line (A/R) must not tell the board it started. Taito wires it to the PIA's CA1
+// (`votrax_busy`), and gork's reset routine (`3000`) arms CA1's falling edge (CRA `3C`),
+// then says phrase 23, a STOP, through the speech routine (`33B8`), which enables the CA1
+// interrupt (NMI) before it selects port B's data register. The busy edge of our STOP had
+// set the flag in between: the NMI came at once, the program's STOP went to port B's
+// direction register, and the chip latched the port's 00 (EH3), a vowel it then said
+// for good under every later file. So the busy notification of our STOP's latch (the
+// chip calls it 0.1 ms after the write) is swallowed; its end-of-phone one goes through
+// (the busy line had stayed idle, or the cut phoneme ends as it would have), unless the
+// program latched a phoneme of its own by then, which the chip then reports as usual.
+static VOTRAXSC01_BUSYCALLBACK shim_votrax_busy_orig;
+static struct VOTRAXSC01interface *shim_votrax_intf;
+static void shim_votrax_stop_busy(int state) {
+  shim_votrax_intf->BusyCallback[0] = shim_votrax_busy_orig;
+  if (!state && shim_votrax_busy_orig)
+    shim_votrax_busy_orig(state);
+}
+static void shim_votrax_stop(struct VOTRAXSC01interface *intf) {
+  if (intf->BusyCallback[0] != shim_votrax_stop_busy) {
+    shim_votrax_intf = intf;
+    shim_votrax_busy_orig = intf->BusyCallback[0];
+    intf->BusyCallback[0] = shim_votrax_stop_busy;
+  }
+  votraxsc01_w(0, 0x3f);
+}
+#endif
+
 // Reset every sound chip of the machine (each chip's reset function, as at a machine reset).
 // For a board whose audio CPU reset leaves a chip sounding: Tecnoplay's Y8950 keeps a voice
 // whose release rate the program set to 0 at its last level, and only a chip reset clears it.
 // The Y8950 has no reset in the sound interface table (sndintrf.c): reset it by hand.
 // Neither has the Votrax SC-01, which holds its last phoneme until the next one is latched:
 // Taito's Sintevox programs never write one at reset (cavnegro, `1801`), so a phrase cut by
-// the CPU reset droned on under every later sound. It is given the STOP phoneme (3F).
+// the CPU reset droned on under every later sound. It is given the STOP phoneme (3F),
+// without a busy edge (`shim_votrax_stop`).
 void shim_reset_sound_chips(void) {
   int i, n;
   sound_reset();
 #if HAS_VOTRAXSC01
   for (i = 0; i < MAX_SOUND && Machine->drv->sound[i].sound_type; i++)
     if (Machine->drv->sound[i].sound_type == SOUND_VOTRAXSC01)
-      votraxsc01_w(0, 0x3f);
+      shim_votrax_stop((struct VOTRAXSC01interface *)Machine->drv->sound[i].sound_interface);
 #endif
 #if HAS_Y8950
   for (i = 0; i < MAX_SOUND && Machine->drv->sound[i].sound_type; i++)

@@ -125,7 +125,15 @@ e.g. Titan (`titan`), Hawkman (`hawkman`), Fire Action (`fireact`), Cavaleiro Ne
   (`51`, a looping phrase the stop `00` does not end) left a 0.61 s phoneme droning under
   every later file, and the full run gave up after three waits for quiet. Since then the
   board reset also resets the sound chips (`CHIP_RESET`) and gives the Votrax the STOP
-  phoneme `3F` (`shim_reset_sound_chips`).
+  phoneme `3F` (`shim_reset_sound_chips`), **without telling the board** (`shim_votrax_stop`):
+  the chip's busy notification for that latch, 0.1 ms after the write, is swallowed, so
+  CA1 does not move; its end-of-phone one goes through. Until then that busy edge set the
+  PIA's CA1 flag under the program's reset code, and on the programs that enable the CA1
+  interrupt later (gork, [below](#sndbrd_taito_sintevoxpp)) the NMI came early and the
+  chip latched a vowel for good. On cavnegro it changed what the commands after a board
+  reset played: `53`, `54` and `55` gave other files than each one alone after a power-on
+  (4.41 s, 120 s with no loop found, 4.99 s); now the same as alone (4.99 s, a 28.7 s
+  loop, 120 s), and no file is flagged.
 - **Limits**: loops are checked on cavnegro only.
 - **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
   their libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In
@@ -146,7 +154,21 @@ ids, 1982, Taito · e.g. Gork (`gork`), Fire Action Deluxe (`fireactd`)
 - **Commands, list, stop, volume, loops, columns**: as above.
 - **Measured**: `gork`, 37 of 40 ([board support](../board-support.md)), the same with the
   stop `00` (28 board resets instead of 47).
-- **Limits**: only the quick survey.
+- **The reset routine says a STOP** (gork, `3000`): it sets the PIA up (CRA `3C`, CA1's
+  falling edge), then says phrase `23`, one STOP, through the speech routine (`33B8`):
+  CRA `37` enables the CA1 interrupt (the chip's busy line, NMI at `33D4`), CRB `34`
+  selects port B's data register, the phoneme goes out on port B and CB2 latches it, `WAI`
+  until the end of the phone. The tool's own STOP at a board reset made a busy edge just
+  before (CA1 falling, under CRA `3C`): the NMI came as CRA `37` was written, before CRB
+  `34`, so the program's `3F` went to port B's direction register and CB2 latched the
+  port's `00` (EH3), a vowel the chip said for good (traced with `R2A_TRACE=0:0401-0403`;
+  with the Votrax muted the files were clean). From the first board reset (after `03`, a
+  DAC sound `00` does not stop) every file was flagged, and the full run gave up in the
+  retry pass. The tool's STOP no longer makes that edge (`shim_votrax_stop`, [above](#sndbrd_taito_sintevox)).
+  Full run: 238 of 255 written, none flagged, 17 with no sound, 232 board resets; 230
+  run to the 120 s cap with no loop found (DAC sounds the stop `00` does not end),
+  -24.8 LUFS (-18.5 without loops), -2.3 dBTP.
+- **Limits**: the 230 sounds at the cap are not looped.
 - **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
   their libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)); `fireactd` sent no sound command in 45 s of attract
