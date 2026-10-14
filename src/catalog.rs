@@ -118,6 +118,9 @@ pub fn not_applicable(set: &str) -> Option<&'static str> {
         "xforce" => {
             "its sound ROM and sample ROMs were never dumped: PinMAME plays nothing; `--sound-rom-from spcteam` gives an approximate pack with Space Team's sound program (docs/families/other-makers.md#tecnoplay-xforce)"
         }
+        "tt_game" => {
+            "Gottlieb's System 3 game template: its sound programs (yrom1, drom1) were never dumped, only the speech data ROMs; the board has no program and plays nothing"
+        }
         "rush_10" => {
             "a custom game on WPC Fliptronics hardware with no sound board (GAME_NO_SOUND, no sound ROM in wpcgames.c): no board to drive"
         }
