@@ -97,6 +97,12 @@ fn main() {
             .cflag("-Werror=unguarded-availability")
             .cxxflag("-Werror=unguarded-availability");
     }
+    if msvc {
+        // The cmake crate overwrites CMAKE_<LANG>_FLAGS_RELEASE on MSVC (for /MD vs /MT), which
+        // drops CMake's /DNDEBUG: PinMAME's debug asserts then abort a release binary, such as
+        // the switch matrix check that fails for Fire! (fireact) at core.c's machine init.
+        config.cflag("/DNDEBUG").cxxflag("/DNDEBUG");
+    }
     let dst = config
         // Always an optimized library: the emulation is the hot path, and on MSVC a Debug
         // CMake build would also pick the debug CRT, which rustc never links.
