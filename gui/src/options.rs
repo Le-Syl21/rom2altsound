@@ -20,6 +20,10 @@ const MAIN: &[&str] = &[
     "version",
 ];
 
+/// The options meant for another front end, not for this window (it follows the ROMs
+/// itself).
+const NOT_OFFERED: &[&str] = &["progress"];
+
 /// One advanced option and what the user set.
 pub struct AdvOpt {
     /// `--name`, without the dashes.
@@ -39,7 +43,10 @@ pub struct AdvOpt {
 pub fn advanced() -> Vec<AdvOpt> {
     rom2altsound::command()
         .get_arguments()
-        .filter(|a| !a.is_hide_set() && !MAIN.contains(&a.get_id().as_str()))
+        .filter(|a| {
+            let id = a.get_id().as_str();
+            !a.is_hide_set() && !MAIN.contains(&id) && !NOT_OFFERED.contains(&id)
+        })
         .filter_map(|a| {
             let long = a.get_long()?.to_owned();
             let help = a
@@ -100,7 +107,7 @@ mod tests {
         ] {
             assert!(names.contains(&want), "{want} missing from {names:?}");
         }
-        for not in ["in-process", "out", "volume", "firmware-dir"] {
+        for not in ["in-process", "out", "volume", "firmware-dir", "progress"] {
             assert!(!names.contains(&not), "{not} should not be offered");
         }
         let lms = adv.iter().find(|o| o.long == "loop-max-secs").unwrap();

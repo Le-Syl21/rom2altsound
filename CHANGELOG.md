@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **`--progress json`: every ROM's progress for a front end (VPin Studio).** One JSON
+  object per line on stdout, flushed per line and never mixed between ROMs running side by
+  side (`--jobs`): `start`, `cold-boot`, `boot`, `sam`, `record` (`pass`, `done` of
+  `total`, the command's `id` and `name`), `pack`, then `done` with `status` (`ok`,
+  `failed` with `error`, `not_applicable` with `reason`), `written`, `out`, `secs`
+  (`skipped` under `--skip-done`), and a last `{"stage":"all_done","ok":N,"failed":N,
+  "not_applicable":N}`. The steps are the window program's own (each ROM's process writes
+  them to a file the parent reads back); the other messages go to stderr and each ROM's
+  log to its `rom2altsound.log`, also with `--jobs 1`. The format: README, "Usage".
 - **`rom2altsound sounds-dat`: a PinMAME sounds.dat from the extraction reports.**
   `--manifests <runs>` (repeatable, as `catalog`), `--names <file|dir>` (names files),
   `--sounds-dat` (the file to start from, PinMAME's by default), `--out`. PinMAME's file is

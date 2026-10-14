@@ -4,7 +4,7 @@
 
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::Cli;
+use crate::progress::{Line, Status};
 
 /// Where a ROM argument points: its set name and the directory holding its zip.
 #[derive(Debug, PartialEq)]
@@ -200,7 +201,7 @@ pub enum Event<'a> {
     },
     /// A line of a ROM's log (watched runs only).
     Log { rom: &'a str, line: &'a str },
-    /// Where a ROM stands (watched runs only).
+    /// Where a ROM stands (watched runs and `--progress` only).
     Progress {
         rom: &'a str,
         step: &'a crate::progress::Step,
@@ -259,22 +260,100 @@ pub fn run(cli: &Cli) -> i32 {
             return 1;
         }
     };
-    let outcomes = run_with(cli, &exe, None, &mut |e| match e {
-        Event::NotStarted(o) => eprintln!("{}: {}", o.rom, o.error.as_deref().unwrap_or("")),
-        Event::Started {
-            rom, log: Some(l), ..
-        } => eprintln!("{rom}: started (log: {})", l.display()),
-        Event::Finished(o) => println!("{}", line(o)),
-        Event::Skipped(o) => println!("{}: skipped, done already ({})", o.rom, o.out.display()),
-        _ => {}
+    // With --progress json, stdout holds the progress lines alone: the rest goes to stderr.
+    let json = cli.progress == Some(crate::progress::Format::Json);
+    let say = |s: &str| {
+        if json {
+            eprintln!("{s}");
+        } else {
+            println!("{s}");
+        }
+    };
+    let outcomes = run_with(cli, &exe, None, &mut |e| {
+        match &e {
+            Event::NotStarted(o) => eprintln!("{}: {}", o.rom, o.error.as_deref().unwrap_or("")),
+            Event::Started {
+                rom, log: Some(l), ..
+            } => eprintln!("{rom}: started (log: {})", l.display()),
+            Event::Finished(o) => say(&line(o)),
+            Event::Skipped(o) => say(&format!(
+                "{}: skipped, done already ({})",
+                o.rom,
+                o.out.display()
+            )),
+            _ => {}
+        }
+        if json {
+            progress_line(&e);
+        }
     });
-    let code = recap(&outcomes);
+    let code = recap(&outcomes, &say);
     match write_index(cli, &outcomes) {
-        Some(Ok(p)) => println!("pages of every ROM: {}", p.display()),
+        Some(Ok(p)) => say(&format!("pages of every ROM: {}", p.display())),
         Some(Err(e)) => eprintln!("cannot write the index page: {e}"),
         None => {}
     }
+    if json {
+        let count = |s| outcomes.iter().filter(|o| status(o).0 == s).count();
+        emit(&Line::AllDone {
+            ok: count(Status::Ok),
+            failed: count(Status::Failed),
+            not_applicable: count(Status::NotApplicable),
+        });
+    }
     code
+}
+
+/// `--progress json`: the line of an event, if it has one.
+fn progress_line(e: &Event) {
+    let out = |o: &Path| o.display().to_string();
+    match *e {
+        Event::Started { rom, out: o, .. } => emit(&Line::Start { rom, out: &out(o) }),
+        Event::Progress { rom, step } => emit(&Line::Step { rom, step }),
+        Event::NotStarted(o) | Event::Finished(o) | Event::Skipped(o) => {
+            let (status, written, message) = status(o);
+            emit(&Line::Done {
+                rom: &o.rom,
+                status,
+                written,
+                out: &out(&o.out),
+                secs: o.secs,
+                message: message.as_deref(),
+                skipped: matches!(e, Event::Skipped(_)),
+            })
+        }
+        Event::Log { .. } => {}
+    }
+}
+
+/// Writes one progress line on stdout, whole, and flushes it. Every line comes from this
+/// process's engine loop (the ROMs' processes write theirs to their own files), so lines of
+/// ROMs running side by side never mix.
+fn emit(l: &Line) {
+    let mut out = std::io::stdout().lock();
+    let _ = writeln!(out, "{}", l.to_json());
+    let _ = out.flush();
+}
+
+/// How a ROM ended: its status, how many sound files it wrote, and why it failed or is not
+/// applicable (from its manifest).
+fn status(o: &Outcome) -> (Status, u64, Option<String>) {
+    if let Some(e) = &o.error {
+        return (Status::Failed, 0, Some(e.clone()));
+    }
+    let m = manifest(&o.out);
+    if let Some(why) = m.as_ref().and_then(|m| m["not_applicable"].as_str()) {
+        return (Status::NotApplicable, 0, Some(why.to_owned()));
+    }
+    let written = m.and_then(|m| m["counts"]["written"].as_u64());
+    (Status::Ok, written.unwrap_or(0), None)
+}
+
+/// A ROM folder's manifest.json, when it reads.
+fn manifest(out: &Path) -> Option<serde_json::Value> {
+    std::fs::read_to_string(out.join("manifest.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
 }
 
 /// The page linking every ROM's page at the output root, once some ROM went through (and
@@ -331,16 +410,26 @@ pub fn run_with(
     let cancelled = || watch.is_some_and(|w| w.cancel.load(Ordering::Relaxed));
     let jobs = (cli.jobs as usize).min(queue.len()).max(1);
     // One at a time on a terminal: the child writes to it. Otherwise: each to a log file in
-    // its ROM folder, and only the summaries come here.
-    let live = jobs == 1 && watch.is_none();
+    // its ROM folder, and only the summaries come here (with --progress, stdout is the
+    // progress lines' alone).
+    let live = jobs == 1 && watch.is_none() && cli.progress.is_none();
+    let tracked = watch.is_some() || cli.progress.is_some();
     queue.reverse();
     let mut running: Vec<Running> = Vec::new();
     while !queue.is_empty() || !running.is_empty() {
         while running.len() < jobs && !cancelled() {
             let Some(rom) = queue.pop() else { break };
             let out = root.join(&rom.name);
-            let progress = watch.map(|_| progress_file(&rom.name));
-            match spawn(exe, cli, &rom, &out, live, progress.as_deref()) {
+            let progress = tracked.then(|| progress_file(&rom.name));
+            match spawn(
+                exe,
+                cli,
+                &rom,
+                &out,
+                live,
+                progress.as_deref(),
+                watch.is_some(),
+            ) {
                 Ok(child) => {
                     let log = (!live).then(|| out.join(LOG));
                     on(Event::Started {
@@ -577,6 +666,7 @@ fn spawn(
     out: &Path,
     live: bool,
     progress: Option<&Path>,
+    watched: bool,
 ) -> Result<Child, String> {
     std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
     let mut cmd = Command::new(exe);
@@ -591,6 +681,8 @@ fn spawn(
     }
     if let Some(p) = progress {
         cmd.env(crate::progress::ENV, p).stdin(Stdio::null());
+    }
+    if watched {
         // A process group of its own, so that a cancel stops the processes it starts too.
         #[cfg(unix)]
         std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
@@ -627,9 +719,7 @@ pub fn line(o: &Outcome) -> String {
     if let Some(e) = &o.error {
         return format!("{}: FAILED: {e}", o.rom);
     }
-    let m: Option<serde_json::Value> = std::fs::read_to_string(o.out.join("manifest.json"))
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok());
+    let m = manifest(&o.out);
     if let Some(why) = m.as_ref().and_then(|m| m["not_applicable"].as_str()) {
         return format!("{}: not applicable: {why}", o.rom);
     }
@@ -657,18 +747,18 @@ pub fn line(o: &Outcome) -> String {
 }
 
 /// The final recap; returns the exit code (1 if any ROM failed).
-fn recap(outcomes: &[Outcome]) -> i32 {
+fn recap(outcomes: &[Outcome], say: &dyn Fn(&str)) -> i32 {
     let failed = outcomes.iter().filter(|o| o.error.is_some()).count();
     if outcomes.len() > 1 {
-        println!();
-        println!(
+        say("");
+        say(&format!(
             "{} ROM(s): {} done, {} failed",
             outcomes.len(),
             outcomes.len() - failed,
             failed
-        );
+        ));
         for o in outcomes {
-            println!("  {}", line(o));
+            say(&format!("  {}", line(o)));
         }
     }
     i32::from(failed > 0)

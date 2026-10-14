@@ -300,6 +300,17 @@ pub struct Cli {
     /// Makes a long run resumable: run the same command again after a stop
     #[arg(long)]
     skip_done: bool,
+    /// For a front end: every ROM's progress on stdout, one JSON object per line, each
+    /// with its "rom" and "stage": "start" (with "out"), "cold-boot", "boot", "sam",
+    /// "record" (with "pass", "done", "total", "id", "name": the command being recorded,
+    /// "done" of "total" in that pass), "pack", then "done" (with "status": ok, failed or
+    /// not_applicable, "written", "out", "secs", "error" or "reason", and "skipped" with
+    /// --skip-done); the last line is
+    /// {"stage":"all_done","ok":N,"failed":N,"not_applicable":N}. The other messages go
+    /// to stderr and each ROM's log goes to rom2altsound.log in its folder, even with
+    /// --jobs 1
+    #[arg(long, value_enum, value_name = "FORMAT", conflicts_with = "in_process")]
+    progress: Option<progress::Format>,
     /// Internal: extract the single ROM given in this process; --roms is its directory and
     /// --out its own folder (libpinmame runs one machine per process)
     #[arg(long, hide = true)]

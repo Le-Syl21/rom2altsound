@@ -123,6 +123,31 @@ Several ROMs run two at a time by default (`--jobs` to change it); then each ROM
 goes to `rom2altsound.log` in its folder. A ROM that fails does not stop the others, and a
 recap is printed at the end.
 
+For a front end (VPin Studio...), `--progress json` writes every ROM's progress on stdout,
+one JSON object per line (JSON Lines), each line flushed and whole even with several ROMs
+at a time; everything else goes to stderr, and each ROM's log to its `rom2altsound.log`
+(also with `--jobs 1`):
+
+```
+{"rom":"afm_113b","stage":"start","out":"packs/afm_113b"}
+{"rom":"afm_113b","stage":"cold-boot"}
+{"rom":"afm_113b","stage":"boot"}
+{"rom":"afm_113b","stage":"record","pass":"main","done":42,"total":180,"id":"0x0042","name":""}
+{"rom":"afm_113b","stage":"pack"}
+{"rom":"afm_113b","stage":"done","status":"ok","written":176,"out":"packs/afm_113b","secs":312.5}
+{"stage":"all_done","ok":1,"failed":0,"not_applicable":0}
+```
+
+Every line but the last has the ROM's `rom` and every line a `stage`: `start` (its folder,
+`out`), `cold-boot` (the factory settings), `boot`, `sam` (Stern SAM's static decode),
+`record` (the command being recorded: `done` of `total` in its `pass`, which is `main`,
+then possibly `retry`, `volume-check`, `factory-offset`, `chips`, `duck-check`, `last`, each
+counted from 1), `pack`, and `done`, the ROM's last line: `status` is `ok`, `failed` (with
+`error`) or `not_applicable` (with `reason`), `written` the sound files written, `secs`
+how long it took, and `"skipped":true` when `--skip-done` found it done already. A stage
+may not come (no `cold-boot` with `--no-factory`); a ROM not found gets its `done` line
+alone. Read the keys you know and ignore the others: later versions may add some.
+
 To check a ROM folder first:
 
 ```
@@ -778,6 +803,33 @@ rom2altsound --help                                # toutes les options
 Plusieurs ROM sont traitées deux à la fois par défaut (`--jobs` pour changer) ; le détail
 de chacune va alors dans `rom2altsound.log`, dans son dossier. Une ROM qui échoue n'arrête
 pas les autres, et un récapitulatif s'affiche à la fin.
+
+Pour un autre programme (VPin Studio...), `--progress json` écrit l'avancement de chaque
+ROM sur la sortie standard, un objet JSON par ligne (JSON Lines), chaque ligne envoyée
+aussitôt et entière, même avec plusieurs ROM à la fois ; tout le reste va sur la sortie
+d'erreur, et le détail de chaque ROM dans son `rom2altsound.log` (aussi avec `--jobs 1`) :
+
+```
+{"rom":"afm_113b","stage":"start","out":"packs/afm_113b"}
+{"rom":"afm_113b","stage":"cold-boot"}
+{"rom":"afm_113b","stage":"boot"}
+{"rom":"afm_113b","stage":"record","pass":"main","done":42,"total":180,"id":"0x0042","name":""}
+{"rom":"afm_113b","stage":"pack"}
+{"rom":"afm_113b","stage":"done","status":"ok","written":176,"out":"packs/afm_113b","secs":312.5}
+{"stage":"all_done","ok":1,"failed":0,"not_applicable":0}
+```
+
+Chaque ligne sauf la dernière porte la ROM (`rom`), et toutes une étape (`stage`) :
+`start` (son dossier, `out`), `cold-boot` (les réglages d'usine), `boot`, `sam` (le
+décodage statique de Stern SAM), `record` (la commande en cours d'enregistrement : la
+`done`-ième sur `total` de sa passe, `pass`, qui vaut `main`, puis éventuellement `retry`,
+`volume-check`, `factory-offset`, `chips`, `duck-check`, `last`, chacune comptée à partir
+de 1), `pack`, et `done`, la dernière ligne de la ROM : `status` vaut `ok`, `failed` (avec
+`error`) ou `not_applicable` (avec `reason`), `written` est le nombre de fichiers son
+écrits, `secs` la durée, et `"skipped":true` dit que `--skip-done` l'a trouvée déjà faite.
+Une étape peut manquer (pas de `cold-boot` avec `--no-factory`) ; une ROM introuvable n'a
+que sa ligne `done`. Lisez les clés que vous connaissez et ignorez les autres : les
+versions suivantes pourront en ajouter.
 
 Pour vérifier d'abord un dossier de ROM :
 
