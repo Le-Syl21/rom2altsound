@@ -448,12 +448,37 @@ mod st300 {
         "F7 02 ??", "F7 02 06", "FE 02 F6", "FE 02 FA", "08 08 DF", "86 82 8D", "7E ?? ??",
     ];
 
-    /// The same for `F`'s handlers `08`..`1F`.
+    /// The same for `F`'s handlers `08`..`1F`. The speech frame ops `1A` and `1B` start
+    /// with the speech switch test (`LDAA $28; LSRA`) on Flight 2000 and Gamatron, with the
+    /// call that waits for the board on Flight 2000's "modified rules & sound" MOD
+    /// (`flight2mb`, `1D2B`: `JSR 1B81`, the test taken out, it always speaks), whose
+    /// shorter handlers also move the targets of `1C` and `1D` (`BRA`s into the code after
+    /// the table). Alternatives are separated by `|`.
     const F_HANDLERS: &[&str] = &[
-        "08 D7 53", "CE 00 00", "F7 02 F3", "7A 02 F3", "EE 00 20", "D7 C0 20", "A6 01 BB",
-        "A6 01 08", "F7 02 FA", "F7 02 FE", "7A 02 FE", "CE 00 00", "F7 02 00", "F7 02 02",
-        "FE 02 F6", "FE 02 FA", "08 08 DF", "86 82 8D", "96 28 44", "96 28 44", "20 55 20",
-        "20 57 7E", "7E ?? ??", "7E ?? ??",
+        "08 D7 53",
+        "CE 00 00",
+        "F7 02 F3",
+        "7A 02 F3",
+        "EE 00 20",
+        "D7 C0 20",
+        "A6 01 BB",
+        "A6 01 08",
+        "F7 02 FA",
+        "F7 02 FE",
+        "7A 02 FE",
+        "CE 00 00",
+        "F7 02 00",
+        "F7 02 02",
+        "FE 02 F6",
+        "FE 02 FA",
+        "08 08 DF",
+        "86 82 8D",
+        "96 28 44|BD ?? ??",
+        "96 28 44|BD ?? ??",
+        "20 ?? 20",
+        "20 ?? 7E",
+        "7E ?? ??",
+        "7E ?? ??",
     ];
 
     /// `B`'s and `F`'s dispatch (`SUBA #8; ASLA; ADDA #lo; PSHA; LDAA #hi; ADCA #0; PSHA;
@@ -474,8 +499,24 @@ mod st300 {
                 return false;
             }
             let target = (at + 2).wrapping_add_signed(isize::from(m[at + 1] as i8));
-            find_pat(m, &pat(h), target, target + 3) == Some(target)
+            h.split('|')
+                .any(|h| find_pat(m, &pat(h), target, target + 3) == Some(target))
         })
+    }
+
+    #[cfg(test)]
+    pub(super) fn f_handlers() -> &'static [&'static str] {
+        F_HANDLERS
+    }
+
+    #[cfg(test)]
+    pub(super) fn framed_op(m: &[u8], base: usize, ptr: u8) -> Option<(u8, u16, [u8; 2])> {
+        framed_speech(m, base, ptr).map(|f| (f.op, f.at, f.head))
+    }
+
+    #[cfg(test)]
+    pub(super) fn table_ok_f(m: &[u8], from: usize) -> bool {
+        table_ok(m, from, F_HANDLERS)
     }
 
     /// Program ROM of the MPU-200 board (U1/U5 at 1000, U2/U6 at 5000).
@@ -650,6 +691,42 @@ mod st300 {
         None
     }
 
+    /// A thread sound opcode that says a speech script inside a frame it builds in RAM:
+    /// Flight 2000's "modified rules & sound" MOD (`flight2mb`), opcode 59 at `5757`: `JSR`
+    /// the word reader, `STX $020E`, `LDX #1A42`, `STX $020B`, `LDAA #0C`, `STAA $020D`,
+    /// `LDX #020B`, then (after the resting voice `78`) the script pointer on `020B`. The
+    /// game runs `1A 42 0C script`: the speech frame op, the speed and volume, a jump to
+    /// the script, whose words come with no frame of their own (`A2 D4 A0 D4 1B 00`).
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct Framed {
+        op: u8,
+        /// Where the frame is built in RAM (`020B`).
+        at: u16,
+        /// Its first two ops (`1A 42`), before the jump.
+        head: [u8; 2],
+    }
+
+    fn framed_speech(m: &[u8], base: usize, ptr: u8) -> Option<Framed> {
+        let p = pat("BD ?? ?? FF 02 ?? CE ?? ?? FF 02 ?? 86 0C B7 02 ?? CE 02 ??");
+        (0..0x80u8).find_map(|op| {
+            let a = usize::from(be16(m, base + 2 * usize::from(op)));
+            if !rom(a) || !rom(a + 0x40) {
+                return None;
+            }
+            let k = find_pat(m, &p, a, a + p.len())?;
+            let at = be16(m, k + 10);
+            let ok = be16(m, k + 4) == at + 3
+                && be16(m, k + 15) == at + 2
+                && be16(m, k + 18) == at
+                && (k + p.len()..k + 0x40).any(|j| stores_ptr(m, j, ptr));
+            ok.then_some(Framed {
+                op,
+                at,
+                head: [m[k + 7], m[k + 8]],
+            })
+        })
+    }
+
     pub fn find(m: &[u8]) -> Result<Layer, String> {
         find_with(m, None)
     }
@@ -725,8 +802,18 @@ mod st300 {
             ));
         };
         // No thread engine on the board tester: its sounds are direct loads.
-        let (base, thread_ops) =
+        let (base, mut thread_ops) =
             sound_ops(m, ptr, if speech { 41 } else { 40 }).unwrap_or_default();
+        let framed = (speech && !thread_ops.is_empty() && (v.ops)(0x0C) == Op::Jump)
+            .then(|| framed_speech(m, base, ptr))
+            .flatten();
+        if let Some(f) = framed {
+            if !thread_ops.contains(&f.op) {
+                thread_ops.push(f.op);
+                thread_ops.sort_unstable();
+            }
+        }
+        let mut framed_refs = std::collections::BTreeSet::new();
         // Every place the program refers to a script from: thread instructions, direct
         // loads, tables.
         let mut refs: BTreeMap<usize, Vec<String>> = BTreeMap::new();
@@ -739,6 +826,9 @@ mod st300 {
             // (Not inside the dispatch table itself: its words are routine addresses.)
             let in_table = !thread_ops.is_empty() && (base..base + 0x100).contains(&(i + 1));
             if thread_ops.contains(&m[i]) && rom(w) && !in_table {
+                if framed.is_some_and(|f| f.op == m[i]) {
+                    framed_refs.insert(w);
+                }
                 refs.entry(w)
                     .or_default()
                     .push(format!("thread {:02X} at {i:04X}", m[i]));
@@ -835,24 +925,57 @@ mod st300 {
             // word op first, a set-up op before them) are left out.
             let speaks =
                 speech && matches!((v.ops)(m[w]), Op::Step(1)) && (v.ops)(m[w + 1]) == Op::Voice;
+            let in_frame = framed.filter(|_| framed_refs.contains(&w));
             match scripts.get(&w) {
-                Some(s) if (starts && s.pitch) || (speaks && !s.words.is_empty()) => {
+                Some(s)
+                    if (starts && s.pitch)
+                        || ((speaks || in_frame.is_some()) && !s.words.is_empty()) =>
+                {
                     silence_at = silence_at.or(s.silence_at);
                     let [hi, lo] = (w as u16).to_be_bytes();
-                    let request = Request::Pokes(vec![
-                        Poke {
-                            addr: u32::from(delay),
-                            val: 0,
-                        },
-                        Poke {
-                            addr: u32::from(ptr),
-                            val: hi,
-                        },
-                        Poke {
-                            addr: u32::from(ptr) + 1,
-                            val: lo,
-                        },
-                    ]);
+                    let request = match in_frame.filter(|_| !s.words.is_empty()) {
+                        // The frame the game builds, then the pointer on it.
+                        Some(f) => {
+                            let at = u32::from(f.at);
+                            let [fh, fl] = f.at.to_be_bytes();
+                            let frame = [f.head[0], f.head[1], 0x0C, hi, lo];
+                            let mut p: Vec<Poke> = frame
+                                .iter()
+                                .enumerate()
+                                .map(|(i, &val)| Poke {
+                                    addr: at + i as u32,
+                                    val,
+                                })
+                                .collect();
+                            p.push(Poke {
+                                addr: u32::from(delay),
+                                val: 0,
+                            });
+                            p.push(Poke {
+                                addr: u32::from(ptr),
+                                val: fh,
+                            });
+                            p.push(Poke {
+                                addr: u32::from(ptr) + 1,
+                                val: fl,
+                            });
+                            Request::Pokes(p)
+                        }
+                        None => Request::Pokes(vec![
+                            Poke {
+                                addr: u32::from(delay),
+                                val: 0,
+                            },
+                            Poke {
+                                addr: u32::from(ptr),
+                                val: hi,
+                            },
+                            Poke {
+                                addr: u32::from(ptr) + 1,
+                                val: lo,
+                            },
+                        ]),
+                    };
                     let start = match (gate(true), speech_gate) {
                         (Some(on), Some(addr)) if !s.words.is_empty() => {
                             let mut v = vec![on, request];
@@ -904,6 +1027,12 @@ mod st300 {
                         *voices.entry(m[a]).or_default() += 1;
                     }
                 }
+                // The speed and volume of the frame the game builds around a script.
+                if let Some(f) = framed.filter(|_| framed_refs.contains(&(g.id as usize))) {
+                    if (v.ops)(f.head[1]) == Op::Voice {
+                        *voices.entry(f.head[1]).or_default() += 1;
+                    }
+                }
             }
             let voice = voices
                 .iter()
@@ -925,7 +1054,11 @@ mod st300 {
                 });
             }
             speech_note = format!(
-                "; the scripts say {} of the speech ROM's {} words, the {} others are sent alone (ids 0040 + word){}",
+                "{}; the scripts say {} of the speech ROM's {} words, the {} others are sent alone (ids 0040 + word){}",
+                framed.map_or(String::new(), |f| format!(
+                    "; thread {:02X} says its scripts in a frame built at {:04X} ({:02X} {:02X} 0C script)",
+                    f.op, f.at, f.head[0], f.head[1]
+                )),
                 said.len(),
                 words.len(),
                 words.iter().filter(|w| !said.contains(w)).count(),
@@ -2014,6 +2147,65 @@ mod tests {
                 }
             ]
         );
+    }
+
+    /// Interpreter F's table of handlers: Flight 2000's (the speech switch test at `1A`
+    /// and `1B`) and its "modified rules & sound" MOD's (a call there, `1C`/`1D` moved).
+    #[test]
+    fn st300_f_handlers_accept_flight2mb() {
+        let build = |speech: &str, bra: u8| {
+            let mut m = vec![0x01u8; 0x10000];
+            let disp = 0x1C1B;
+            let table = 0x1CA4;
+            for (i, b) in pat("80 08 48 8B A4 36 86 1C 89 00 36 39")
+                .iter()
+                .enumerate()
+            {
+                m[disp + i] = b.unwrap();
+            }
+            // One handler per opcode, 4 bytes apart after the table, each a BRA in it.
+            for (i, h) in st300::f_handlers().iter().enumerate() {
+                let h = h.split('|').next().unwrap();
+                let h = if i == 0x1A - 8 || i == 0x1B - 8 {
+                    speech
+                } else {
+                    h
+                };
+                let target = table + 0x30 + 4 * i;
+                let at = table + 2 * i;
+                m[at] = 0x20;
+                m[at + 1] = (target - (at + 2)) as u8;
+                for (k, b) in pat(h).iter().enumerate() {
+                    m[target + k] = b.unwrap_or(bra);
+                }
+            }
+            m
+        };
+        assert!(st300::table_ok_f(&build("96 28 44", 0x55), 0x1B5E));
+        assert!(st300::table_ok_f(&build("BD 1B 81", 0x50), 0x1B5E));
+        assert!(!st300::table_ok_f(&build("96 28 45", 0x55), 0x1B5E));
+    }
+
+    /// Flight 2000 MOD's thread opcode 59 (`flight2mb`, `5757`): the speech frame it
+    /// builds at `020B` around the script, then the pointer on it (`5790`, `STX $74`).
+    #[test]
+    fn st300_reads_the_framed_speech_opcode() {
+        let mut m = vec![0x01u8; 0x10000];
+        m[0x4FD6 + 2 * 0x59..][..2].copy_from_slice(&[0x57, 0x57]);
+        let code = pat(
+            "BD 53 1F FF 02 0E CE 1A 42 FF 02 0B 86 0C B7 02 0D CE 02 0B 8D 2A 0F 86 78 B7 02 FF \
+             20 05 BD 53 1F 8D 1D 86 FF 97 51 20 0F BD 53 1F 8D 12 96 51 81 40 22 0B 86 40 97 51 \
+             0F DF 74 7F 00 53 0E 39",
+        );
+        for (i, b) in code.iter().enumerate() {
+            m[0x5757 + i] = b.unwrap();
+        }
+        assert_eq!(
+            st300::framed_op(&m, 0x4FD6, 0x74),
+            Some((0x59, 0x020B, [0x1A, 0x42]))
+        );
+        // Not the pointer this interpreter uses.
+        assert_eq!(st300::framed_op(&m, 0x4FD6, 0x6D), None);
     }
 
     /// Goofy Hoops: an effect sequence as the game stores it (priority, volume, pan, the

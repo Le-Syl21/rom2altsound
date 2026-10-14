@@ -159,6 +159,15 @@ Second (`splitsec`), Catacomb (`catacomb`), Orbitor 1 (`orbitor1`)
   goes through the speech path with the scripts' speed and volume first (`82`, `84` or
   `86`): manual command `82`, then `40 | word`. Ids: the script's address (`0x1A27`),
   `0x0040` + the word for a word alone.
+- **Flight 2000's "modified rules & sound" MOD** (`flight2mb`, 2020, a 4 KB speech ROM of
+  46 words): its speech frame ops `1A`/`1B` start with the call that waits for the board
+  (`JSR 1B81`), the speech switch test taken out (it always speaks), so the table of F's
+  handlers allows either. Its thread instruction `59` (`5757`) no longer finds frame
+  ops in the script: it builds `1A 42 0C script` at `020B` (open the frame, speed and
+  volume `42`, jump to the script) and points the script pointer there, and its scripts
+  are words and waits alone (`184B`: `A2 D4 A0 D4 1B 00`). The tool reads that routine
+  and requests those scripts as the game does: the five frame bytes at `020B`, the delay
+  to 0, the pointer on `020B`.
 - **Request**: as ST300 (delay byte and script pointer), and for a script that speaks,
   the speech switch's bit set in `$28` first (`Request::RamBits`); it is cleared once the
   script pointer leaves the script and its subroutines (`Request::ClearAfter`, checked
@@ -168,7 +177,9 @@ Second (`splitsec`), Catacomb (`catacomb`), Orbitor 1 (`orbitor1`)
   speech bit cleared, then ST300's.
 - **Measured** (`--max-secs 5`, every sound of the list, no loop search): flight2k 32 of
   33 (30 files), freefall 48 of 48, lightnin 44 of 51, splitsec 68 of 73, catacomb 35 of
-  38, orbitor1 69 of 69, every file from silence. Scripts / words alone: Flight 2000 33 /
+  38, orbitor1 69 of 69, flight2mb 42 of 44 (40 files; 24 speech scripts of thread `59` in
+  their frame, 44 of the 46 words said by a script; full run, -9.4 LUFS, 1.3 dBTP), every
+  file from silence. Scripts / words alone: Flight 2000 33 /
   0 (its scripts say all 21 words), Free Fall 30 / 18, Lightning 34 / 17, Split Second 38
   / 35, Catacomb 25 / 13, Orbitor 1 24 / 45. Before: the 64 table entries alone, the
   effects not extracted (flight2k 37 of 40, freefall 40 of 40 in the survey).
