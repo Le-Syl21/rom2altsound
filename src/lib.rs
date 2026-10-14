@@ -29,6 +29,7 @@ mod seqloop;
 mod seqstate;
 mod sha1;
 mod soundsdat;
+mod soundsdat_gen;
 mod volume;
 mod zipread;
 
@@ -79,6 +80,9 @@ Examples:
   rom2altsound catalog ~/vpinball/roms --out catalog.json
                                         the sound ROM catalog of the web site (rom2altsound
                                         catalog --help)
+  rom2altsound sounds-dat --manifests ~/packs --out sounds.dat
+                                        a PinMAME sounds.dat naming every command that played
+                                        (rom2altsound sounds-dat --help)
 
 Each ROM folder holds the WAV files, altsound.csv, g-sound.csv, altsound.ini,
 manifest.json, cold-boot.json and factory-nvram/.
@@ -437,6 +441,9 @@ pub fn cli_main() {
         Some("names") => std::process::exit(names::cli(std::env::args().skip(2).collect())),
         Some("roms") => std::process::exit(romcheck::cli(std::env::args().skip(2).collect())),
         Some("catalog") => std::process::exit(catalog::cli(std::env::args().skip(2).collect())),
+        Some("sounds-dat") => {
+            std::process::exit(soundsdat_gen::cli(std::env::args().skip(2).collect()))
+        }
         Some("__driver-boards") => {
             return drivers::print_boards(std::env::args().skip(2).collect());
         }

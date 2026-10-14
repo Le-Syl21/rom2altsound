@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **`rom2altsound sounds-dat`: a PinMAME sounds.dat from the extraction reports.**
+  `--manifests <runs>` (repeatable, as `catalog`), `--names <file|dir>` (names files),
+  `--sounds-dat` (the file to start from, PinMAME's by default), `--out`. PinMAME's file is
+  written unchanged (every line kept), then one section per game measured, sorted, with
+  one entry per command that produced a sound: the bytes PinMAME's commander sends one
+  every 4 frames through `sndbrd_manCmd` (snd_cmd.c `playCmd`), framed as the extraction
+  frames them (System 3-7 between idle `FF`, Gottlieb followed by `00`, Zaccaria strobed,
+  (board, byte) pairs on two-board machines), and WPCS single bytes as `00 xx` (the board
+  takes pairs, `SNDBRD_DOUBLECMD`; on cftbl_l4, `00 30` and `30` record the same sound
+  within 0.01 LU). A clone gets a section only for what its parent's does not give it,
+  since the commander reads every heading that starts with the game's name or its
+  parent's; for the same reason an entry another game would read too, without listing it,
+  is held back (`amazonh2:` is also read by `amazonh`). Names: sounds.dat's, else the names
+  files', else `Sound 2A (3.2 s)` / `(loop)` / `(120+ s)`. The output is read back as
+  PinMAME reads it (lowercase hex only, 100-byte lines, an empty line ends a section), which
+  also writes again, in a form it reads, the upstream entries it never loaded for a
+  command that played (uppercase hex as in lotr's section, elvis's 247 entries
+  after its 113-character line). Left out: game-driven boards,
+  Stern SAM, Pinball 2000 (16-bit words), Tabart, Baby Pac-Man's board, the Sounds Plus
+  -56 / -51N nibbles, World Cup's and Disco Fever's control line.
 - **The catalog becomes the loudness reference: every entry's average loudness at the
   factory volume, and its coverage.** `rom2altsound catalog --manifests <runs>` reads the
   `manifest.json` of extraction runs (and the `factory-boot.json` of `--boot-only` runs):

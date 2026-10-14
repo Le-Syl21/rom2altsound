@@ -149,6 +149,22 @@ With the manifests of extraction runs (`--manifests <dir>`), each entry also get
 loudness of its sounds at the game's factory volume and its coverage: see
 [the catalog](docs/catalog.md), which also gives the whole-catalog run.
 
+The same manifests also give PinMAME's sound command mode a list for every game measured:
+
+```
+rom2altsound sounds-dat --manifests ~/packs --names ~/names --out sounds.dat
+```
+
+writes PinMAME's own `sounds.dat` unchanged, then one section per game (its parent set's
+name; a clone only for what its parent's section does not give it) with one entry per
+command that produced a sound, in the bytes PinMAME's commander must send on that board
+(Williams WPC's single bytes as `00 xx`, the board's idle and release bytes included).
+The names are sounds.dat's own, else those of the names files given (the listening page's
+"Export names"), else the command and the sound's length (`Sound 2A (3.2 s)`,
+`Sound 2A (loop)`). Boards whose commands the commander cannot send (game-driven boards,
+Stern SAM, Pinball 2000, a few that need the data port) are left out, and counted. Put
+the file in PinMAME's folder in place of its `sounds.dat`.
+
 Then copy the ROM's folder next to your table, as `<table folder>/altsound/<rom>/` (for
 example `Tables/Attack from Mars/altsound/afm_113b/`), and turn on the AltSound plugin in
 VPinball.
@@ -790,6 +806,24 @@ python3 docs/build_site.py
 Avec les manifestes de passes d'extraction (`--manifests <dossier>`), chaque entrée reçoit
 aussi le volume sonore de ses sons au volume d'usine du jeu et sa couverture : voir
 [le catalogue](docs/catalog.md) (en anglais), qui donne aussi la passe sur tout le catalogue.
+
+Les mêmes manifestes donnent aussi au mode « commandes son » de PinMAME une liste pour
+chaque jeu mesuré :
+
+```
+rom2altsound sounds-dat --manifests ~/packs --names ~/noms --out sounds.dat
+```
+
+écrit le `sounds.dat` de PinMAME tel quel, puis une section par jeu (au nom de son jeu
+parent ; un clone seulement pour ce que la section de son parent ne lui donne pas), avec
+une entrée par commande qui a produit un son, dans les octets que le commandeur de PinMAME
+doit envoyer à cette carte (les octets seuls du WPC de Williams en `00 xx`, octets de repos
+et de relâche compris). Les noms sont ceux du sounds.dat, sinon ceux des fichiers de noms
+donnés (l'« Export names » de la page d'écoute), sinon la commande et la durée du son
+(`Sound 2A (3.2 s)`, `Sound 2A (loop)`). Les cartes dont le commandeur ne peut pas envoyer
+les commandes (cartes pilotées par le jeu, Stern SAM, Pinball 2000, quelques-unes qui
+passent par le port de données) sont laissées de côté, et comptées. Mettez le fichier dans
+le dossier de PinMAME à la place de son `sounds.dat`.
 
 Copiez ensuite le dossier de la ROM à côté de votre table, en
 `<dossier de la table>/altsound/<rom>/` (par exemple

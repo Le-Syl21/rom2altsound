@@ -298,8 +298,8 @@ const BY51N_SUBTYPE: c_int = 2;
 const BYSNT_LAST: u8 = 0xDE;
 /// Squawk & Talk: the background sound on (entry 2), and entry 0, which does nothing (see
 /// `command_sends`).
-const BYSNT_BACKGROUND_ON: u8 = 0x06;
-const BYSNT_NOOP: u8 = 0x04;
+pub(crate) const BYSNT_BACKGROUND_ON: u8 = 0x06;
+pub(crate) const BYSNT_NOOP: u8 = 0x04;
 /// WPCS bytes that change the board's state instead of playing a sound (sounds.dat `wpcs:`):
 /// tempo, DAC and FM volumes, the master volume prefix 79 and the 16-bit prefix 7A.
 const WPCS_STATE: &[std::ops::RangeInclusive<u8>] = &[0x1E..=0x2F, 0x60..=0x72, 0x79..=0x7A];
@@ -5044,10 +5044,7 @@ impl Extractor {
     /// Zone `01` fades the music out, and every such sound seemed to stop it. The filler is
     /// dropped: the command is `7A xx`.
     fn wpcs_bank(&self, board: c_int, bytes: &[u8]) -> Vec<u8> {
-        match bytes {
-            [_, 0x7A, x] if self.families[board as usize] == "WPCS" => vec![0x7A, *x],
-            _ => bytes.to_vec(),
-        }
+        wpcs_bank_of(&self.families[board as usize], bytes)
     }
 
     /// Trims a recording and measures its levels.
@@ -5798,17 +5795,7 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
         // the program acts on a change of it (`jvh_data_w`); each command is followed by
         // `3F`, which the handler turns into "no line", `FF`.
         Some("JVH") if unsafe { ffi::shim_board_type(board) } & 0xFF == 0 => {
-            let framed: Vec<u8> = bytes
-                .iter()
-                .flat_map(|&b| {
-                    if b & 0x3F == JVH_IDLE {
-                        vec![b]
-                    } else {
-                        vec![b, JVH_IDLE]
-                    }
-                })
-                .collect();
-            return addressed(mask, board, &framed);
+            return addressed(mask, board, &jvh_framed(bytes));
         }
         // Zaccaria 1346: the game also follows every command with `00` (locomotn's boot:
         // `07 00 05 00 0A 00`...), which puts the MCU's T1 back to idle (zacsnd.c
@@ -5817,19 +5804,7 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
             return addressed(mask, board, &gts80_released(bytes));
         }
         // Zira: the COP420 reads three lines and acts on a change from idle.
-        Some("PLAYZ") => {
-            let framed: Vec<u8> = bytes
-                .iter()
-                .flat_map(|&b| {
-                    if b & 0x70 == 0 {
-                        vec![b]
-                    } else {
-                        vec![0x00, b, 0x00]
-                    }
-                })
-                .collect();
-            return addressed(mask, board, &framed);
-        }
+        Some("PLAYZ") => return addressed(mask, board, &playz_framed(bytes)),
         Some("GPSM3") => return addressed(mask, board, &gpsm3_framed(bytes)),
         Some("WMSS67") => {
             let sub = unsafe { ffi::shim_board_type(board) } & 0xFF;
@@ -5879,6 +5854,43 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
     }
 }
 
+/// `Extractor::wpcs_bank` for a board of family `family`: `01 7A xx` is `7A xx` on WPCS.
+pub(crate) fn wpcs_bank_of(family: &str, bytes: &[u8]) -> Vec<u8> {
+    match bytes {
+        [_, 0x7A, x] if family == "WPCS" => vec![0x7A, *x],
+        _ => bytes.to_vec(),
+    }
+}
+
+/// Jac Van Ham (not Formula 1's sub-type, see `board_sends`): each command followed by the
+/// idle `3F`.
+pub(crate) fn jvh_framed(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .iter()
+        .flat_map(|&b| {
+            if b & 0x3F == JVH_IDLE {
+                vec![b]
+            } else {
+                vec![b, JVH_IDLE]
+            }
+        })
+        .collect()
+}
+
+/// Playmatic Zira (`PLAYZ`, see `sweep`): each value between two idle `00`.
+pub(crate) fn playz_framed(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .iter()
+        .flat_map(|&b| {
+            if b & 0x70 == 0 {
+                vec![b]
+            } else {
+                vec![0x00, b, 0x00]
+            }
+        })
+        .collect()
+}
+
 /// Zaccaria Sounds & Speech boards (`ZAC1370` and its successors, which PinMAME runs
 /// through one interface): bit 7 of the byte is the strobe. `sns_data_w` feeds it to a PIA
 /// input (CB1 on the 1370, CA1 on the 11178), holds the 6802's IRQ with it (13136), or,
@@ -5889,7 +5901,7 @@ fn board_sends(mask: u8, board: c_int, bytes: &[u8]) -> Vec<Send> {
 /// as the game frames it at boot (socrking `FE FE 7E`, tmachzac `FF FF 7F`, spooky `3F BF`):
 /// its low bits first, bit 7 still clear (the Z80 boards read the byte after their NMI,
 /// so the low bits are already there), then the byte itself, then bit 7 cleared again.
-fn zac_strobed(bytes: &[u8]) -> Vec<u8> {
+pub(crate) fn zac_strobed(bytes: &[u8]) -> Vec<u8> {
     bytes
         .iter()
         .flat_map(|&b| {
@@ -5910,7 +5922,7 @@ fn zac_strobed(bytes: &[u8]) -> Vec<u8> {
 /// `SNDBRD_S7S_ND`; the System 3 boards' `BF` mask). Each command goes out as the games
 /// send it, between two idle bytes (bk_l4: `7F 2C 7F`; PinMAME's sounds.dat for Firepower:
 /// `00 1F`); an idle byte (one the board reads as idle, `s67s_idle`) is sent as is.
-fn s67s_framed(sub: c_int, bytes: &[u8]) -> Vec<u8> {
+pub(crate) fn s67s_framed(sub: c_int, bytes: &[u8]) -> Vec<u8> {
     bytes
         .iter()
         .flat_map(|&b| {
@@ -5922,7 +5934,7 @@ fn s67s_framed(sub: c_int, bytes: &[u8]) -> Vec<u8> {
         })
         .collect()
 }
-const S67S_IDLE: u8 = 0xFF;
+pub(crate) const S67S_IDLE: u8 = 0xFF;
 /// The World Cup (`8`) and Disco Fever (`16`) sub-types: one bit of the byte their program
 /// reads comes from the board's control port, not from the sound lines (wmssnd.c
 /// `s67s_ctrl_w`: bit 6 of the control byte as bit 5 on World Cup, bit 4 as bit 7 on Disco
@@ -5934,14 +5946,14 @@ const S3_CTRL_SUBS: c_int = 8 | 16;
 /// 7 does not reach these boards (`s67s_cmd_w` keeps bits 0-3, 4 and 6), so `80` would
 /// only repeat `00`. World Cup plays a sound on it; on Disco Fever it is the prefix of four
 /// sounds (`80 0E`...).
-const S3_CTRL: u8 = 0x80;
+pub(crate) const S3_CTRL: u8 = 0x80;
 /// System 3's Sound Dip 2 (s4.h: DIP bank 0, `02`, on by default): `s67s_cmd_w` sets bit 6
 /// of the byte the program reads when it is off.
 const S3_SOUND_DIP2: c_int = 0x02;
 /// Whether the `WMSS67` board of sub-type `sub` reads byte `b` as idle (`s67s_cmd_w`, the
 /// bits that reach the program: five on System 4-7, seven on `S7S_ND`, bits 0-4 and, on
 /// the World Cup and Disco Fever boards, 6 on System 3).
-fn s67s_idle(sub: c_int, b: u8) -> bool {
+pub(crate) fn s67s_idle(sub: c_int, b: u8) -> bool {
     if sub & 1 != 0 {
         b & 0x7F == 0x7F
     } else if sub & 4 != 0 {
@@ -5956,7 +5968,7 @@ fn s67s_idle(sub: c_int, b: u8) -> bool {
 /// sends one nibble between idle ones (lizard's boot: `0F`, then `08` among a stream of
 /// `0F`). Each nibble goes out between two `0F`; a lone nibble left on the lines played
 /// on under the next commands (one tone at -14.9 LUFS under 37 of 40 files before).
-fn gpsm_framed(bytes: &[u8]) -> Vec<u8> {
+pub(crate) fn gpsm_framed(bytes: &[u8]) -> Vec<u8> {
     bytes
         .iter()
         .flat_map(|&b| {
@@ -6012,7 +6024,7 @@ fn gpsm_byte_table_in(region: &[u8]) -> Option<Vec<u8>> {
 /// a byte, `$01 = nibble << 4 | $01 >> 4`, and acts on `$01` when the lines go back to
 /// `F`; the game's boot sends `0F 0C 00 0F`, command `0C`). A byte whose two nibbles are
 /// equal cannot be sent this way (the second makes no change); neither nibble can be `F`.
-fn gpsm3_framed(bytes: &[u8]) -> Vec<u8> {
+pub(crate) fn gpsm3_framed(bytes: &[u8]) -> Vec<u8> {
     bytes
         .iter()
         .flat_map(|&b| vec![0x0F, b & 0x0F, b >> 4, 0x0F])
@@ -6026,7 +6038,7 @@ fn gpsm3_framed(bytes: &[u8]) -> Vec<u8> {
 /// the last sound); the speech board's strobe is bit 7 of its RIOT port, set for a command
 /// with a low nibble (gts80s.c `gts80ss_data_w`), whose edge a second command right after
 /// the first does not make. Each command is followed by `00`.
-fn gts80_released(bytes: &[u8]) -> Vec<u8> {
+pub(crate) fn gts80_released(bytes: &[u8]) -> Vec<u8> {
     bytes
         .iter()
         .flat_map(|&b| if b == 0 { vec![b] } else { vec![b, 0x00] })
@@ -6039,7 +6051,7 @@ fn gts80_released(bytes: &[u8]) -> Vec<u8> {
 /// writes the next one, and a byte left in it with bit 7 set plays nothing (measured on
 /// bushido: `81` alone is silent, `81 00` plays). Each byte with bit 7 set is followed by
 /// `00`, which releases the latch.
-fn spinb_released(bytes: &[u8]) -> Vec<u8> {
+pub(crate) fn spinb_released(bytes: &[u8]) -> Vec<u8> {
     bytes
         .iter()
         .flat_map(|&b| {
