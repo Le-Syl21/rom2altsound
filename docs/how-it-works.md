@@ -709,7 +709,7 @@ on the warm boot they send `55 AA 67 98` after 6-12 s.
 | Data East BSMT | none (hardware pot in the power box) | the music volume `20`..`2F` (the game's last one at boot, else the board's default `20`; the loudest, `20`, with `--volume reference`), then the stop `00` | `00` |
 | System 11 (WMSS11, 11C, 11J) | none (no volume stage) | none | `00` / `20` (11C) |
 | Bally Cheap Squeak (BY45), Turbo Cheap Squeak (BYTCS) | none (no volume stage) | none | `00` |
-| Bally Sounds Plus -51 (BY51) | none (no volume stage) | none | `1E` |
+| Bally Sounds Plus -51 (BY51) | none (no volume stage) | none | `1E` (six games their own, `BY51_GAME_STOPS`) |
 | Bally Sounds Plus -56 (BY56, named BY51 by PinMAME) | none (no volume stage) | none | `05` |
 | Bally Squawk & Talk -61 (BYSNT) | its volume lines are not emulated | none | `05` |
 | Bally -32 / -50 (BY32) | none (no volume stage) | none | `0F` (unmeasured) |
@@ -828,7 +828,10 @@ cuts the sound before it.
   `xx` the game sends runs entry `~xx & 1F` of the program's table ($109B). PinMAME's
   manual command sends it as is. Sweep `00`..`1F` (`00` is the table's last entry, a
   sound). Stop `1E`: entry 1, which turns the background off ($12C9; entry 2, `1D`, turns
-  it on, and the program then loops on it, $12CD). After a reset the program waits with
+  it on, and the program then loops on it, $12CD). Not every -51 program has its entries
+  in that order: on rollston's, entry 1 turns the background on and entry 2 off, so `1E`
+  started a background after every command; its stop is `1D`, and five other programs
+  have theirs too (`BY51_GAME_STOPS`, [Bally](families/bally.md#sndbrd_by51)). After a reset the program waits with
   its interrupts off for 7.0 s (a delay loop of 50 x 15661 x 8 cycles at 894886 Hz, $1013),
   then clears its interrupt flag: a command sent meanwhile is lost. This is why 0.2.0 got
   nothing out of these boards: with no known stop, every recording ended with a reset, and

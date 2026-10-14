@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Rolling Stones (`rollston`) extracts: its Sounds Plus -51 stop is `1D`.** On its
+  program `1E`, the -51 stop, runs entry 1, which turns the background sound on ($12F8):
+  every stop started a background that never ends, each command needed a board reset, and
+  the retry pass gave up after 3 in a row. Its background off is entry 2 (`1D`, $1304).
+  The -51 stop is now the game's own where its program has another one
+  (`BY51_GAME_STOPS`, read in the six programs): rollston `1D` (30 sounds of 32, 0 board
+  resets), mystic `1B`, ngndshkr, futurspa and hotdoggn `19`, slbmania `10`, with their
+  clones. Those five gave the same sounds, without the one board reset their background
+  needed; mystic's `1B`, a 0.07 s blip before, is now the stop. vikingb, frontier (`1E`),
+  xenon and eballdlx are unchanged.
 - **`--progress json`: every ROM's progress for a front end (VPin Studio).** One JSON
   object per line on stdout, flushed per line and never mixed between ROMs running side by
   side (`--jobs`): `start`, `cold-boot`, `boot`, `sam`, `record` (`pass`, `done` of

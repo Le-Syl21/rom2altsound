@@ -100,8 +100,14 @@ Bally Sounds Plus -51 · interface `BY51` (`src/wpc/by35snd.c`) · ✅ · 41 set
   [how it works](../how-it-works.md#per-family)).
 - **Sound list**: `00`..`1F` (`sweep`; `00` is the table's last entry, a sound).
 - **Stop, boot and resets**: stop `1E` (`BUILTIN_STOPS`: entry 1, the background off,
-  vikingb $12C9). After a reset the program waits 7.0 s with its interrupts off; the wait
-  after a reset is 8 s (`REBOOT_SECS`).
+  vikingb $12C9, frontier and skatebll too). Six programs turn their background off with
+  another entry, which is their stop (`BY51_GAME_STOPS`; the background flag the interrupt
+  handler tests after every command, and the entry that clears it): rollston `1D` (entry 2,
+  $1304; its entry 1, `1E`, turns the background **on**, $12F8), mystic `1B` (entry 4,
+  $12C7), ngndshkr, futurspa and hotdoggn `19` (entry 6, a script calling the `CLR`), and
+  slbmania `10` (entry 15); their clones (the set's parent) get the same. After a reset the
+  program waits 7.0 s with its interrupts off; the wait after a reset is 8 s
+  (`REBOOT_SECS`).
 - **Volume**: `full_scale (no volume stage)`; vikingb and xenon set CB2 once at reset
   and never again.
 - **Loops**: audio and sound CPU state (6802, RAM `0000`-`007F` as `MRA_RAM`,
@@ -109,9 +115,16 @@ Bally Sounds Plus -51 · interface `BY51` (`src/wpc/by35snd.c`) · ✅ · 41 set
 - **DUCK / STOP / CHANNEL**: defaults.
 - **Measured**: vikingb 30 sounds from 32 commands, 3 exact loops from the audio (bodies
   of 0.048 to 0.125 s), its background `1D` never repeats (how it works, Loops; README
-  note 13); spaceinv 32 of 32 (board-support).
-- **Limits**: each game has its own sound program; the stop and the table rule were read
-  in vikingb's only.
+  note 13); spaceinv 32 of 32 (board-support). rollston: with `1E` every command was
+  followed by the background loop, one board reset each, then the run failed; with `1D`
+  30 sounds of 32, 0 board resets (rollstob the same). mystic, ngndshkr, futurspa,
+  hotdoggn, slbmania: the same sounds with their stop, 0 board resets instead of 1 (the
+  one their background needed with `1E`).
+- **Limits**: each game has its own sound program; the table rule was read in vikingb's
+  and rollston's, the stop in nine of the 2 KB programs. The 4 KB programs (bmx, goldball,
+  granslam: no board reset in their runs) and spaceinv's keep `1E`, unread. speakesy's
+  program (877-01) reads the command lines twice and builds its command from both reads
+  ($1023 to $107D), not as the other -51 programs do: unread too.
 
 ## <a name="sndbrd_by56"></a>SNDBRD_BY56
 

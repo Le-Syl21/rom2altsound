@@ -141,7 +141,9 @@ fn ac_couples_dac(family: &str) -> bool {
 /// the background sound too):
 /// - BY51 (Sounds Plus -51): the board reads the five command lines inverted, so the
 ///   game's byte `xx` runs entry `~xx & 1F` of the program's table; `1E` runs entry 1,
-///   which turns the background sound off (vikingb, $12C9).
+///   which turns the background sound off (vikingb, $12C9; frontier, skatebll). Each game
+///   has its own program, and in six of them the background off is another entry
+///   (`BY51_GAME_STOPS`).
 /// - BY56 (Sounds Plus -56) and BYSNT (Squawk & Talk -61): the game's byte `xx` runs entry
 ///   `xx - 4`; `05` runs entry 1, the background sound off (xenon: an empty entry, the
 ///   program has no background sound; eballdlx $FC90).
@@ -232,6 +234,27 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("CAPCOMS", &[0xDA, 0x02, 0x03, 0x01]),
     // game.rom `DCSQuietAllTracks`: 55AE, then the mask of the six channels in the high byte.
     ("DCSP2K", &[0x55, 0xAE, 0x3F, 0x00]),
+];
+/// Sounds Plus -51 programs whose background sound is turned off by another entry than 1
+/// (`1E`, see `BUILTIN_STOPS`), by set (the set or its parent): the byte that runs the entry
+/// clearing the background flag, which the interrupt handler tests after every command.
+/// - rollston (sound ROM 796-19): `1D`, entry 2 ($1304, `CLR $3F`). Entry 1 ($12F8) turns
+///   the background on: `1E` started it after every command, it never ends, and only the
+///   board reset that followed silenced the board (31 resets, then the run gave up).
+/// - mystic (798-05): `1B`, entry 4 ($12C7); the background is entry 5 (`1A`, $12B0).
+/// - ngndshkr (776-15), futurspa (781-02), hotdoggn (809-07): `19`, entry 6, a script that
+///   calls the flag's `CLR` ($12B2, $12BB, $12DD); the background is entry 14 (`11`).
+/// - slbmania (786-11): `10`, entry 15, the same ($12D1); the background is entry 14.
+///
+/// In the last five, `1E` plays a sound that ends by itself, and a board reset stopped
+/// their background (one per run); with these, none.
+const BY51_GAME_STOPS: &[(&str, u8)] = &[
+    ("rollston", 0x1D),
+    ("mystic", 0x1B),
+    ("ngndshkr", 0x19),
+    ("futurspa", 0x19),
+    ("hotdoggn", 0x19),
+    ("slbmania", 0x10),
 ];
 /// Commands after which the board plays nothing more in emulation, whatever is sent then
 /// (a board reset included), by set name prefix: they go last, after every other pass
@@ -4614,18 +4637,24 @@ impl Extractor {
     }
 
     /// A family's stop command: sounds.dat's "All sound off" / "Reset Sound System" of its
-    /// generic section, else `BUILTIN_STOPS`.
+    /// generic section, else the game's own (`BY51_GAME_STOPS`), else `BUILTIN_STOPS`.
     fn stop_bytes(&self, typestr: &str) -> Option<Vec<u8>> {
         let stop = self.dat.family_entries(typestr).into_iter().find(|e| {
             let n = e.name.to_ascii_lowercase();
             n.contains("sound off") || n.contains("reset sound")
         });
-        stop.map(|e| e.bytes).or_else(|| {
-            BUILTIN_STOPS
-                .iter()
-                .find(|(t, _)| *t == typestr)
-                .map(|(_, bytes)| bytes.to_vec())
-        })
+        let game = BY51_GAME_STOPS
+            .iter()
+            .filter(|_| typestr == "BY51")
+            .find(|(set, _)| self.opts.rom == *set || self.opts.parent.as_deref() == Some(*set));
+        stop.map(|e| e.bytes)
+            .or_else(|| game.map(|&(_, byte)| vec![byte]))
+            .or_else(|| {
+                BUILTIN_STOPS
+                    .iter()
+                    .find(|(t, _)| *t == typestr)
+                    .map(|(_, bytes)| bytes.to_vec())
+            })
     }
 
     /// What a command of the main list is when it is not a sound: the board's stop, or a

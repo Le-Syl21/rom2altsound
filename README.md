@@ -399,8 +399,9 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
     the -56 takes a byte as two nibbles on four lines, which PinMAME's sound commander
     cannot send: rom2altsound puts the high nibble on the lines once the board has read
     the low one, from its own glue code (PinMAME is not changed). The stop is `1E` on the
-    -51 and `05` on the -56; after a reset these programs wait 7 s before they take a
-    command. Loops: Viking 3 of its 4 sounds that keep playing (exact, from the audio);
+    -51 (another entry on six of its programs: `1D` on Rolling Stones) and `05` on the
+    -56; after a reset these programs wait 7 s before they take a command. Loops:
+    Viking 3 of its 4 sounds that keep playing (exact, from the audio);
     its background hum, `1D`, never repeats. Xenon 1 of 2; its other one, `1A`, repeats in
     the sound processor every 2.6 s, but not in the audio (probably the AY-3-8910's noise,
     which is not part of the processor's state). Sounds that do not loop are cut at 2
@@ -1100,8 +1101,9 @@ reste joué en parallèle.
     la -56 prend un octet en deux moitiés sur quatre lignes, ce que le commandeur de sons
     de PinMAME ne sait pas envoyer : rom2altsound met la moitié haute sur les lignes dès
     que la carte a lu la basse, depuis son propre code de liaison (PinMAME n'est pas
-    modifié). L'arrêt est `1E` sur la -51 et `05` sur la -56 ; après une remise à zéro,
-    ces programmes attendent 7 s avant de prendre une commande. Boucles : Viking 3 de ses
+    modifié). L'arrêt est `1E` sur la -51 (une autre entrée sur six de ses programmes :
+    `1D` sur Rolling Stones) et `05` sur la -56 ; après une remise à zéro, ces programmes
+    attendent 7 s avant de prendre une commande. Boucles : Viking 3 de ses
     4 sons qui continuent (exactes, trouvées dans le son) ; son bourdonnement de fond,
     `1D`, ne se répète jamais. Xenon 1 sur 2 ; l'autre, `1A`, se répète dans le processeur
     son toutes les 2,6 s, mais pas dans le son (sans doute le bruit de l'AY-3-8910, qui ne
