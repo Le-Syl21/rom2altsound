@@ -167,6 +167,14 @@ e.g. High Speed (`hs_l4`), Pin-Bot (`pb_l5`), Black Knight 2000 (`bk2k_l4`), Whi
   games never receives it), and a sweep of all 256 bytes as the stop after the looping
   `0x22` found `20`, `93`, `94`, `98` and `9E` silent within 0.5 s, `20` stopping all 22
   looping commands of the board. Reset fallback: both audio CPUs' reset lines at once.
+  Road Kings (`rdkng_l4` and its clones, the only game with the 11C program `road_u4.l1`)
+  has another stop on board 1: `00`, what its game sends there at power-up
+  (`WMSS11C_GAME_STOPS`). On that program `20` starts a music that never ends, and the
+  board reset after it leaves the YM2151 playing: in the catalog run all 510 files
+  started over it (566 board resets; 427 loops were found in the music underneath). A sweep of
+  all 256 bytes as the stop after the music `0x0120` found `00` and `03` silent within
+  0.5 s, and no other byte within 1 s; with `00`, every file starts from silence and no
+  board is reset.
 - **Volume**: no volume stage on either board (wmssnd.c writes the DACs, the CVSD and the
   YM2151 directly; `volume::full_scale`): full scale, factory offset 0. Both DACs
   AC-coupled after the boot. Before AC coupling 187 of whirl_l3's 189 files started more

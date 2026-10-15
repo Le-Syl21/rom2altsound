@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Road Kings (`rdkng_l4`) extracts from silence: its System 11C stop is `00`.** On its
+  11C program (`road_u4.l1`, no other game has it) `20`, the 11C stop, starts a music that
+  never ends, and the board reset after each failed stop left the YM2151 playing: all 510
+  files of the catalog run started over it (566 board resets). A sweep of all 256 bytes as
+  the stop after the music `0x0120` found `00` (what the game sends the board at
+  power-up) and `03` silent within 0.5 s; the stop is now `00` there
+  (`WMSS11C_GAME_STOPS`). The other System 11 sets keep `20`.
 - **Rolling Stones (`rollston`) extracts: its Sounds Plus -51 stop is `1D`.** On its
   program `1E`, the -51 stop, runs entry 1, which turns the background sound on ($12F8):
   every stop started a background that never ends, each command needed a board reset, and

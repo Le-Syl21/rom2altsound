@@ -707,7 +707,7 @@ on the warm boot they send `55 AA 67 98` after 6-12 s.
 | WPCS | `79 vv ~vv`, `vv` 00..1F (20 and above ignored): the game's is read (tz_94h `79 0C F3`) and sent again once (`--volume reference`: the reference, also `79 0C F3`); the DAC is AC-coupled once booted | none | `00` |
 | Whitestar BSMT (Sega/Stern) | `FE xx FD`, level = 2F - xx, 0..31 | the master volume (with the factory settings the game's factory `FE xx FD`, or the reference with `--volume reference`; else the game's, which it re-sends every 0.5 s) | `00` |
 | Data East BSMT | none (hardware pot in the power box) | the music volume `20`..`2F` (the game's last one at boot, else the board's default `20`; the loudest, `20`, with `--volume reference`), then the stop `00` | `00` |
-| System 11 (WMSS11, 11C, 11J) | none (no volume stage) | none | `00` / `20` (11C) |
+| System 11 (WMSS11, 11C, 11J) | none (no volume stage) | none | `00` / `20` (11C; Road Kings `00`, `WMSS11C_GAME_STOPS`) |
 | Bally Cheap Squeak (BY45), Turbo Cheap Squeak (BYTCS) | none (no volume stage) | none | `00` |
 | Bally Sounds Plus -51 (BY51) | none (no volume stage) | none | `1E` (six games their own, `BY51_GAME_STOPS`) |
 | Bally Sounds Plus -56 (BY56, named BY51 by PinMAME) | none (no volume stage) | none | `05` |

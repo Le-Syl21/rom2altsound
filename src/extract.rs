@@ -125,6 +125,7 @@ fn ac_couples_dac(family: &str) -> bool {
 ///   (and 93/94/98/9E) silent within 0.5 s; 20 stops all 22 looping commands of the board.
 ///   On S11_SNDOVERLAY games the game never sends 00-1F to this board (s11.c `pia5cb2_w`
 ///   routes them to the solenoid overlay), so 20 is the lowest byte the board really gets.
+///   Road Kings' program has another stop (`WMSS11C_GAME_STOPS`).
 /// - WMSS11J: unmeasured guess.
 ///
 /// If a stop does not work, the boards are reset (see `Quiet`), so a wrong guess costs
@@ -256,6 +257,14 @@ const BY51_GAME_STOPS: &[(&str, u8)] = &[
     ("hotdoggn", 0x19),
     ("slbmania", 0x10),
 ];
+/// System 11C programs whose stop is another byte than `20` (`BUILTIN_STOPS`), by set (the
+/// set or its parent).
+/// - rdkng_l4 (Road Kings, sound ROM `road_u4.l1`): `00`, what the game sends the board at
+///   power-up. On this program `20` starts a music that never ends, and the board reset
+///   that followed every stop left its YM2151 playing: all 510 files of the run started
+///   over it. A sweep of all 256 bytes as the stop after the music `0x0120` found `00` and
+///   `03` silent within 0.5 s, and no other byte within 1 s.
+const WMSS11C_GAME_STOPS: &[(&str, u8)] = &[("rdkng_l4", 0x00)];
 /// Commands after which the board plays nothing more in emulation, whatever is sent then
 /// (a board reset included), by set name prefix: they go last, after every other pass
 /// (`Pass::Last`). lotr `FC85` (sounds.dat "thunk sound") and `FC96` ("thwak"): the AT91
@@ -4637,15 +4646,20 @@ impl Extractor {
     }
 
     /// A family's stop command: sounds.dat's "All sound off" / "Reset Sound System" of its
-    /// generic section, else the game's own (`BY51_GAME_STOPS`), else `BUILTIN_STOPS`.
+    /// generic section, else the game's own (`BY51_GAME_STOPS`, `WMSS11C_GAME_STOPS`), else
+    /// `BUILTIN_STOPS`.
     fn stop_bytes(&self, typestr: &str) -> Option<Vec<u8>> {
         let stop = self.dat.family_entries(typestr).into_iter().find(|e| {
             let n = e.name.to_ascii_lowercase();
             n.contains("sound off") || n.contains("reset sound")
         });
-        let game = BY51_GAME_STOPS
+        let games = match typestr {
+            "BY51" => BY51_GAME_STOPS,
+            "WMSS11C" => WMSS11C_GAME_STOPS,
+            _ => &[],
+        };
+        let game = games
             .iter()
-            .filter(|_| typestr == "BY51")
             .find(|(set, _)| self.opts.rom == *set || self.opts.parent.as_deref() == Some(*set));
         stop.map(|e| e.bytes)
             .or_else(|| game.map(|&(_, byte)| vec![byte]))
