@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-10-15)
+
+Every sound of every supported ROM, from silence, at the game's own volume: a whole-catalog
+run (1239 sets, 1210 packs and 29 not applicable, no failure and no file left playing over
+another) with every board fix it took, a catalog (`catalog.json`, release asset) with each
+sound ROM's status and factory loudness, a `sounds.dat` for PinMAME's sound command mode,
+`--progress json` for front ends, and "Send names" on the listening page for a shared
+naming of sounds.
 
 - **The listening page can share its names: "Send names".** Next to Export names, it sends
   the same `names.csv` (one function builds both) to the public, write-only drop of the
