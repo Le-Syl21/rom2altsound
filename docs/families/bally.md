@@ -100,7 +100,7 @@ Bally Sounds Plus -51 · interface `BY51` (`src/wpc/by35snd.c`) · ✅ · 41 set
   [how it works](../how-it-works.md#per-family)).
 - **Sound list**: `00`..`1F` (`sweep`; `00` is the table's last entry, a sound).
 - **Stop, boot and resets**: stop `1E` (`BUILTIN_STOPS`: entry 1, the background off,
-  vikingb $12C9, frontier and skatebll too). Six programs turn their background off with
+  vikingb $12C9, frontier too; not on skatebll, below). Six programs turn their background off with
   another entry, which is their stop (`BY51_GAME_STOPS`; the background flag the interrupt
   handler tests after every command, and the entry that clears it): rollston `1D` (entry 2,
   $1304; its entry 1, `1E`, turns the background **on**, $12F8), mystic `1B` (entry 4,
@@ -125,6 +125,20 @@ Bally Sounds Plus -51 · interface `BY51` (`src/wpc/by35snd.c`) · ✅ · 41 set
   granslam: no board reset in their runs) and spaceinv's keep `1E`, unread. speakesy's
   program (877-01) reads the command lines twice and builds its command from both reads
   ($1023 to $107D), not as the other -51 programs do: unread too.
+- **Skateball** (`skatebll`, `823-02_4.716`, read with a 6800 disassembler): its program
+  also reads the lines twice, as the -56's ($102E to $107A: the second read shifted left
+  four times plus the first's low nibble, inverted, minus 4, `AND 1F`). With the same
+  lines for both reads the byte `xx` runs entry `(xx & 0F) * 11 - 4` (low 5 bits): Sound
+  E is not read, so `10`..`1F` play `00`..`0F` again, and `1E` is entry 10 ($17CB, a
+  short sound), not the background off. `06` runs entry 2 ($1308), the background on
+  (`$3F` = 1: after every command the handler then plays the background script $1317);
+  the background off is entry 1 ($1313, `CLR $3F`), which needs the value 5, a low nibble
+  of 5 with bit 0 of the second read clear: no single byte reaches it. Its reset clears
+  `$3F` but never writes the AY-3-8910 (each command clears the AY's 16 registers first,
+  $1125), so the background's last notes went on over the CPU reset: `07` and `17` were
+  flagged not clean. The board power cycle ([common method](common.md#stop-resets-and-retries),
+  here the AY-3-8910's reset) silences it: 28 sounds of 32 as before, 0 not clean (2
+  before), 4 board resets, 2 of them power cycles.
 
 ## <a name="sndbrd_by56"></a>SNDBRD_BY56
 

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **A board still playing after a reset gets a power cycle.** When the wait after a board
+  reset does not end in silence, the boards reset by their CPUs' reset line are reset once
+  more with every sound chip (`shim_reset_sound_chips`, now with the YM3812 and the
+  MSM6295's voices) and with the audio CPUs' RAM put back to its power-on content
+  (`shim_power_on_audio_ram`, saved at machine start), then waited for again; only if
+  that fails is the next file flagged not clean. The manifest counts them,
+  `board_power_cycles`. A CPU reset leaves a chip's registers and the program's RAM as
+  they were: Skateball's Sounds Plus program clears its AY-3-8910 when a command comes,
+  not at its reset, and its `06` background (entry 2; its stop, entry 1, cannot be
+  reached with one byte) played on over the reset; A.G. Soccer-Ball 0.7 kept a hum after
+  each reset that cut one of its music loops. Measured on full runs: skatebll 2 not clean
+  to 0 (28 sounds as before), agsocc07 12 to 0 (203 commands with sound instead of 206:
+  `9E`, `9F`, `A0` were only the hum), and the System 80B generation 1 sets rock 4 to 0
+  (`7F` was a music left over), arena 1 to 0, sprbreak 1 to 0 (`30` was the music of `2F`
+  left over). Runs where every reset ended in silence are unchanged (viking, frontier,
+  raven, agsoccer: the same files).
 - **`mbossy` is not applicable.** Mike Bossy's game ROMs were never dumped, and its
   sound program takes its command on the upper four lines of the MSU-1's PIA port B
   (`3D53`: the byte `AND F0` looked up in its table at `3011`), which PinMAME's board holds

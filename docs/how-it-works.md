@@ -121,7 +121,11 @@ are in a C shim.
    by pulsing the audio CPUs' reset line), waits for 4 s of silence, and sends the volume
    again since a reset loses it: the master volume the files are recorded at (reference,
    or `--dcs-volume`), and the game's own last other volume commands, byte for
-   byte (`volume_replays` in the manifest). If even that fails, the next
+   byte (`volume_replays` in the manifest). If even that fails, the boards reset by their
+   CPUs' reset line are power cycled: the audio CPUs reset once more with every sound chip,
+   and their RAM put back to its power-on content (`board_power_cycles`; a CPU reset leaves
+   a chip's registers and the program's RAM as they were, see
+   [the common method](families/common.md)). If that fails too, the next
    file is marked `clean_start: false`. Nothing is only reported on stderr. A board that
    is still not silent after 3 waits for quiet in a row with no command played in between
    (each ending in a reset) ends the run with an error instead of being reset forever:
@@ -1417,7 +1421,8 @@ sweep only, see Commands), `counts` (tried,
 with_sound, written, blips, no_sound, loops, loops_exact_dcs_catalog, loops_exact_audio,
 loops_unresolved, not_clean, clipped (written files only), retried,
 recovered_by_retry, ignores_master_volume), `loudness`, the `stop` actually sent,
-`board_resets` and `dc_blocked_wav`. DCS: `dcs` (the catalog summary and
+`board_resets`, `sound_rom_restores`, `board_power_cycles` (resets that were power
+cycles, see step 7) and `dc_blocked_wav`. DCS: `dcs` (the catalog summary and
 `ducking_check`). `recording_cap`: `max_secs` (120 s by default),
 `loop_max_secs` (240 s), `loop_hint_max_secs` (900 s) and what they do (see Loops).
 

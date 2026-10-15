@@ -358,6 +358,12 @@ const CTRL_RESET: &[&str] = &["DCS", "DCSP2K", "WPCS"];
 /// Votrax SC-01 keeps saying the phoneme it had when the CPU reset cut a phrase (cavnegro
 /// `51`, a 0.61 s drone under every later file), `shim_reset_sound_chips` stops it.
 const CHIP_RESET: &[&str] = &["TECNOPLAY", "TAITO"];
+
+/// A board reset by its audio CPUs' reset line (not through its control port, `CTRL_RESET`).
+fn cpu_reset_board(board: c_int) -> bool {
+    !CTRL_RESET.contains(&board_typestr(board).unwrap_or_default().as_str())
+}
+
 /// Pinball 2000: the pan of a request, the middle (game.rom `DCSRequest`'s `vol_pan` low
 /// byte; the game's boot requests use it).
 const P2K_PAN_CENTER: u16 = 0x7F;
@@ -846,8 +852,11 @@ struct Quiet {
     /// When the last queued byte went out; silence is only counted after that.
     drained_at: Option<u64>,
     need: u64,
-    /// This wait follows a board reset: a further failure is not retried.
+    /// This wait follows a board reset: a further failure is retried once with a power
+    /// cycle of the boards (`power_cycled`), then not at all.
     after_reset: bool,
+    /// This wait follows a power cycle (see `reset_boards`).
+    power_cycled: bool,
     /// Send the volume once quiet (initially for `VolumeInit::Dcs` and `Reference`, and after a reset,
     /// which loses it).
     then_volume: bool,
@@ -1387,6 +1396,9 @@ struct Manifest<'a> {
     /// Board resets that found the sound program's ROM written over (`shim_save_audio_roms`)
     /// and put it back as loaded.
     sound_rom_restores: u32,
+    /// Board resets that also reset the sound chips and put the audio CPUs' RAM back to its
+    /// power-on content, after a plain reset left the board playing.
+    board_power_cycles: u32,
     dc_blocked_wav: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     dcs: Option<DcsReport<'a>>,
@@ -1557,6 +1569,7 @@ pub struct Extractor {
     dirty: bool,
     pub board_resets: u32,
     sound_rom_restores: u32,
+    board_power_cycles: u32,
     /// Sound commands written by the game CPU during boot, as (time, board, byte).
     boot_log: Vec<(u64, c_int, u8)>,
     /// (board, previous byte, byte) seen during boot, and when the last unseen one arrived.
@@ -1607,6 +1620,9 @@ pub struct Extractor {
     duck_sound: Option<(Vec<f64>, f64)>,
     /// Reset the boards before the next command (the start of the ducking check).
     reset_before_pass: bool,
+    /// The next board reset is a power cycle (see `reset_boards`): the plain reset before
+    /// it left the board playing.
+    power_cycle_next_reset: bool,
     /// The loudness of each written file, by result index.
     loud: Vec<Option<FileLoudness>>,
     /// Where the sound CPUs' state is read (not on DCS).
@@ -1673,6 +1689,7 @@ impl Extractor {
             dirty: false,
             board_resets: 0,
             sound_rom_restores: 0,
+            board_power_cycles: 0,
             stop_failures: 0,
             boot_peak: 0,
             trace: None,
@@ -1708,6 +1725,7 @@ impl Extractor {
             duck_music: None,
             duck_sound: None,
             reset_before_pass: false,
+            power_cycle_next_reset: false,
             loud: Vec::new(),
             probe: None,
             mixer: Vec::new(),
@@ -2293,9 +2311,19 @@ impl Extractor {
 
     /// DCS and WPCS are reset through their control port, as the game does; the other
     /// boards by pulsing the reset line of the audio CPUs (once for all of them).
+    ///
+    /// A power cycle (`power_cycle_next_reset`, when a plain reset left the board playing)
+    /// also resets the sound chips (`shim_reset_sound_chips`) and puts the audio CPUs' RAM
+    /// back to its power-on content (`shim_power_on_audio_ram`), as the boards are at
+    /// machine start. The CPU reset leaves both as they were: skatebll's Sounds Plus
+    /// program clears its AY-3-8910 when a command comes, not at its reset, so the
+    /// background of `06` kept its last notes until the next command; agsocc07's program
+    /// keeps part of its music state in RAM over a reset, and a hum that started after the
+    /// reset cutting its music `9A` played under every file to `A6`.
     fn reset_boards(&mut self) {
         self.board_resets += 1;
         self.spinb_level_set.set(false);
+        let power_cycle = std::mem::take(&mut self.power_cycle_next_reset);
         let mut cpu_reset = false;
         for b in self.board_list() {
             let family = board_typestr(b).unwrap_or_default();
@@ -2313,8 +2341,15 @@ impl Extractor {
                     }
                 }
             } else if !cpu_reset {
-                if CHIP_RESET.contains(&family.as_str()) {
+                if CHIP_RESET.contains(&family.as_str()) || power_cycle {
                     unsafe { ffi::shim_reset_sound_chips() };
+                }
+                if power_cycle {
+                    self.board_power_cycles += 1;
+                    let n = unsafe { ffi::shim_power_on_audio_ram() };
+                    eprintln!(
+                        "  board power cycle: the sound chips reset, {n} RAM byte(s) of the audio CPUs put back to their power-on value"
+                    );
                 }
                 unsafe { ffi::shim_reset_audio_cpus() };
                 cpu_reset = true;
@@ -2330,6 +2365,8 @@ impl Extractor {
     }
 
     fn step(&mut self) {
+        let cpu_reset_boards = matches!(&self.phase, Phase::Quiet(q) if q.after_reset)
+            && self.board_list().any(cpu_reset_board);
         match &mut self.phase {
             Phase::Boot => {
                 // Wait for the game to finish talking to its boards: at least `boot_secs`,
@@ -2371,7 +2408,20 @@ impl Extractor {
                     let (then_volume, then_pre) = (q.then_volume, q.then_pre);
                     self.on_quiet(then_volume, then_pre);
                 } else if self.t >= q.deadline {
-                    if q.after_reset {
+                    if q.after_reset && !q.power_cycled && cpu_reset_boards {
+                        // What the audio CPU reset leaves as it was kept the board playing:
+                        // a sound chip's registers or the program's RAM. Once more, as a
+                        // power cycle (see `reset_boards`).
+                        eprintln!(
+                            "  warning: still not silent after a board reset: power cycling the board(s) (CPU and sound chip reset, RAM back to its power-on content)"
+                        );
+                        self.sender.clear();
+                        self.power_cycle_next_reset = true;
+                        self.sender.push_back(Send::Reset);
+                        let mut q = self.quiet(true);
+                        q.power_cycled = true;
+                        self.phase = Phase::Quiet(q);
+                    } else if q.after_reset {
                         eprintln!(
                             "  warning: still not silent after a board reset; the next file is flagged clean_start=false"
                         );
@@ -2544,6 +2594,7 @@ impl Extractor {
             drained_at: None,
             need: self.secs(need),
             after_reset,
+            power_cycled: false,
             // Our own volume is sent on the first wait; any volume (ours or the game's) is
             // sent again after a reset, which loses it.
             then_volume: after_reset || self.sets_own_volume() && !self.own_volume_sent,
@@ -5595,6 +5646,7 @@ impl Extractor {
             stop: stop.join(" "),
             board_resets: self.board_resets,
             sound_rom_restores: self.sound_rom_restores,
+            board_power_cycles: self.board_power_cycles,
             dc_blocked_wav: self.dc_blocked_files(),
             dcs: self.dcs_report(),
             mix_check: self.mix_report.as_ref(),

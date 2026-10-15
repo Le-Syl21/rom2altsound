@@ -16,6 +16,7 @@
 #include "sound/3812intf.h"
 #include "sound/fmopl.h"
 #include "sound/votrax.h"
+#include "sound/adpcm.h"
 
 // Rebuild the board interface table exactly as src/wpc/sndbrd.c does (same X-macro list,
 // index = board type >> 8), so that we can look at a board's manual-command handler.
@@ -84,6 +85,7 @@ static struct {
   unsigned char *copy;
 } shim_rom_guard[SHIM_ROM_GUARD_MAX];
 static int shim_rom_guard_n;
+static void shim_save_audio_ram(void);
 static unsigned shim_rom_guard_restored;
 
 // Keeps a copy of [start, end] of CPU `cpu`'s ROM, less what its write map handles.
@@ -133,7 +135,67 @@ int shim_save_audio_roms(void) {
       if (!IS_MEMPORT_MARKER(r) && r->handler == MRA_ROM && r->start <= r->end && r->end < len)
         shim_rom_guard_add(ii, base, r->start, r->end);
   }
+  shim_save_audio_ram();
   return shim_rom_guard_n;
+}
+
+// The audio CPUs' RAM at power-on (the read map's MRA_RAM entries, 8-bit data buses only),
+// saved with their ROM. A CPU reset keeps the RAM as the program left it, and some programs
+// do not clear all of their state at reset: on A.G. Soccer-Ball 0.7 (agsocc07) a hum
+// started after the reset that cut its music 9A and played under every file to A6.
+// `shim_power_on_audio_ram` puts back the power-on content (the board power cycle that ends
+// the escalation of `Extractor::reset_boards`, with the sound chips' reset).
+static struct {
+  int cpu;
+  unsigned start, len;
+  unsigned char *copy;
+} shim_ram_power_on[SHIM_ROM_GUARD_MAX];
+static int shim_ram_power_on_n;
+
+static void shim_save_audio_ram(void) {
+  int ii, i;
+  for (i = 0; i < shim_ram_power_on_n; i++)
+    free(shim_ram_power_on[i].copy);
+  shim_ram_power_on_n = 0;
+  for (ii = 0; ii < MAX_CPU; ii++) {
+    const struct Memory_ReadAddress *r;
+    unsigned char *base;
+    size_t len;
+    if (!Machine->drv->cpu[ii].cpu_type || !(Machine->drv->cpu[ii].cpu_flags & CPU_AUDIO_CPU)
+        || cpunum_databus_width(ii) != 8 || cpunum_address_bits(ii) > 20)
+      continue;
+    base = memory_region(REGION_CPU1 + ii);
+    len = memory_region_length(REGION_CPU1 + ii);
+    r = (const struct Memory_ReadAddress *)Machine->drv->cpu[ii].memory_read;
+    for (; base && r && !IS_MEMPORT_END(r); r++) {
+      if (IS_MEMPORT_MARKER(r) || r->handler != MRA_RAM || r->end < r->start || r->end >= len
+          || shim_ram_power_on_n == SHIM_ROM_GUARD_MAX)
+        continue;
+      shim_ram_power_on[shim_ram_power_on_n].copy = malloc(r->end - r->start + 1);
+      if (!shim_ram_power_on[shim_ram_power_on_n].copy)
+        continue;
+      shim_ram_power_on[shim_ram_power_on_n].cpu = ii;
+      shim_ram_power_on[shim_ram_power_on_n].start = r->start;
+      shim_ram_power_on[shim_ram_power_on_n].len = r->end - r->start + 1;
+      memcpy(shim_ram_power_on[shim_ram_power_on_n].copy, base + r->start, r->end - r->start + 1);
+      shim_ram_power_on_n++;
+    }
+  }
+}
+
+// Puts the audio CPUs' RAM back as it was at power-on (see above). Returns the bytes changed.
+unsigned shim_power_on_audio_ram(void) {
+  int i;
+  unsigned k, n = 0;
+  for (i = 0; i < shim_ram_power_on_n; i++) {
+    unsigned char *at = memory_region(REGION_CPU1 + shim_ram_power_on[i].cpu) + shim_ram_power_on[i].start;
+    for (k = 0; k < shim_ram_power_on[i].len; k++)
+      if (at[k] != shim_ram_power_on[i].copy[k]) {
+        at[k] = shim_ram_power_on[i].copy[k];
+        n++;
+      }
+  }
+  return n;
 }
 
 static void shim_rom_guard_restore(int unused) {
@@ -252,6 +314,25 @@ void shim_reset_sound_chips(void) {
       const struct Y8950interface *intf = Machine->drv->sound[i].sound_interface;
       for (n = 0; n < intf->num; n++)
         Y8950ResetChip(n);
+    }
+#endif
+#if (HAS_YM3812 || HAS_YM3812_YMFM)
+  // Nor has the YM3812 (its reset, YM3812_sh_reset, resets every YM3812 of the machine).
+  for (i = 0; i < MAX_SOUND && Machine->drv->sound[i].sound_type; i++)
+    if (Machine->drv->sound[i].sound_type == SOUND_YM3812) {
+      YM3812_sh_reset();
+      break;
+    }
+#endif
+#if HAS_OKIM6295
+  // The MSM6295 has no reset either: stop its four voices (command 0x78, voice bits 3-6).
+  for (i = 0; i < MAX_SOUND && Machine->drv->sound[i].sound_type; i++)
+    if (Machine->drv->sound[i].sound_type == SOUND_OKIM6295) {
+      static const write8_handler stop[] = {OKIM6295_data_0_w, OKIM6295_data_1_w,
+                                            OKIM6295_data_2_w};
+      const struct OKIM6295interface *intf = Machine->drv->sound[i].sound_interface;
+      for (n = 0; n < intf->num && n < 3; n++)
+        stop[n](0, 0x78);
     }
 #endif
 }

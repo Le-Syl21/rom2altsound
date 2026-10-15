@@ -37,7 +37,12 @@ Punchy The Clown (`punchy`)
   `alvgs1_readmem`, 4 KB). Not measured on this family.
 - **DUCK / STOP / CHANNEL**: the defaults.
 - **Measured** ([board support](../board-support.md)): agsoccer, 33 of the first 40
-  commands give a sound.
+  commands give a sound. A.G. Soccer-Ball 0.7 (`agsocc07`): after the music `9A` the reset of the
+  6809 left a hum (about -43 dBFS) that played on under every file to `A6` (12 flagged not
+  clean, `9D` to `A4` mostly cut at 120 s); neither the sound chips' reset nor the RAM put
+  back alone stops it, the board power cycle ([common method](common.md#stop-resets-and-retries))
+  does: 0 not clean, 203 commands with sound, 202 files (206 before: `9E`, `9F` and `A0`
+  were only the hum).
 - **Limits and what is missing**: only the quick survey; loops, volume and the full sweep
   are not verified.
 - **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:

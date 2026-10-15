@@ -146,8 +146,16 @@ Per command (`Extractor::step`, `Phase::Record`):
   (`QUIET_AFTER_RESET_SECS`; longer for the boards of `REBOOT_SECS`, which ignore
   commands for a while after a reset), at most 10 s more.
 - **When the stop does not silence the board** within 10 s, the boards are reset. If
-  even the wait after a reset does not end in silence, the next file is flagged
-  `clean_start: false`. A board still playing after
+  even the wait after a reset does not end in silence, the boards reset by their CPUs'
+  reset line get a **power cycle**: the audio CPUs are reset again, together with every
+  sound chip (`shim_reset_sound_chips`: the chips' own reset, the YM3812 and Y8950 by
+  hand, the MSM6295's four voices stopped, the SC-01 given its STOP) and with the audio
+  CPUs' RAM put back to its power-on content (`shim_power_on_audio_ram`, saved at machine
+  start with the ROM), and the tool waits again (`board_power_cycles` in the manifest).
+  A CPU reset leaves both as they were, and some programs count on a power-on for them:
+  skatebll's Sounds Plus program clears its AY-3-8910 when a command comes, not at its
+  reset; agsocc07's keeps part of its music state in RAM over a reset. Only if that wait
+  fails too is the next file flagged `clean_start: false`. A board still playing after
   3 waits in a row with no command in between ends the run with an error ("still not
   silent after 3 waits", `MAX_STOP_FAILURES`).
 - **Retry pass** (`retry_commands`): every command that gave `no_sound` is played once

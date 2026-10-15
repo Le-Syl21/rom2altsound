@@ -204,6 +204,14 @@ Flipprojets · e.g. Raven (`raven`), Bad Girls (`badgirls`), Rock (`rock`), Spri
   `GTS80BS1_readmem` and following). Not measured.
 - **DUCK / STOP / CHANNEL**: defaults.
 - **Measured** ([board support](../board-support.md)): badgirls 28 of 40, raven 37 of 40.
+  Generation 1 (AY-3-8910s and SP0250): after a long music (rock `02`, `04`, `24`, `E2`,
+  `E4`; arena `6D`, `EB`; sprbreak `2F`) the reset of the two 6502s left the board
+  playing, and the next file was flagged not clean (rock 4, arena 1, sprbreak 1 in the
+  catalog run). The board power cycle ([common method](common.md#stop-resets-and-retries))
+  silences it, with either half alone on rock (the AY-3-8910s' reset, or the RAM back to
+  its power-on content): 0 not clean on all three; rock 224 sounds (225 before: `7F` was
+  the music left over, and `D2` was cut at 120 s over it), arena 216 (the same), sprbreak 216 (217 before: `30` was
+  the music of `2F` left over).
 - **Limits and what is missing**: loops, ducking and the full sweep are not verified.
 - **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
   their libaltsound has no case for `GEN_GTS80B` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
