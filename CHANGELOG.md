@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **`mbossy` is not applicable.** Mike Bossy's game ROMs were never dumped, and its
+  sound program takes its command on the upper four lines of the MSU-1's PIA port B
+  (`3D53`: the byte `AND F0` looked up in its table at `3011`), which PinMAME's board holds
+  high (`gpsm_data_w`: `F0 | nibble`): every command it can be sent is the table's no-op.
+  The catalog run wrote 1 file of 15, not from silence.
 - **Road Kings (`rdkng_l4`) extracts from silence: its System 11C stop is `00`.** On its
   11C program (`road_u4.l1`, no other game has it) `20`, the 11C stop, starts a music that
   never ends, and the board reset after each failed stop left the YM2151 playing: all 510

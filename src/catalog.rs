@@ -118,6 +118,9 @@ pub fn not_applicable(set: &str) -> Option<&'static str> {
         "xforce" => {
             "its sound ROM and sample ROMs were never dumped: PinMAME plays nothing; `--sound-rom-from spcteam` gives an approximate pack with Space Team's sound program (docs/families/other-makers.md#tecnoplay-xforce)"
         }
+        "mbossy" => {
+            "its game ROMs were never dumped (NO_DUMP in gpgames.c), and its sound program (mb.u9, mb.u10) takes its command on the upper four lines of the MSU-1's PIA port B (3D53: the byte AND F0 looked up in its table at 3011, 00 to E0), which PinMAME's board holds high (gpsm_data_w, F0 | nibble): every command it can be sent is the table's no-op (F0 to FE) (docs/families/game-plan.md)"
+        }
         "tt_game" => {
             "Gottlieb's System 3 game template: its sound programs (yrom1, drom1) were never dumped, only the speech data ROMs; the board has no program and plays nothing"
         }

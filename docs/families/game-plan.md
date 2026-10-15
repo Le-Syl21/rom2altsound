@@ -164,6 +164,16 @@ Global Warfare (`gwarfare`), Attila The Hun (`attila`), Captain Hook (`cpthook`)
   all from silence (lizard 40 of 40 before, 37 not from silence, all at -14.9 LUFS);
   agent777 31 of 32 (-17.3 LUFS), cpthook 36 of 40 (-12.3 LUFS), all from silence (0 of
   15 with the nibbles).
+- **Not applicable**: Mike Bossy (`mbossy`). Its game ROMs were never dumped (`NO_DUMP`
+  in `gpgames.c`), and its sound program (`mb.u9`, `mb.u10`, read with a 6800
+  disassembler) takes its command on the **upper** four lines of PIA 0's port B: the
+  interrupt handler (`3D2D`) waits for a value other than `FF` held for two interrupts,
+  then looks up the byte `AND F0` in its table at `3011` (3-byte entries, `00` to `E0`,
+  then `F0` to `FE`, all `3D8D`, a no-op). PinMAME's interface puts the nibble on the
+  lower four lines and holds the upper ones high (`gpsm_data_w`: `F0 | nibble`), so every
+  command it can be sent is a no-op: the catalog run got 1 file of 15 (`00`, 0.66 s, not
+  from silence: the board was still playing after the reset before it, and a power cycle
+  did not stop it either). `catalog::not_applicable`.
 - **Limits and what is missing**: the MC6840 emulation is incomplete in PinMAME, so the
   sounds are PinMAME's approximation; no stop known (a 6802 reset after each sound).
 - **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
