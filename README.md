@@ -265,7 +265,7 @@ Many sounds still have no name, and naming them is easier together. Here is how 
 Sending is never automatic: nothing leaves your computer until you click **Send names**
 and confirm. The names you send are given to the public domain (CC0), so anyone can use
 them. The goal is one shared naming of pinball sounds for everyone: the names that people
-agree on come back in later rom2altsound catalogs and in PinMAME's sounds.dat. The button
+agree on come back in later rom2altsound catalogs and in the sounds.dat published with it (offered to PinMAME). The button
 is greyed out when you have not named anything yet, or when the pack does not know its
 sound ROM id (rebuild it with a recent rom2altsound).
 
@@ -981,7 +981,7 @@ L'envoi n'est jamais automatique : rien ne quitte votre ordinateur tant que vous
 pas cliqué sur **Send names** et confirmé. Les noms envoyés sont versés dans le domaine
 public (CC0), chacun peut donc s'en servir. Le but : un seul nommage des sons de flipper,
 partagé par tous ; les noms sur lesquels on s'accorde reviennent dans les prochains
-catalogues de rom2altsound et dans le sounds.dat de PinMAME. Le bouton est grisé tant que
+catalogues de rom2altsound et dans le sounds.dat publié avec lui (proposé à PinMAME). Le bouton est grisé tant que
 vous n'avez rien nommé, ou quand le pack ne connaît pas l'id de sa ROM son (reconstruisez-le
 avec un rom2altsound récent).
 
