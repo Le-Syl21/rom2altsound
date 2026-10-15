@@ -121,6 +121,9 @@ pub fn not_applicable(set: &str) -> Option<&'static str> {
         "tt_game" => {
             "Gottlieb's System 3 game template: its sound programs (yrom1, drom1) were never dumped, only the speech data ROMs; the board has no program and plays nothing"
         }
+        "tfa_13" | "tfdmd_l3" => {
+            "a WPC test fixture (GAME_NO_SOUND in wpcgames.c): its program tests the CPU board and drives no sound board"
+        }
         "rush_10" => {
             "a custom game on WPC Fliptronics hardware with no sound board (GAME_NO_SOUND, no sound ROM in wpcgames.c): no board to drive"
         }
