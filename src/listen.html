@@ -554,7 +554,7 @@ a { color: var(--accent); }
     r.scrollIntoView({ block: "center" });
   }
 
-  // Names: export to a names.csv, import one back, forget the edits.
+  // Names: export to a names.csv, import one back, share it (Send names), forget the edits.
   var tools = el("div", "tools");
   tools.appendChild(el("span", "lbl", "Names:"));
   function tool(text, title, fn) {
@@ -573,6 +573,9 @@ a { color: var(--accent); }
   file.setAttribute("aria-label", "names.csv to import");
   tools.appendChild(file);
   tool("Import names", "Load a names.csv (from Export names) into this page", function () { file.click(); });
+  var send = tool("Send names", data.names_upload
+    ? "Share your names (the same names.csv as Export names) with everyone: public domain (CC0), nothing else is sent"
+    : "This pack has no sound ROM id, so its names cannot be shared", sendNames);
   var clear = tool("Clear my edits", "Forget the names typed on this page (the pack's names come back)", clearEdits);
   var status = el("span", null, "");
   status.id = "names-status";
@@ -582,6 +585,7 @@ a { color: var(--accent); }
   function showEdits(msg) {
     var n = Object.keys(edits).length;
     clear.disabled = !n;
+    send.disabled = sending || !n || !data.names_upload;
     status.textContent = (msg ? msg + " " : "") + (n ? n + " name" + (n > 1 ? "s" : "") + " edited here." : "");
   }
 
@@ -598,7 +602,8 @@ a { color: var(--accent); }
     while (h.length < 4) h = "0" + h;
     return "0x" + h;
   }
-  function exportNames() {
+  // The names.csv of this page: what Export names saves and Send names sends, byte for byte.
+  function namesCsv() {
     var out = ["# rom2altsound names", "# rom: " + (data.rom || "")];
     if (data.sound_rom_id) out.push("# sound_rom_id: " + data.sound_rom_id);
     out.push("# rom2altsound: " + data.version, "ID,NAME");
@@ -608,7 +613,11 @@ a { color: var(--accent); }
       // A name cleared here is written empty, so that it clears the pack's too.
       if (name || edited(s)) { out.push(csvField(normId(s.id)) + "," + csvField(name)); n++; }
     });
-    var url = URL.createObjectURL(new Blob([out.join("\r\n") + "\r\n"], { type: "text/csv" }));
+    return { text: out.join("\r\n") + "\r\n", n: n };
+  }
+  function exportNames() {
+    var csv = namesCsv(), n = csv.n;
+    var url = URL.createObjectURL(new Blob([csv.text], { type: "text/csv" }));
     var a = el("a");
     a.href = url;
     a.download = "names.csv";
@@ -617,6 +626,41 @@ a { color: var(--accent); }
     a.click();
     setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1000);
     showEdits("names.csv: " + n + " name" + (n === 1 ? "" : "s") + ".");
+  }
+
+  // Send names: the names.csv, and nothing else, to the shared drop of names (write-only:
+  // nobody can read a file back from it), as <rom>/<sound_rom_id>/<UTC time>.csv; the
+  // folder URL comes with the page data. Only after the user says yes.
+  var sending = false;
+  function sendNames() {
+    var csv = namesCsv(), n = Object.keys(edits).length;
+    if (sending || !n || !data.names_upload) return;
+    if (!confirm("Send your names to the shared naming of sounds?\n\n" +
+        "This sends the names.csv that Export names saves (" + csv.n + " name" + (csv.n === 1 ? "" : "s") +
+        " for " + data.rom + ", sound ROM " + data.sound_rom_id + ") to rom2altsound's public collection of names.\n\n" +
+        "The names are shared publicly under CC0 (public domain), to build one naming of sounds for everyone: " +
+        "they come back in later catalogs and in sounds.dat.\n\n" +
+        "Nothing else is sent: no personal data, only this list of sound ids and names.")) {
+      showEdits("Not sent.");
+      return;
+    }
+    // 2026-10-15T14:03:09.123Z -> 2026-10-15_14-03-09 (UTC)
+    var t = new Date().toISOString().slice(0, 19).replace("T", "_").replace(/:/g, "-");
+    sending = true;
+    showEdits("Sending...");
+    var done = function (ok, why) {
+      sending = false;
+      showEdits(ok
+        ? "Sent: " + csv.n + " name" + (csv.n === 1 ? "" : "s") + ". Thank you!"
+        : "Not sent (" + why + "). Use Export names and send the names.csv another way (an issue at github.com/Le-Syl21/rom2altsound).");
+    };
+    try {
+      fetch(data.names_upload + t + ".csv", {
+        method: "PUT", body: csv.text, headers: { "Content-Type": "text/csv" },
+        credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store"
+      }).then(function (r) { done(r.ok, "the server said " + r.status); },
+        function (e) { done(false, "no connection to the server"); });
+    } catch (e) { done(false, e.message); }
   }
 
   // RFC 4180 records; a record that starts with # is a comment up to the end of its line.

@@ -57,7 +57,8 @@ box above, or open <code>#&lt;id&gt;</code> on this page.</p>
 <h3>Sound names</h3>
 <p>Names belong to a sound ROM, not to a game version. Type names on a pack's listening page
 (<code>index.html</code>), <strong>Export names</strong> saves a <code>names.csv</code> that carries the
-sound ROM id; put it in a pack with</p>
+sound ROM id, and <strong>Send names</strong> shares that same file, after a confirmation, with the
+shared naming of sounds (public domain, CC0; nothing else is sent). Put it in a pack with</p>
 <pre><code>rom2altsound names afm_113b names.csv
 rom2altsound afm_113b --names names.csv</code></pre>
 <p>A <code>names.csv</code> fits every set of the same entry, and is refused for other sound ROMs.
@@ -133,7 +134,8 @@ recherche ci-dessus, ou ouvrez <code>#&lt;id&gt;</code> sur cette page.</p>
 <h3>Les noms des sons</h3>
 <p>Les noms appartiennent à une ROM son, pas à une version du jeu. Tapez des noms sur la page d'écoute d'un
 pack (<code>index.html</code>) ; <strong>Export names</strong> enregistre un <code>names.csv</code> qui porte
-l'id de ROM son ; mettez-le dans un pack avec</p>
+l'id de ROM son, et <strong>Send names</strong> partage ce même fichier, après confirmation, avec le nommage
+commun des sons (domaine public, CC0 ; rien d'autre n'est envoyé). Mettez-le dans un pack avec</p>
 <pre><code>rom2altsound names afm_113b names.csv
 rom2altsound afm_113b --names names.csv</code></pre>
 <p>Un <code>names.csv</code> convient à tous les jeux de ROM d'une même entrée, et il est refusé pour d'autres

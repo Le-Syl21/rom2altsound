@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **The listening page can share its names: "Send names".** Next to Export names, it sends
+  the same `names.csv` (one function builds both) to the public, write-only drop of the
+  shared naming of sounds, as `sound_dat/<rom>/<sound_rom_id>/<YYYY-MM-DD>_<hh-mm-ss>.csv`
+  (UTC), by an HTTP PUT that works from a page opened from disk (`file://`). Opt-in only:
+  a confirmation says the names are shared publicly under CC0 (public domain) and that
+  nothing else is sent. Disabled when the pack has no sound ROM id or no name was typed;
+  on failure the page suggests Export names and sending the file another way. The page
+  data carries the upload folder (`names_upload`); the README has a "Sharing your names"
+  section in both languages.
 - **A board still playing after a reset gets a power cycle.** When the wait after a board
   reset does not end in silence, the boards reset by their CPUs' reset line are reset once
   more with every sound chip (`shim_reset_sound_chips`, now with the YM3812 and the

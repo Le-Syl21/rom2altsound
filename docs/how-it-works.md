@@ -263,7 +263,15 @@ tooltip gives the pack's name) and is what the search, the sort and the player s
 not, and an empty NAME for a pack name cleared on the page. **Import names** reads one with
 a file input and `FileReader` (no fetch); a file whose `sound_rom_id` differs from the
 page's asks before importing; ids not in the pack are counted and named in the status
-line. **Clear my edits** asks, then forgets them. Without storage, edits and sorting work
+line. **Send names** (disabled without a `sound_rom_id` or without edits) builds the same
+text as Export names (one function, `namesCsv`) and, once the user confirms a dialog that
+says the names go to the public domain (CC0) and that nothing else is sent, PUTs it with
+`fetch` (`Content-Type: text/csv`, no credentials, no referrer) to a write-only public
+Nextcloud drop at `sound_dat/<rom>/<sound_rom_id>/<YYYY-MM-DD>_<hh-mm-ss>.csv` (UTC); the
+folder URL is in the page data (`names_upload`, from `NAMES_DROP` in `src/listen.rs`). The
+drop answers CORS for any origin, `null` (a `file://` page) included; it creates missing
+folders on PUT and keeps a same-name file as "name (2).csv". It is the page's only request.
+**Clear my edits** asks, then forgets them. Without storage, edits and sorting work
 until the page is closed.
 
 **A/B** (goodtwist's idea: copy the folder, swap sounds in the copy, compare): the "Compare

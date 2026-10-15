@@ -246,6 +246,29 @@ file, and a file made for other sound ROMs is refused (`--force`, or `--force-na
 an extraction, applies it anyway). `rom2altsound names afm_113b` alone prints the pack's
 names as a `names.csv`.
 
+#### Sharing your names
+
+Many sounds still have no name, and naming them is easier together. Here is how to help:
+
+1. Open the pack's `index.html` and play the sounds. When you know what one is (a voice
+   line, the multiball music, a ramp shot...), click ✎ on its row, type a short name and
+   press Enter. The browser remembers your names for this game.
+2. **Export names** saves your names to a `names.csv` file on your computer: keep it, put
+   it in your pack (see above) or give it to someone. **Import names** loads a
+   `names.csv` back into the page.
+3. **Send names** shares them: after you say yes in a confirmation window, the page sends
+   that same `names.csv` (the sound numbers and their names, for this game's sound ROM)
+   and nothing else: no personal information, no other file. The page tells you whether
+   it arrived; if it did not, use **Export names** and send the file another way (an
+   issue on GitHub, for example).
+
+Sending is never automatic: nothing leaves your computer until you click **Send names**
+and confirm. The names you send are given to the public domain (CC0), so anyone can use
+them. The goal is one shared naming of pinball sounds for everyone: the names that people
+agree on come back in later rom2altsound catalogs and in PinMAME's sounds.dat. The button
+is greyed out when you have not named anything yet, or when the pack does not know its
+sound ROM id (rebuild it with a recent rom2altsound).
+
 **A/B test** (goodtwist's idea): copy the folder (`taf_l5` to `taf_l5-edit`), replace
 sounds in the copy, then type `../taf_l5-edit/` in the page's "Compare with folder" box
 (the page remembers it). Each sound gets an **A/B** button that switches the player
@@ -936,6 +959,31 @@ d'un jeu qui partagent leurs ROM son prennent le même fichier, et un fichier fa
 d'autres ROM son est refusé (`--force`, ou `--force-names` à l'extraction, l'applique
 quand même). `rom2altsound names afm_113b` seul affiche les noms du pack au format
 `names.csv`.
+
+#### Partager vos noms
+
+Beaucoup de sons n'ont toujours pas de nom, et c'est plus facile de les nommer à
+plusieurs. Voici comment aider :
+
+1. Ouvrez le `index.html` du pack et écoutez les sons. Quand vous reconnaissez l'un d'eux
+   (une phrase, la musique du multiball, un tir de rampe...), cliquez sur ✎ dans sa ligne,
+   tapez un nom court et appuyez sur Entrée. Le navigateur garde vos noms pour ce jeu.
+2. **Export names** enregistre vos noms dans un fichier `names.csv` sur votre ordinateur :
+   gardez-le, mettez-le dans votre pack (voir plus haut) ou donnez-le à quelqu'un.
+   **Import names** recharge un `names.csv` dans la page.
+3. **Send names** les partage : une fois que vous avez dit oui dans une fenêtre de
+   confirmation, la page envoie ce même `names.csv` (les numéros des sons et leurs noms,
+   pour la ROM son de ce jeu) et rien d'autre : aucune information personnelle, aucun
+   autre fichier. La page vous dit s'il est bien arrivé ; sinon, utilisez **Export names**
+   et envoyez le fichier autrement (une issue sur GitHub, par exemple).
+
+L'envoi n'est jamais automatique : rien ne quitte votre ordinateur tant que vous n'avez
+pas cliqué sur **Send names** et confirmé. Les noms envoyés sont versés dans le domaine
+public (CC0), chacun peut donc s'en servir. Le but : un seul nommage des sons de flipper,
+partagé par tous ; les noms sur lesquels on s'accorde reviennent dans les prochains
+catalogues de rom2altsound et dans le sounds.dat de PinMAME. Le bouton est grisé tant que
+vous n'avez rien nommé, ou quand le pack ne connaît pas l'id de sa ROM son (reconstruisez-le
+avec un rom2altsound récent).
 
 **Écoute A/B** (l'idée de goodtwist) : copiez le dossier (`taf_l5` en `taf_l5-edit`),
 remplacez des sons dans la copie, puis tapez `../taf_l5-edit/` dans la case « Compare with

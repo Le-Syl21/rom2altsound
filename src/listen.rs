@@ -6,6 +6,9 @@
 //! spliced in as JSON in a `<script type="application/json">`: a page opened from disk
 //! cannot fetch `manifest.json`. Every `<` of the JSON is written `<`, so nothing in
 //! the data (a sound name, a path) can close the script element.
+//!
+//! The page loads nothing from elsewhere. Its one network call is "Send names", which the
+//! user confirms: a PUT of the names.csv to [`NAMES_DROP`], for the shared naming of sounds.
 
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -17,6 +20,36 @@ const TEMPLATE: &str = include_str!("listen.html");
 const MARKER: &str = r#"<meta name="generator" content="rom2altsound">"#;
 const DATA_SLOT: &str = "/*DATA*/";
 const TITLE_SLOT: &str = "<!--TITLE-->";
+/// The public, write-only Nextcloud drop where "Send names" puts a names.csv, at
+/// `sound_dat/<rom>/<sound_rom_id>/<YYYY-MM-DD>_<hh-mm-ss>.csv` (UTC). Nobody can list or
+/// read it back from there; a file of the same name is kept as "name (2).csv".
+pub const NAMES_DROP: &str =
+    "https://nextcloud.syl21.org/public.php/dav/files/MLWYGCsA3gN8AoY/sound_dat/";
+
+/// The folder URL (ending in `/`) "Send names" puts this ROM's names.csv in, or `None`
+/// without a sound ROM id: names belong to a sound ROM, they are filed under its id.
+fn names_upload(rom: Option<&str>, sound_rom_id: Option<&str>) -> Option<String> {
+    let rom = rom.filter(|r| !r.is_empty())?;
+    let id = sound_rom_id.filter(|i| !i.is_empty())?;
+    Some(format!(
+        "{NAMES_DROP}{}/{}/",
+        path_segment(rom),
+        path_segment(id)
+    ))
+}
+
+/// Percent-encodes everything but RFC 3986's unreserved characters.
+fn path_segment(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
 
 /// Writes `<out_dir>/index.html` from `<out_dir>/manifest.json`; returns its path.
 pub fn write_page(out_dir: &Path) -> Result<PathBuf, String> {
@@ -140,6 +173,7 @@ fn page_data(m: &Value, exists: impl Fn(&str) -> bool) -> Value {
         "rom": m["rom"],
         "parent": m["parent"],
         "sound_rom_id": m["sound_rom_id"],
+        "names_upload": names_upload(m["rom"].as_str(), m["sound_rom_id"].as_str()),
         "boards": m["boards"],
         "mode": m["mode"],
         "volume": volume_line(m),
@@ -367,9 +401,25 @@ mod tests {
         ] {
             assert_eq!(html.matches(tag).count(), 1, "{tag}");
         }
-        // Offline: nothing loaded from elsewhere, no fetch (file:// pages cannot).
-        assert!(!html.contains("http://") && !html.contains("https://"));
-        assert!(!html.contains("fetch(") && !html.contains("XMLHttpRequest"));
+        // Offline: nothing loaded from elsewhere. The one URL is the drop of names, in the
+        // data, and the one request is Send names' PUT, after a confirmation that says CC0.
+        assert!(!TEMPLATE.contains("http://") && !TEMPLATE.contains("https://"));
+        assert_eq!(html.matches("https://").count(), 1);
+        assert!(!html.contains("http://"));
+        assert_eq!(
+            back["names_upload"],
+            format!("{NAMES_DROP}test_l1/0123abcd/")
+        );
+        assert_eq!(TEMPLATE.matches("fetch(").count(), 1);
+        assert!(!html.contains("XMLHttpRequest"));
+        let send = &TEMPLATE[TEMPLATE.find("function sendNames()").expect("sendNames")..];
+        let (c, f) = (send.find("confirm(").unwrap(), send.find("fetch(").unwrap());
+        assert!(c < f, "the confirmation comes first");
+        assert!(send[c..f].contains("CC0 (public domain)"));
+        assert!(send[c..f].contains("Nothing else is sent"));
+        assert!(send[f..].contains(r#"method: "PUT", body: csv.text"#));
+        // Export and Send write the same names.csv.
+        assert_eq!(TEMPLATE.matches("namesCsv()").count(), 3);
         // A/B: the compare folder field; every storage access guarded.
         assert!(html.contains(r#"id="cmp""#));
         // The table: sortable headers, names kept per ROM, exported as names.csv.
@@ -405,6 +455,24 @@ mod tests {
         assert!(v["factory"].is_null());
         let r = volume_line(&manifest());
         assert_eq!(r["recorded"], "the reference volume 55AAEF10");
+    }
+
+    #[test]
+    fn names_upload_needs_a_sound_rom_id() {
+        assert_eq!(
+            names_upload(Some("taf_l5"), Some("a1b2c3")).unwrap(),
+            format!("{NAMES_DROP}taf_l5/a1b2c3/")
+        );
+        assert_eq!(
+            names_upload(Some("a b/c"), Some("x")).unwrap(),
+            format!("{NAMES_DROP}a%20b%2Fc/x/")
+        );
+        assert!(names_upload(Some("taf_l5"), None).is_none());
+        assert!(names_upload(Some("taf_l5"), Some("")).is_none());
+        assert!(names_upload(None, Some("a1b2c3")).is_none());
+        let mut m = manifest();
+        m["sound_rom_id"] = Value::Null;
+        assert!(page_data(&m, |_| false)["names_upload"].is_null());
     }
 
     #[test]
