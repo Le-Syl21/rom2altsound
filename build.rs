@@ -26,10 +26,9 @@ fn main() {
     println!("cargo:rerun-if-changed=shim/shim.c");
     println!("cargo:rerun-if-changed={}", upstream.display());
     println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
-    println!(
-        "cargo:rerun-if-changed={}",
-        root.join("src/version.h").display()
-    );
+    // The whole source tree, not just version.h: a submodule bump that only touches a
+    // driver (gts80s.c) must rebuild the library, or the binary keeps the old PinMAME.
+    println!("cargo:rerun-if-changed={}", root.join("src").display());
 
     if !upstream.exists() {
         panic!(
