@@ -9,6 +9,9 @@
   the stop after the music `0x0120` found `00` (what the game sends the board at
   power-up) and `03` silent within 0.5 s; the stop is now `00` there
   (`WMSS11C_GAME_STOPS`). The other System 11 sets keep `20`.
+- **`s80tst` is not applicable.** The System 80 test fixture's sound ROMs hold a test
+  program that plays the same sequence from power-on and after every reset, whatever the
+  command: its 63 files were all the same 120 s, none from silence.
 - **Rolling Stones (`rollston`) extracts: its Sounds Plus -51 stop is `1D`.** On its
   program `1E`, the -51 stop, runs entry 1, which turns the background sound on ($12F8):
   every stop started a background that never ends, each command needed a board reset, and

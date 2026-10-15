@@ -150,6 +150,12 @@ Volcano (`vlcno_ax`), Devil's Dare (`dvlsdre`)
 - **Measured** ([board support](../board-support.md)): blckhole 38 of 40, all from
   silence (5 of 40 before the `00` after each command).
 - **Limits and what is missing**: as GTS80SS.
+- **Not applicable**: the System 80 test fixture (`s80tst`, `80tst-s1.snd` and
+  `80tst-s2.snd`) runs a sound test of its own (`catalog::not_applicable`). The board plays
+  from power-on with no command, and again after every board reset; in the catalog run
+  its 63 commands gave 63 files of the same 120 s (-8.2 LUFS each, 46 kept as twins),
+  none from silence. The System 80B fixture `s80btest` extracts (247 files, all from
+  silence).
 - **In VPinball**: as GTS80SS (blckhole: `05 05 05 04` looked up as such). Not played in
   VPinball itself.
 
