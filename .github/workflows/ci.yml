@@ -729,6 +729,18 @@ jobs:
           pattern: rom2altsound-*
           path: ${{ runner.temp }}/artifacts
 
+      # The catalog (every sound ROM's status and factory loudness) and the
+      # sounds.dat built from the same whole-catalog run, as release assets
+      # front ends can fetch at a stable URL.
+      - name: Check out the catalog files
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            docs/catalog.json
+            docs/sounds.dat
+          sparse-checkout-cone-mode: false
+          path: repo
+
       # A tag with a '-' (v0.1.0-beta.1) is published as a pre-release.
       # The notes always go through --notes-file (never `--notes -`, which
       # publishes a body made of a single "-").
@@ -752,6 +764,10 @@ jobs:
           The window program is a separate download (the command line one stays small); it
           does everything the command line does.
 
+          `catalog.json`: every sound ROM rom2altsound knows, with its status (ok, or not
+          applicable and why) and its factory loudness. `sounds.dat`: PinMAME's sounds.dat
+          with the sound commands of every game measured, for PinMAME's sound command mode.
+
           Usage, supported boards and limits: see the README.
           Help and feedback: https://discord.gg/T37DYHmt2j (channel #rom2altsound)
           EOF
@@ -763,7 +779,8 @@ jobs:
             --notes-file "$notes" \
             --generate-notes \
             $prerelease \
-            "$RUNNER_TEMP"/artifacts/*/*
+            "$RUNNER_TEMP"/artifacts/*/* \
+            repo/docs/catalog.json repo/docs/sounds.dat
           body=$(gh release view "$GITHUB_REF_NAME" --json body --jq '.body')
           if [ ${#body} -lt 100 ]; then
             echo "::error::release body is only ${#body} characters"
