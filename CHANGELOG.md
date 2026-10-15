@@ -9,6 +9,14 @@
   the stop after the music `0x0120` found `00` (what the game sends the board at
   power-up) and `03` silent within 0.5 s; the stop is now `00` there
   (`WMSS11C_GAME_STOPS`). The other System 11 sets keep `20`.
+- **Scramble (`scram_tp`): every sound from silence, with PinMAME's fix.** The board
+  asserts the TMS7000's INT1 for each command with bit 6 clear and never released it;
+  since INT1 became level sensitive (vpinball/pinmame#721) the TMS7000 took the command
+  again after every RETI, so from `0x42` on its sample played for good, under every later
+  file, and a board reset did not stop it (120 of 239 files flagged not clean, several
+  cut at 120 s). PinMAME now releases the line when the TMS7000 takes it (`HOLD_LINE`,
+  `gts80s.c`): `0x42` is a 3.6 s sample instead of 120 s, and the full run writes 237
+  files, none flagged not clean (24 cut at 120 s instead of 66).
 - **`s80tst` is not applicable.** The System 80 test fixture's sound ROMs hold a test
   program that plays the same sequence from power-on and after every reset, whatever the
   command: its 63 files were all the same 120 s, none from silence.

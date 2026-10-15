@@ -522,7 +522,19 @@ Tecnoplay Scramble board (two 6502 + TMS7000, System 80B-like) · PinMAME interf
   IRQ1 when bit 6 is clear. Bit 7 is the game's strobe, sent set then cleared; the
   handler does not filter it ("Doesn't seem to matter much").
 - **Loops**: audio, sequencer state (6502 RAM).
-- **Measured**: `scram_tp`, 37 of 40 ([board support](../board-support.md)).
+- **Stop**: none known: a board reset after each sound (`stop_sends`).
+- **TMS7000 interrupt**: `techno_sh_w` asserts the TMS7000's INT1 for each command with
+  bit 6 clear (the game's byte `40`..`7F` or `C0`..`FF`, before the inversion). Since
+  INT1 is level sensitive ([vpinball/pinmame#721](https://github.com/vpinball/pinmame/pull/721),
+  as in MAME's core), a line left asserted made the TMS7000 take the command again after
+  every RETI: from `0x42` on its sample played for good, under every later file, and a
+  board reset did not stop it, as the line stays held through a reset (catalog run: 120
+  of 239 files not clean, 66 cut at 120 s). The fork's `gts80s.c` releases it when the
+  TMS7000 takes it (`HOLD_LINE`, as `techno.c` does with INT3): `0x42` is a 3.6 s sample,
+  and the full run gives 237 files, none over another sound (24 cut at 120 s, 292 board
+  resets, 1690 s wall instead of 6686).
+- **Measured**: `scram_tp`, 37 of 40 ([board support](../board-support.md)); the full
+  sweep as above.
 - **Limits**: only the quick survey; a byte and the same byte with bit 7 changed may be
   the same command.
 - **In VPinball**: **the pack does not play as written, in any VPinball so far**: `zac.c` `data_port_w` logs each command twice, with and without the strobe bit (`28`, `A8`), both pack rows; and up to 10.8.1-5436 libaltsound has no case for
