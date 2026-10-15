@@ -139,7 +139,9 @@ Per command (`Extractor::step`, `Phase::Record`):
   into the CPU's memory region, where the ROM is, so a program that runs wild after a
   command it does not know can write over its own ROM, and no reset would bring it back
   (the manifest counts such resets, `sound_rom_restores`, and the log says "had written
-  over its own ROM"). A CDP1802 (E.F.O.'s boards) also gets its register file back to
+  over its own ROM"). A ROM range with a write handler inside it is kept around that
+  handler: Gottlieb's System 3 Y-CPU has its control latch at `A000` in its `8000`-`FFFF`
+  ROM, and surfnsaf's program wrote over the rest ([Gottlieb](gottlieb.md#sndbrd_gts3)). A CDP1802 (E.F.O.'s boards) also gets its register file back to
   its power-on 0: its reset line clears only P, X, R0, Q and IE. After a reset the tool waits for 4 s of silence
   (`QUIET_AFTER_RESET_SECS`; longer for the boards of `REBOOT_SECS`, which ignore
   commands for a while after a reset), at most 10 s more.

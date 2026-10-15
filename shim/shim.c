@@ -67,9 +67,17 @@ int shim_halt_game_cpus(int halt) {
 // Sound IV after the swept command 30, its stack pointer out of its RAM) writes over its
 // own ROM, which a real board cannot do, and no reset brings it back (flashman: the `DIS`
 // at the reset address overwritten with 00, `IDL`, so the program never started again and
-// the AY-3-8910s held their last notes under every later file, until the run gave up). The ROM ranges are the read map's MRA_ROM entries that no
-// write map entry covers (or only MWA_ROM/MWA_NOP), 8-bit data buses only.
-#define SHIM_ROM_GUARD_MAX 16
+// the AY-3-8910s held their last notes under every later file, until the run gave up). The
+// ROM ranges are the read map's MRA_ROM entries, 8-bit data buses only, less the addresses
+// a write map entry handles (other than MWA_ROM/MWA_NOP): a ROM range is kept in pieces
+// around them. Gottlieb's System 3 Y-CPU has its control latch at A000, inside its
+// 8000-FFFF ROM (gts80s.c `GTS3_ywritemem_oki`), the rest of which is unmapped for writes.
+// Surf 'n Safari's program wrote 112 bytes there during the swept command FA; the later
+// commands played from the damaged program, and by the retried 03, 515 bytes differed,
+// among them the `ORA #$80` of its YM2151 write routine (`9100`, now `AND #$80`): every
+// register write went to the address port, the board resets' output disables with them,
+// and the notes left on droned through every reset until the run gave up.
+#define SHIM_ROM_GUARD_MAX 32
 static struct {
   int cpu;
   unsigned start, len;
@@ -78,14 +86,29 @@ static struct {
 static int shim_rom_guard_n;
 static unsigned shim_rom_guard_restored;
 
-static int shim_rom_written_to(int cpu, unsigned start, unsigned end) {
+// Keeps a copy of [start, end] of CPU `cpu`'s ROM, less what its write map handles.
+static void shim_rom_guard_add(int cpu, const unsigned char *base, unsigned start, unsigned end) {
   const struct Memory_WriteAddress *w =
       (const struct Memory_WriteAddress *)Machine->drv->cpu[cpu].memory_write;
   for (; w && !IS_MEMPORT_END(w); w++)
     if (!IS_MEMPORT_MARKER(w) && w->start <= end && w->end >= start && w->handler != MWA_ROM
-        && w->handler != MWA_NOP)
-      return 1;
-  return 0;
+        && w->handler != MWA_NOP) {
+      if (w->start > start)
+        shim_rom_guard_add(cpu, base, start, w->start - 1);
+      if (w->end < end)
+        shim_rom_guard_add(cpu, base, w->end + 1, end);
+      return;
+    }
+  if (shim_rom_guard_n == SHIM_ROM_GUARD_MAX)
+    return;
+  shim_rom_guard[shim_rom_guard_n].copy = malloc(end - start + 1);
+  if (!shim_rom_guard[shim_rom_guard_n].copy)
+    return;
+  shim_rom_guard[shim_rom_guard_n].cpu = cpu;
+  shim_rom_guard[shim_rom_guard_n].start = start;
+  shim_rom_guard[shim_rom_guard_n].len = end - start + 1;
+  memcpy(shim_rom_guard[shim_rom_guard_n].copy, base + start, end - start + 1);
+  shim_rom_guard_n++;
 }
 
 // Saves the audio CPUs' ROM ranges. Call it once the machine exists and before its CPUs run
@@ -106,19 +129,9 @@ int shim_save_audio_roms(void) {
     base = memory_region(REGION_CPU1 + ii);
     len = memory_region_length(REGION_CPU1 + ii);
     r = (const struct Memory_ReadAddress *)Machine->drv->cpu[ii].memory_read;
-    for (; base && r && !IS_MEMPORT_END(r); r++) {
-      if (IS_MEMPORT_MARKER(r) || r->handler != MRA_ROM || r->end < r->start || r->end >= len
-          || shim_rom_written_to(ii, r->start, r->end) || shim_rom_guard_n == SHIM_ROM_GUARD_MAX)
-        continue;
-      shim_rom_guard[shim_rom_guard_n].copy = malloc(r->end - r->start + 1);
-      if (!shim_rom_guard[shim_rom_guard_n].copy)
-        continue;
-      shim_rom_guard[shim_rom_guard_n].cpu = ii;
-      shim_rom_guard[shim_rom_guard_n].start = r->start;
-      shim_rom_guard[shim_rom_guard_n].len = r->end - r->start + 1;
-      memcpy(shim_rom_guard[shim_rom_guard_n].copy, base + r->start, r->end - r->start + 1);
-      shim_rom_guard_n++;
-    }
+    for (; base && r && !IS_MEMPORT_END(r); r++)
+      if (!IS_MEMPORT_MARKER(r) && r->handler == MRA_ROM && r->start <= r->end && r->end < len)
+        shim_rom_guard_add(ii, base, r->start, r->end);
   }
   return shim_rom_guard_n;
 }

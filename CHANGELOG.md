@@ -20,6 +20,21 @@
 - **`s80tst` is not applicable.** The System 80 test fixture's sound ROMs hold a test
   program that plays the same sequence from power-on and after every reset, whatever the
   command: its 63 files were all the same 120 s, none from silence.
+- **Surf 'n Safari (`surfnsaf`) extracts: the board reset puts back a ROM with a latch
+  inside it.** The reset restores the audio CPUs' program ROM as loaded, since PinMAME
+  stores a write to an unmapped address into the ROM, but it left out every ROM range a
+  write handler overlaps, so Gottlieb's System 3 and System 80B (generations 2 and 3)
+  Y-CPU, whose control latch at `A000` sits in its `8000`-`FFFF` ROM, was never guarded.
+  surfnsaf's program wrote 112 bytes over it during the swept `FA`; `FB` to `FE` then
+  played from the damaged program, and by the retried `03` its YM2151 write routine sent
+  every register write to the address port (`9100`, the `ORA #$80` that selects the data
+  port, had become `AND #$80`): the reset no longer silenced the notes it had left on, and
+  the run gave up after 3 board resets. A ROM range is now guarded in pieces around the
+  handlers inside it (`shim_save_audio_roms`): surfnsaf runs through (160 files, 0 not
+  clean, 1 reset that put back the ROM), `FB`, `FC` and `FE` 3.2 to 4.7 LU louder and `FD`
+  a 120 s music where it stopped at 3.6 s. cactjack and smb (`--limit 40`) and rock
+  (`--limit 4`) give byte-identical files.
+
 - **Rolling Stones (`rollston`) extracts: its Sounds Plus -51 stop is `1D`.** On its
   program `1E`, the -51 stop, runs entry 1, which turns the background sound on ($12F8):
   every stop started a background that never ends, each command needed a board reset, and

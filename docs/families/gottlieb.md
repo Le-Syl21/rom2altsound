@@ -195,7 +195,9 @@ Flipprojets · e.g. Raven (`raven`), Bad Girls (`badgirls`), Rock (`rock`), Spri
   (the game's own commands are 5 bits, `riot6532_2b_w`, so most of the upper range is
   expected to be silent or to repeat; not measured).
 - **Stop, boot and resets**: no stop command: after every sound both (or three) audio
-  CPUs are reset (`shim_reset_audio_cpus`), then 4 s of silence.
+  CPUs are reset (`shim_reset_audio_cpus`), then 4 s of silence. The reset puts back
+  their program ROM around the latches mapped inside it (generations 2 and 3: the control
+  latch at `A000` of the Y-CPU's `8000`-`FFFF`), as on [System 3](#sndbrd_gts3).
 - **Volume**: the board's program sets its own DAC volume registers (`s80bs_dac_vol_w`);
   no master volume command is known: recorded at the board's own level, not scaled.
 - **Loops**: audio and sequencer-state (6502s, `MRA_RAM` `0000`-`07FF` on each CPU,
@@ -225,11 +227,21 @@ Operation Thunder (`opthund`)
   later); `gts80b_data_w` inverts it back. rom2altsound sends one byte per command
   through the same handler.
 - **Sound list**: raw sweep `01`..`FF`.
-- **Stop, boot and resets**: a board reset after every sound (no stop command).
+- **Stop, boot and resets**: a board reset after every sound (no stop command). The
+  reset also puts back the program ROM of both CPUs ([common method](common.md)), around
+  the latches mapped inside it (the Y-CPU's control latch at `A000`, the D-CPU's DAC at
+  `8000`-`8001`), as PinMAME stores a write to the rest of `8000`-`FFFF` into the ROM.
+  Surf 'n Safari (`surfnsaf`) wrote 112 bytes there during the swept command `FA`; until
+  that was put back, the later commands played from the damaged program (`FB`, `FC` and
+  `FE` 3.2 to 4.7 LU quieter, `FD` cut short at 3.6 s), and by the retried `03`, 515 bytes
+  differed, among them the `ORA #$80` of its YM2151 write routine (`9100`): every register
+  write went to the address port, the reset's output disables with them, and the notes it
+  had left on droned through 3 board resets in a row, which ended the run.
 - **Volume**: as GTS80B: the board's own level, not scaled.
 - **Loops**: audio and sequencer-state (as GTS80B). Not measured.
 - **DUCK / STOP / CHANNEL**: defaults.
-- **Measured** ([board support](../board-support.md)): cueball 40 of 40.
+- **Measured** ([board support](../board-support.md)): cueball 40 of 40; surfnsaf, the full
+  sweep: 160 files, 1 board reset that put the ROM back.
 - **Limits and what is missing**: loops, ducking and the full sweep are not verified.
 - **In VPinball**: **the pack plays from VPinball master 3abe805 on**, not in 10.8.1-5436 and older:
   their libaltsound has no case for `GEN_GTS3` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
