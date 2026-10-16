@@ -104,6 +104,8 @@ pub struct App {
     /// The page of every ROM, once a run wrote it.
     index: Option<PathBuf>,
     last_root: Option<PathBuf>,
+    /// What "Apply page changes" did: (it worked, the message).
+    applied: Option<(bool, String)>,
     log: Vec<(String, String)>,
     /// The longest line of each ROM's log, in characters (the key "" for the lines of no
     /// ROM): the log's width, fixed whatever lines are on screen. It never shrinks while
@@ -153,6 +155,7 @@ impl App {
             running: None,
             index: None,
             last_root: None,
+            applied: None,
             log: Vec::new(),
             log_widest: HashMap::new(),
             log_filter: None,
@@ -709,8 +712,53 @@ impl App {
                 {
                     platform::open(Path::new(&self.out_dir));
                 }
+                if ui
+                    .button(t.apply_changes)
+                    .on_hover_text(t.apply_changes_tip)
+                    .clicked()
+                {
+                    self.applied = self.apply_page_changes();
+                }
             });
+            if let Some((ok, msg)) = &self.applied {
+                let c = if *ok {
+                    ui.visuals().text_color()
+                } else {
+                    Color32::from_rgb(220, 80, 60)
+                };
+                ui.label(RichText::new(msg).color(c));
+            }
         });
+    }
+
+    /// "Apply page changes": a zip saved by a listening page, into its ROM's pack folder
+    /// (under the output folder; else the folder the user picks).
+    fn apply_page_changes(&self) -> Option<(bool, String)> {
+        let t = self.t();
+        let mut d = rfd::FileDialog::new().add_filter("zip", &["zip"]);
+        if let Some(dl) = dirs_downloads() {
+            d = d.set_directory(dl);
+        }
+        let zip = d.pick_file()?;
+        let guess = rom2altsound::replace::zip_rom(&zip)
+            .map(|rom| Path::new(&self.out_dir).join(rom))
+            .filter(|p| p.join("manifest.json").is_file());
+        let dir = match guess {
+            Some(p) => p,
+            None => {
+                let mut d = rfd::FileDialog::new().set_title(t.apply_pick_pack);
+                if Path::new(&self.out_dir).is_dir() {
+                    d = d.set_directory(&self.out_dir);
+                }
+                d.pick_folder()?
+            }
+        };
+        Some(
+            match rom2altsound::replace::apply_zip_and_page(&dir, &zip) {
+                Ok(s) => (true, format!("{}: {s}", dir.display())),
+                Err(e) => (false, e),
+            },
+        )
     }
 
     fn options_section(&mut self, ui: &mut egui::Ui) {
@@ -1223,4 +1271,11 @@ fn file_row(
             value.clear();
         }
     });
+}
+
+/// The user's Downloads folder, where a browser saves the page's zip.
+fn dirs_downloads() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    let d = PathBuf::from(home).join("Downloads");
+    d.is_dir().then_some(d)
 }

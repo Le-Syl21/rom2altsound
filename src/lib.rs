@@ -22,6 +22,7 @@ mod looping;
 mod loudness;
 mod names;
 pub mod progress;
+pub mod replace;
 mod romcheck;
 mod sam;
 mod sampack;
@@ -450,6 +451,7 @@ pub fn cli_main() {
         Some("page") => return listen::page_cli(std::env::args().skip(2).collect()),
         Some("loudness") => std::process::exit(loudness_cli(std::env::args().skip(2).collect())),
         Some("names") => std::process::exit(names::cli(std::env::args().skip(2).collect())),
+        Some("replace") => std::process::exit(replace::cli(std::env::args().skip(2).collect())),
         Some("roms") => std::process::exit(romcheck::cli(std::env::args().skip(2).collect())),
         Some("catalog") => std::process::exit(catalog::cli(std::env::args().skip(2).collect())),
         Some("sounds-dat") => {
@@ -539,6 +541,20 @@ pub fn cli_main() {
             if let Err(e) = named {
                 eprintln!("error: {e}");
                 std::process::exit(1);
+            }
+            // The user's replacement sounds, on the new CSVs.
+            match replace::reapply(&job.out) {
+                Ok(Some(r)) => {
+                    println!("  {}", replace::summary(&r));
+                    if !r.missing.is_empty() || !r.missing_files.is_empty() {
+                        eprintln!("warning: {}", replace::summary(&r));
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
             }
         }
         if !cli.no_html && !cli.cold_boot_only && !cli.boot_only {

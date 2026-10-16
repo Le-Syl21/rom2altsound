@@ -64,7 +64,8 @@ pub fn write_page(out_dir: &Path) -> Result<PathBuf, String> {
         // the page exports.
         m["sound_rom_id"] = json!(id);
     }
-    let data = page_data(&m, |f| out_dir.join(f).is_file());
+    let mut data = page_data(&m, |f| out_dir.join(f).is_file());
+    add_replacements(&mut data, &m, out_dir)?;
     let rom = m["rom"].as_str().unwrap_or("rom");
     let path = out_dir.join(PAGE);
     std::fs::write(&path, render(&format!("{rom}: sounds"), &data))
@@ -180,9 +181,48 @@ fn page_data(m: &Value, exists: impl Fn(&str) -> bool) -> Value {
         "levels_note": m["levels_note"],
         "borrowed": m["sound_rom_borrowed"]["note"],
         "lufs": m["loudness"]["all"]["lufs"],
+        "sample_rate": rate,
         "counts": m["counts"],
         "sounds": sounds,
     })
+}
+
+/// What the page needs to replace sounds: the record (`replacements.csv`), and for each
+/// sound the ROM's file its rows play and the ids of those rows (its copies under other
+/// ids included), from altsound.csv (or g-sound.csv).
+fn add_replacements(data: &mut Value, m: &Value, dir: &Path) -> Result<(), String> {
+    use crate::replace;
+    let entries = replace::load(dir)?;
+    let factory = replace::factory_files(m);
+    let csv = [crate::altsound::ALTSOUND_CSV, crate::altsound::GSOUND_CSV]
+        .iter()
+        .find_map(|n| std::fs::read_to_string(dir.join(n)).ok())
+        .unwrap_or_default();
+    let rows = replace::rows_of(&csv, &factory);
+    for s in data["sounds"].as_array_mut().into_iter().flatten() {
+        let Some(id) = s["id"].as_str().and_then(crate::altsound::parse_id) else {
+            continue;
+        };
+        if let (Some(f), Some(r)) = (factory.get(&id), rows.get(&id)) {
+            s["factory_file"] = json!(f);
+            s["rows"] = json!(r.iter().map(|i| format!("0x{i:04X}")).collect::<Vec<_>>());
+        }
+    }
+    data["replacements"] = json!(
+        entries
+            .iter()
+            .map(|e| json!({
+                "id": format!("0x{:04X}", e.id),
+                "fname": e.fname,
+                "gain": e.gain,
+                "source": e.source,
+            }))
+            .collect::<Vec<_>>()
+    );
+    data["replace_dir"] = json!(replace::DIR);
+    data["replace_file"] = json!(replace::FILE);
+    data["replace_exts"] = json!(replace::EXTENSIONS);
+    Ok(())
 }
 
 /// "Recorded at ...; reference volume ...; factory offset ... dB", from the manifest's
@@ -315,6 +355,7 @@ fn sound(s: &Value, rate: f64, exists: &impl Fn(&str) -> bool) -> Value {
         "board": s["board"],
         "duration": s["duration"],
         "lufs": s["lufs"],
+        "level_lufs": s["level_lufs"],
         "true_peak": s["true_peak_dbtp"],
         "peak": s["peak_dbfs"],
         "ended_by": s["ended_by"],

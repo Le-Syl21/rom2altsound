@@ -112,6 +112,28 @@ table { border-collapse: collapse; width: 100%; margin: 12px 0; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 14px; }
 a { color: var(--accent); }
 .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+.tag.rep { background: var(--edit-bg); color: var(--edit); }
+td.btns button.rp { color: var(--muted); }
+td.btns button.rp.on { color: var(--edit); border-color: var(--edit); }
+#rep-status { color: var(--muted); }
+#rep-status.dirty { color: var(--warn); }
+dialog.rep {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--fg);
+  padding: 18px 20px; width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 32px);
+}
+dialog.rep::backdrop { background: rgba(0, 0, 0, 0.35); }
+dialog.rep h2 { font-size: 18px; margin: 0 0 8px; overflow-wrap: anywhere; }
+dialog.rep .line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+dialog.rep .line > .grow { flex: 1 1 auto; }
+dialog.rep input[type=range] { flex: 1 1 180px; min-width: 0; }
+dialog.rep output { font-variant-numeric: tabular-nums; min-width: 11em; }
+dialog.rep audio { flex: 1 1 100%; }
+dialog.rep p { margin: 6px 0; font-size: 13.5px; }
+dialog.rep .note { color: var(--muted); }
+dialog.rep .warn { color: var(--warn); background: var(--warn-bg); padding: 4px 8px; border-radius: 6px; }
+dialog.rep button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+dialog.rep #rep-side { font-weight: 600; font-size: 13px; border-radius: 4px; padding: 1px 7px; background: var(--tag-bg); }
+dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 600px) {
   #now { display: none; }
@@ -134,6 +156,7 @@ a { color: var(--accent); }
     </select>
     <label class="chk"><input type="checkbox" id="loops"> Loops only</label>
     <label class="chk"><input type="checkbox" id="sound" checked> With sound</label>
+    <label class="chk" title="The sounds you replaced or changed the volume of"><input type="checkbox" id="changed"> Changed only</label>
     <input type="text" id="cmp" placeholder="Compare with folder: ../taf_l5-edit/ or C:\packs\taf_l5-edit" aria-label="Compare with folder (A/B)" title="A/B test: another folder holding files of the same names (a copy of this one with some sounds swapped); each row gets an A/B button, b flips" spellcheck="false" autocomplete="off">
     <span id="shown" aria-live="polite"></span>
   </div>
@@ -148,6 +171,38 @@ a { color: var(--accent); }
   </div>
   <div id="index"></div>
 </main>
+<dialog class="rep" id="rep" aria-labelledby="rep-title">
+  <h2 id="rep-title"></h2>
+  <p id="rep-orig" class="note"></p>
+  <div class="line">
+    <button type="button" id="rep-pick">Choose a file...</button>
+    <span id="rep-file" class="grow"></span>
+    <input type="file" id="rep-input" hidden accept="audio/*,.wav,.ogg,.mp3,.flac" aria-label="Your sound file">
+  </div>
+  <p id="rep-loop" class="note" hidden>This sound loops in the game: your file plays again and again, from its start to its end. Listen to the join with the loop box ticked.</p>
+  <div class="line">
+    <span id="rep-side">A</span>
+    <button type="button" id="rep-a" title="The ROM's sound, as extracted">▶ A: the ROM's</button>
+    <button type="button" id="rep-b" title="What AltSound will play, at the volume below">▶ B: new</button>
+    <button type="button" id="rep-ab" title="Switch between A and B at the same position">A/B</button>
+    <label class="chk"><input type="checkbox" id="rep-looped"> Loop</label>
+    <audio id="rep-audio" controls preload="none"></audio>
+  </div>
+  <div class="line">
+    <label for="rep-gain">Volume</label>
+    <input type="range" id="rep-gain" min="-40" max="0" step="0.5" value="0">
+    <output id="rep-gainv" for="rep-gain"></output>
+    <button type="button" id="rep-match" title="The volume that gives the new sound the loudness (LUFS) of the ROM's">Match the ROM's loudness</button>
+  </div>
+  <label class="chk"><input type="checkbox" id="rep-raise"> Raise the file to its maximum first (saved as a WAV copy)</label>
+  <p id="rep-note"></p>
+  <div class="line">
+    <button type="button" id="rep-revert">Back to the ROM's sound</button>
+    <span class="grow"></span>
+    <button type="button" id="rep-cancel">Cancel</button>
+    <button type="button" id="rep-ok" class="primary">Use it</button>
+  </div>
+</dialog>
 <div class="player" id="player" hidden>
   <div class="wrap"><span id="side" hidden>A</span><span id="now">Nothing playing</span><audio id="audio" controls preload="none"></audio></div>
 </div>
@@ -201,7 +256,7 @@ a { color: var(--accent); }
   if (vol.length) head.appendChild(el("p", "meta", vol.join("; ")));
   if (data.levels_note) head.appendChild(el("p", "meta", data.levels_note));
   if (data.borrowed) head.appendChild(el("p", "borrowed", data.borrowed));
-  head.appendChild(el("p", "meta", "Click a column title to sort (again to reverse). Space or Enter plays the selected sound, arrows move, / searches, F2 or ✎ renames, b flips A/B (with a folder to compare). rom2altsound " + data.version));
+  head.appendChild(el("p", "meta", "Click a column title to sort (again to reverse). Space or Enter plays the selected sound, arrows move, / searches, F2 or ✎ renames, ⇄ replaces a sound with your own file or changes its volume, b flips A/B (with a folder to compare). rom2altsound " + data.version));
 
   // Names typed on this page, by sound id ("" = no name), kept in the browser for this ROM;
   // "Export names" writes them to a names.csv for `rom2altsound names`.
@@ -213,9 +268,21 @@ a { color: var(--accent); }
   function edited(s) { return Object.prototype.hasOwnProperty.call(edits, s.id); }
   function cleanName(n) { return String(n).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim(); }
 
+  // Replacement sounds (replacements.csv), by sound id: the file AltSound plays instead
+  // of the ROM's ("" = the ROM's own) and its GAIN (0-100: AltSound can only lower a sound).
+  // `blobs`: files chosen here that are not in the pack folder yet, by their FNAME.
+  var REPDIR = data.replace_dir || "replace", REPFILE = data.replace_file || "replacements.csv";
+  var EXTS = data.replace_exts || ["wav", "ogg", "mp3", "flac"];
+  var repl = recordOf(data.replacements), blobs = {}, touched = {};
+  // What the folder's replacements.csv says (as far as this page knows).
+  var disk = recordOf(data.replacements);
+
   var sounds = data.sounds || [];
   sounds.forEach(function (s, i) {
     s.i = i;
+    s.key = normId(s.id);
+    s.base = s.files;
+    refreshFiles(s);
     s.typ = typeOf(s);
     // An edit that says what the pack says is no edit (names applied with `rom2altsound names`).
     if (edited(s) && edits[s.id] === (s.name || "")) delete edits[s.id];
@@ -223,7 +290,9 @@ a { color: var(--accent); }
   });
   saveEdits();
   function hay(s) {
-    s.hay = [s.id, nameOf(s), edited(s) ? "edited" : "", s.typ, s.board, s.twin_of ? "twin " + s.twin_of : "",
+    var e = entryOf(s);
+    s.hay = [s.id, nameOf(s), edited(s) ? "edited" : "", e ? (e.fname ? "replaced " + e.source : "volume") : "",
+      s.typ, s.board, s.twin_of ? "twin " + s.twin_of : "",
       s.loop ? "loop " + s.loop.method : ""].concat(s.flags || []).join(" ").toLowerCase();
   }
   function typeOf(s) {
@@ -307,33 +376,9 @@ a { color: var(--accent); }
     tr.tabIndex = -1;
     tr.dataset.i = s.i;
     tr.id = "s-" + s.i;
-    var btns = td("btns");
-    s.files.forEach(function (f, k) {
-      var b = el("button", null, "▶ " + f.label);
-      b.type = "button";
-      b.tabIndex = -1;
-      b.title = f.path + (f.pack ? " (what AltSound plays)" : "");
-      if (f.pack) b.className = "pk";
-      b.setAttribute("aria-pressed", "false");
-      b.setAttribute("aria-label", f.label + " " + s.id + " " + f.path);
-      b.addEventListener("click", function () { play(s, k); });
-      btns.appendChild(b);
-    });
-    if (s.files.length) {
-      var ab = el("button", "ab", "A/B");
-      ab.type = "button";
-      ab.tabIndex = -1;
-      ab.hidden = true;
-      ab.title = "A/B: switch between this folder (A) and the compare folder (B), at the same position (key b)";
-      ab.setAttribute("aria-pressed", "false");
-      ab.setAttribute("aria-label", "A/B " + s.id);
-      ab.addEventListener("click", function () { abClick(s); });
-      btns.appendChild(ab);
-      s.ab = ab;
-    } else {
-      btns.appendChild(el("span", "muted", "no file"));
-    }
-    tr.appendChild(btns);
+    s.btns = td("btns");
+    renderBtns(s);
+    tr.appendChild(s.btns);
     tr.appendChild(td("id mono", s.id));
     s.nameCell = td("name");
     s.nameCell.addEventListener("dblclick", function (e) {
@@ -391,7 +436,62 @@ a { color: var(--accent); }
     }
     tr.appendChild(fc);
     s.info = fc;
+    renderRep(s);
     return tr;
+  }
+
+  // The play buttons of a row (one per file, the one AltSound plays outlined), A/B, and ⇄.
+  function renderBtns(s) {
+    var btns = s.btns, on = rows && rows[s.i] && rows[s.i].tabIndex === 0;
+    while (btns.firstChild) btns.removeChild(btns.firstChild);
+    s.ab = null;
+    s.files.forEach(function (f, k) {
+      var b = el("button", null, "▶ " + f.label);
+      b.type = "button";
+      b.tabIndex = on ? 0 : -1;
+      b.title = f.path + (f.label === "new" ? " (your file: what AltSound plays)" : f.pack ? " (what AltSound plays)" : "");
+      if (f.pack) b.className = "pk";
+      b.setAttribute("aria-pressed", "false");
+      b.setAttribute("aria-label", f.label + " " + s.id + " " + f.path);
+      b.addEventListener("click", function () { play(s, k); });
+      btns.appendChild(b);
+    });
+    if (s.files.length) {
+      var ab = el("button", "ab", "A/B");
+      ab.type = "button";
+      ab.tabIndex = on ? 0 : -1;
+      ab.hidden = !cmp;
+      ab.title = "A/B: switch between this folder (A) and the compare folder (B), at the same position (key b)";
+      ab.setAttribute("aria-pressed", "false");
+      ab.setAttribute("aria-label", "A/B " + s.id);
+      ab.addEventListener("click", function () { abClick(s); });
+      btns.appendChild(ab);
+      s.ab = ab;
+    } else {
+      btns.appendChild(el("span", "muted", "no file"));
+    }
+    if (s.rows && s.factory_file) {
+      var e = entryOf(s), rp = el("button", "rp" + (e ? " on" : ""), "⇄");
+      rp.type = "button";
+      rp.tabIndex = on ? 0 : -1;
+      rp.title = e ? "Your file or volume for this sound: change it, or go back to the ROM's (r)"
+        : "Replace this sound with your own file, or change its volume (r)";
+      rp.setAttribute("aria-label", "Replace " + s.id);
+      rp.addEventListener("click", function () { openRep(s); });
+      btns.appendChild(rp);
+    }
+  }
+  // The row's mark of a replacement: "replaced: <file>" or "volume 63%".
+  function renderRep(s) {
+    if (s.repTag) { s.repTag.remove(); s.repTag = null; }
+    var e = entryOf(s);
+    if (!e) return;
+    var t = el("span", "tag rep", e.fname ? "replaced" : "volume " + e.gain + "%");
+    t.title = (e.fname ? "AltSound plays " + e.fname + (e.source ? " (your " + e.source + ")" : "") + ", " : "") +
+      "GAIN " + e.gain + " (" + gainDb(e.gain) + ")" + (touched[s.key] && dirty() ? "; not saved in the pack folder yet" : "");
+    if (e.fname && e.gain !== 100) t.textContent += " · " + e.gain + "%";
+    s.info.insertBefore(t, s.info.firstChild);
+    s.repTag = t;
   }
 
   // The name cell: the name (or "no name"), a mark when it is a name typed here, and the
@@ -466,11 +566,11 @@ a { color: var(--accent); }
   var visible = [];
   function apply() {
     var q = $("q").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    var typ = $("type").value, loops = $("loops").checked, snd = $("sound").checked;
+    var typ = $("type").value, loops = $("loops").checked, snd = $("sound").checked, chg = $("changed").checked;
     var order = sounds.slice().sort(compare);
     visible = [];
     order.forEach(function (s) {
-      var ok = (!typ || s.typ === typ) && (!loops || s.loop) && (!snd || s.files.length > 0) &&
+      var ok = (!typ || s.typ === typ) && (!loops || s.loop) && (!snd || s.files.length > 0) && (!chg || entryOf(s)) &&
         q.every(function (w) { return s.hay.indexOf(w) >= 0; });
       var r = rows[s.i];
       r.hidden = !ok;
@@ -485,7 +585,7 @@ a { color: var(--accent); }
     none.className = visible.length ? "" : "empty";
     none.textContent = visible.length ? "" : "No sound matches.";
   }
-  ["q", "type", "loops", "sound"].forEach(function (id) {
+  ["q", "type", "loops", "sound", "changed"].forEach(function (id) {
     $(id).addEventListener(id === "q" ? "input" : "change", apply);
   });
 
@@ -513,6 +613,10 @@ a { color: var(--accent); }
     else if (e.key === "F2") {
       e.preventDefault();
       editName(sounds[+r.dataset.i]);
+      return;
+    } else if ((e.key === "r" || e.key === "R") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      var t = sounds[+r.dataset.i];
+      if (t.rows && t.factory_file) { e.preventDefault(); openRep(t); }
       return;
     } else if ((e.key === " " || e.key === "Enter") && e.target === r) {
       e.preventDefault();
@@ -567,6 +671,7 @@ a { color: var(--accent); }
   }
   tool("Export names", "Save names.csv: every sound's name, yours included, for rom2altsound names <folder> names.csv", exportNames);
   var file = el("input");
+  file.id = "names-input";
   file.type = "file";
   file.accept = ".csv,text/csv";
   file.hidden = true;
@@ -767,8 +872,9 @@ a { color: var(--accent); }
     }
     mark(false);
     playing = { s: s, k: k };
-    audio.loop = f.label === "loop";
+    audio.loop = f.label === "loop" || (f.label === "new" && s.pack && s.pack.kind === "body_loop");
     audio.src = src;
+    audio.volume = volOf(s, f);
     audio.play().catch(function () {});
     nowLabel();
     mark(true);
@@ -796,7 +902,7 @@ a { color: var(--accent); }
   // path (C:/...), a UNC share (//server/share/...) or a Unix path (/...), which need a
   // file: URL (an encoded "C:" would read as a relative name).
   function srcOf(f) {
-    if (side !== "B") return href(f.path);
+    if (side !== "B") return f.blob ? blobUrl(f.blob) : href(f.path);
     var p = cmp + f.path, d = /^([A-Za-z]):\//.exec(p);
     if (d) return "file:///" + d[1] + ":/" + href(p.slice(3));
     if (p.charAt(0) === "/") return "file:" + (p.charAt(1) === "/" ? "" : "//") + href(p);
@@ -825,6 +931,7 @@ a { color: var(--accent); }
       };
       audio.addEventListener("loadedmetadata", once);
       audio.src = srcOf(f);
+      audio.volume = volOf(playing.s, f);
       if (was) audio.play().catch(function () {});
       nowLabel();
     }
@@ -868,6 +975,681 @@ a { color: var(--accent); }
   audio.addEventListener("play", function () { mark(true); });
   audio.addEventListener("pause", function () { mark(true); });
   audio.addEventListener("ended", function () { mark(true); });
+
+  // ---- Replacement sounds ----------------------------------------------------------
+  // The pack keeps the ROM's files as extracted; the user's files go in replace/ and
+  // replacements.csv says which sound plays which file at which GAIN. altsound.csv and
+  // g-sound.csv follow it: FNAME and GAIN of the sound's rows (its copies under other ids
+  // included), nothing else. A page opened from disk cannot write files, except in Chrome
+  // and Edge once the user picks the pack folder (File System Access); elsewhere "Download
+  // changes" saves a zip for `rom2altsound replace <folder> --apply <zip>`.
+  function recordOf(list) {
+    var r = {};
+    (list || []).forEach(function (e) {
+      r[normId(e.id)] = { fname: e.fname || "", gain: e.gain, source: e.source || "" };
+    });
+    return r;
+  }
+  function entryOf(s) { return Object.prototype.hasOwnProperty.call(repl, s.key) ? repl[s.key] : null; }
+  function refreshFiles(s) {
+    var e = entryOf(s), own = e && e.fname;
+    s.files = s.base.map(function (f) { return own ? { label: f.label, path: f.path, pack: false } : f; });
+    if (own) s.files.push({ label: "new", path: e.fname, pack: true, blob: blobs[e.fname] || null });
+  }
+  // AltSound plays the file of a row at GAIN/100; the page plays it at that volume too.
+  function volOf(s, f) {
+    var e = entryOf(s);
+    return f && f.pack && e ? Math.max(0, Math.min(1, e.gain / 100)) : 1;
+  }
+  function gainDb(g) { return g > 0 ? (20 * Math.log10(g / 100)).toFixed(1) + " dB" : "silent"; }
+  var urls = [];
+  function blobUrl(b) {
+    for (var i = 0; i < urls.length; i++) if (urls[i].b === b) return urls[i].u;
+    var u = URL.createObjectURL(b);
+    urls.push({ b: b, u: u });
+    return u;
+  }
+  function byId(a, b) { return parseInt(a, 16) - parseInt(b, 16); }
+  // A file name the CSVs can hold (as rom2altsound's replace::clean_file_name).
+  function cleanFile(n) {
+    n = String(n || "").split(/[\/\\]/).pop();
+    n = n.replace(/[^\p{L}\p{N} _.()+\-]/gu, "_").trim().replace(/^\.+/, "").trim();
+    return Array.from(n).slice(0, 80).join("");
+  }
+  function recordText(r) {
+    var out = ["ID,FNAME,GAIN,SOURCE"];
+    Object.keys(r).sort(byId).forEach(function (id) {
+      var e = r[id];
+      out.push(id + "," + e.fname + "," + e.gain + "," + cleanFile(e.source));
+    });
+    return out.join("\r\n") + "\r\n";
+  }
+  function parseRecord(text) {
+    var r = {}, cols = null;
+    parseCsv(text || "").forEach(function (x) {
+      if (!x.fields || x.fields.every(function (f) { return !f.trim(); })) return;
+      var f = x.fields.map(function (v) { return v.trim(); });
+      if (!cols) { cols = f.map(function (v) { return v.toUpperCase(); }); return; }
+      var at = function (h) { var i = cols.indexOf(h); return i >= 0 ? f[i] || "" : ""; };
+      var id = normId(at("ID")), g = Math.round(parseFloat(at("GAIN")));
+      if (!/^0x/.test(id) || isNaN(g)) return;
+      r[id] = { fname: at("FNAME").replace(/\\/g, "/"), gain: Math.max(0, Math.min(100, g)), source: at("SOURCE") };
+    });
+    return r;
+  }
+  function dirty() { return recordText(repl) !== recordText(disk) || Object.keys(blobs).length > 0; }
+  function counts() {
+    var n = { rep: 0, vol: 0 };
+    Object.keys(repl).forEach(function (k) { if (repl[k].fname) n.rep++; else n.vol++; });
+    return n;
+  }
+
+  // Browser storage of what is not in the folder yet (IndexedDB: files too), and of the
+  // folder picked in Chrome/Edge. Without it the page works, only nothing is remembered.
+  var PENDING = "pending:" + (data.rom || ""), DIRKEY = "dir:" + (data.rom || "");
+  function idb() {
+    return new Promise(function (ok, ko) {
+      var rq = indexedDB.open("rom2altsound", 1);
+      rq.onupgradeneeded = function () { rq.result.createObjectStore("kv"); };
+      rq.onsuccess = function () { ok(rq.result); };
+      rq.onerror = function () { ko(rq.error); };
+    });
+  }
+  function idbDo(mode, fn) {
+    try {
+      return idb().then(function (db) {
+        return new Promise(function (ok, ko) {
+          var tx = db.transaction("kv", mode), rq = fn(tx.objectStore("kv"));
+          tx.oncomplete = function () { ok(rq && rq.result); };
+          tx.onerror = tx.onabort = function () { ko(tx.error); };
+        });
+      }).catch(function () { return null; });
+    } catch (e) { return Promise.resolve(null); }
+  }
+  function idbGet(k) { return idbDo("readonly", function (st) { return st.get(k); }); }
+  function idbPut(k, v) { return idbDo("readwrite", function (st) { return st.put(v, k); }); }
+  function idbDel(k) { return idbDo("readwrite", function (st) { return st.delete(k); }); }
+  function keepPending() {
+    if (!dirty()) return idbDel(PENDING);
+    return idbPut(PENDING, { base: recordText(disk), record: repl, blobs: blobs, touched: touched });
+  }
+
+  // The tools line.
+  var rtools = el("div", "tools");
+  rtools.appendChild(el("span", "lbl", "Your sounds:"));
+  var canPick = typeof window.showDirectoryPicker === "function";
+  var folder = null, folderSaved = null, saving = 0;
+  function rtool(text, title, fn) {
+    var b = el("button", null, text);
+    b.type = "button";
+    b.title = title;
+    b.addEventListener("click", fn);
+    rtools.appendChild(b);
+    return b;
+  }
+  var saveBtn = rtool("Save in the pack folder...", "Chrome and Edge: pick this pack's folder (" + (data.rom || "") +
+    ") once; then every change is written there (replace/, replacements.csv, altsound.csv, g-sound.csv)", function () { connect(); });
+  saveBtn.hidden = !canPick;
+  var dlBtn = rtool("Download changes", "Save a zip of your files and replacements.csv, then apply it: rom2altsound replace <pack folder> --apply <zip>, or rom2altsound's window: Apply page changes", downloadChanges);
+  var why = el("button", "link", "why?");
+  why.type = "button";
+  why.title = "Why the page cannot simply save your files";
+  why.addEventListener("click", function () {
+    showRep("A page opened from your disk may not write files, and rom2altsound runs no server for it: " +
+      "the page works without the program, from any copy of the folder. Chrome and Edge let you give it the pack's " +
+      "folder (Save in the pack folder); other browsers save a zip (Download changes), which " +
+      "rom2altsound replace <folder> --apply <zip> or the window's Apply page changes puts in the pack.");
+  });
+  rtools.appendChild(why);
+  var rstatus = el("span", null, "");
+  rstatus.id = "rep-status";
+  rstatus.setAttribute("aria-live", "polite");
+  rtools.appendChild(rstatus);
+  head.appendChild(rtools);
+  function showRep(msg) {
+    var n = counts(), d = dirty(), bits = [];
+    if (n.rep) bits.push(n.rep + " sound" + (n.rep > 1 ? "s" : "") + " replaced");
+    if (n.vol) bits.push(n.vol + " volume" + (n.vol > 1 ? "s" : "") + " changed");
+    var where = folder ? (saving ? "saving in " : "saved in ") + folder.name + "/" : d ? (canPick ? "not saved yet: Save in the pack folder, or Download changes"
+      : "not saved yet: Download changes, then apply the zip") : bits.length ? "in the pack" : "";
+    rstatus.textContent = (msg ? msg + " " : "") + (bits.length ? bits.join(", ") + (where ? " · " + where : "") + "."
+      : d ? "Back to the ROM's sounds · " + where + "." : "");
+    rstatus.className = d && !folder ? "dirty" : "";
+    dlBtn.disabled = !d;
+    saveBtn.textContent = folder ? "Saving in " + folder.name + "/" : folderSaved ? "Save in " + folderSaved.name + "/" : "Save in the pack folder...";
+    saveBtn.disabled = !!folder;
+  }
+
+  // What changed for a sound: the rows, the tag, the files, and the save.
+  function setEntry(s, e, blob) {
+    if (e) repl[s.key] = e; else delete repl[s.key];
+    if (blob && e) blobs[e.fname] = blob;
+    // Files chosen here that nothing plays any more are dropped.
+    Object.keys(blobs).forEach(function (f) {
+      if (!Object.keys(repl).some(function (k) { return repl[k].fname === f; })) delete blobs[f];
+    });
+    touched[s.key] = true;
+    if (playing && playing.s === s) { audio.pause(); mark(false); playing = null; $("now").textContent = "Nothing playing"; }
+    refreshFiles(s);
+    renderBtns(s);
+    hay(s);
+    apply();
+    var r = rows[s.i];
+    if (r.tabIndex === 0) setCurrent(r, false);
+    return persist();
+  }
+  var queue = Promise.resolve();
+  function persist() {
+    sounds.forEach(renderRep);
+    if (folder) {
+      saving++;
+      showRep();
+      // One write at a time, in the order of the changes.
+      queue = queue.then(writeFolder).then(function () { saving--; showRep(); }, function (e) {
+        saving--;
+        folder = null;
+        showRep("Not saved in the folder (" + e.message + ").");
+        return keepPending();
+      });
+      return queue;
+    }
+    showRep();
+    return keepPending();
+  }
+
+  // ---- The folder (Chrome, Edge) --------------------------------------------------
+  function fileIn(dir, path, create) {
+    var parts = path.split("/"), name = parts.pop();
+    var p = Promise.resolve(dir);
+    parts.forEach(function (d) { p = p.then(function (h) { return h.getDirectoryHandle(d, { create: !!create }); }); });
+    return p.then(function (h) { return h.getFileHandle(name, { create: !!create }); });
+  }
+  function readText(dir, path) {
+    return fileIn(dir, path, false).then(function (h) { return h.getFile(); })
+      .then(function (f) { return f.text(); }, function (e) { if (e && e.name === "NotFoundError") return null; throw e; });
+  }
+  function writeFile(dir, path, body) {
+    return fileIn(dir, path, true).then(function (h) { return h.createWritable(); })
+      .then(function (w) { return w.write(body).then(function () { return w.close(); }); });
+  }
+  function removeFile(dir, path) {
+    var parts = path.split("/"), name = parts.pop(), p = Promise.resolve(dir);
+    parts.forEach(function (d) { p = p.then(function (h) { return h.getDirectoryHandle(d); }); });
+    return p.then(function (h) { return h.removeEntry(name); }).catch(function () { /* already gone */ });
+  }
+  // FNAME and GAIN of the rows of the sounds in `ids` (as replace::rewrite_csv): the entry's
+  // file and gain, or the ROM's file at 100.
+  function rewriteCsv(text, ids) {
+    var eol = text.indexOf("\r\n") >= 0 ? "\r\n" : "\n", lines = text.split(/\r?\n/);
+    var cols = lines[0].split(",").map(function (c) { return c.trim().toUpperCase(); });
+    var ic = cols.indexOf("ID"), fc = cols.indexOf("FNAME"), gc = cols.indexOf("GAIN");
+    if (ic < 0 || fc < 0 || gc < 0) throw new Error("no ID, FNAME or GAIN column");
+    var owner = {};
+    sounds.forEach(function (s) {
+      if (ids[s.key] && s.rows) s.rows.forEach(function (r) { owner[normId(r)] = s; });
+    });
+    var out = [lines[0]];
+    for (var i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      var f = lines[i].split(","), s = owner[normId(f[ic])];
+      if (s && f.length === cols.length) {
+        var e = entryOf(s);
+        f[fc] = e && e.fname ? e.fname : s.factory_file;
+        f[gc] = String(e ? e.gain : 100);
+      }
+      out.push(f.join(","));
+    }
+    return out.join(eol) + eol;
+  }
+  function writeFolder() {
+    var dir = folder, ids = {};
+    Object.keys(touched).concat(Object.keys(repl), Object.keys(disk)).forEach(function (k) { ids[k] = true; });
+    var p = Promise.resolve();
+    Object.keys(blobs).forEach(function (f) { p = p.then(function () { return writeFile(dir, f, blobs[f]); }); });
+    p = p.then(function () {
+      return Object.keys(repl).length ? writeFile(dir, REPFILE, recordText(repl)) : removeFile(dir, REPFILE);
+    });
+    ["altsound.csv", "g-sound.csv"].forEach(function (n) {
+      p = p.then(function () { return readText(dir, n); }).then(function (t) {
+        if (t === null) return;
+        var nt = rewriteCsv(t, ids);
+        if (nt !== t) return writeFile(dir, n, nt);
+      });
+    });
+    // The files the folder's record listed and nothing plays now.
+    p = p.then(function () {
+      var kept = {};
+      Object.keys(repl).forEach(function (k) { kept[repl[k].fname] = true; });
+      return Promise.all(Object.keys(disk).map(function (k) {
+        var f = disk[k].fname;
+        return f && !kept[f] ? removeFile(dir, f) : null;
+      }));
+    });
+    // This page, with the new record in its data: opened again, it shows what the folder has.
+    p = p.then(function () { return readText(dir, "index.html"); }).then(function (t) {
+      if (t === null) return;
+      var d = JSON.parse(RAW);
+      d.replacements = Object.keys(repl).sort(byId).map(function (k) {
+        return { id: k, fname: repl[k].fname, gain: repl[k].gain, source: cleanFile(repl[k].source) };
+      });
+      var json = JSON.stringify(d).replace(/</g, "\\u003c");
+      var nt = t.replace(/(id="data">)[\s\S]*?(<\/script>)/, function (m, a, b) { return a + json + b; });
+      if (nt !== t) return writeFile(dir, "index.html", nt);
+    });
+    return p.then(function () {
+      disk = JSON.parse(JSON.stringify(repl));
+      // What is written is now played from the folder.
+      Object.keys(blobs).forEach(function (f) { delete blobs[f]; });
+      touched = {};
+      sounds.forEach(function (s) { refreshFiles(s); renderBtns(s); renderRep(s); });
+      return idbDel(PENDING);
+    });
+  }
+  function connect() {
+    var pick = folderSaved
+      ? folderSaved.requestPermission({ mode: "readwrite" }).then(function (st) {
+          if (st === "granted") return folderSaved;
+          throw new Error("no permission");
+        })
+      : window.showDirectoryPicker({ id: "rom2altsound", mode: "readwrite" });
+    return pick.then(function (h) {
+      return readText(h, "manifest.json").then(function (t) {
+        var m = null;
+        try { m = JSON.parse(t); } catch (e) { /* not a pack */ }
+        if (!m || m.rom !== data.rom) {
+          folderSaved = null;
+          throw new Error(h.name + "/ is not the folder of " + data.rom + " (its manifest.json says " + (m ? m.rom : "nothing") + ")");
+        }
+        return readText(h, REPFILE);
+      }).then(function (t) {
+        // The folder may be newer than this page (a command run since): its record, with
+        // the changes made here on top.
+        var theirs = parseRecord(t);
+        if (recordText(theirs) !== recordText(disk)) {
+          Object.keys(theirs).forEach(function (k) { if (!touched[k]) repl[k] = theirs[k]; });
+          Object.keys(repl).forEach(function (k) { if (!touched[k] && !theirs[k]) delete repl[k]; });
+          disk = theirs;
+          sounds.forEach(function (s) { refreshFiles(s); renderBtns(s); hay(s); });
+          apply();
+        }
+        folder = h;
+        folderSaved = h;
+        idbPut(DIRKEY, h);
+        return persist();
+      });
+    }).catch(function (e) {
+      if (e && e.name === "AbortError") return;
+      showRep("Not saved (" + (e && e.message || e) + ").");
+    });
+  }
+
+  // ---- Download changes (every browser) -------------------------------------------
+  var CRC = (function () {
+    var t = new Uint32Array(256);
+    for (var n = 0; n < 256; n++) {
+      var c = n;
+      for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(b) {
+    var c = 0xFFFFFFFF;
+    for (var i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+  // A zip of stored (uncompressed) members: audio does not deflate much.
+  function zipOf(members) {
+    var parts = [], central = [], off = 0, enc = new TextEncoder();
+    members.forEach(function (m) {
+      var name = enc.encode(m.name), crc = crc32(m.data), n = m.data.length;
+      var h = new DataView(new ArrayBuffer(30));
+      h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true);
+      h.setUint16(8, 0, true); h.setUint16(10, 0, true); h.setUint16(12, 0x21, true);
+      h.setUint32(14, crc, true); h.setUint32(18, n, true); h.setUint32(22, n, true);
+      h.setUint16(26, name.length, true); h.setUint16(28, 0, true);
+      parts.push(h.buffer, name, m.data);
+      var c = new DataView(new ArrayBuffer(46));
+      c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true);
+      c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true); c.setUint16(12, 0, true); c.setUint16(14, 0x21, true);
+      c.setUint32(16, crc, true); c.setUint32(20, n, true); c.setUint32(24, n, true);
+      c.setUint16(28, name.length, true); c.setUint32(42, off, true);
+      central.push(c.buffer, name);
+      off += 30 + name.length + n;
+    });
+    var size = central.reduce(function (a, b) { return a + b.byteLength; }, 0);
+    var e = new DataView(new ArrayBuffer(22));
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, members.length, true); e.setUint16(10, members.length, true);
+    e.setUint32(12, size, true); e.setUint32(16, off, true);
+    return new Blob(parts.concat(central, [e.buffer]), { type: "application/zip" });
+  }
+  function downloadChanges() {
+    var names = Object.keys(blobs);
+    Promise.all(names.map(function (f) { return blobs[f].arrayBuffer(); })).then(function (bufs) {
+      var members = [{ name: REPFILE, data: new TextEncoder().encode("# rom: " + (data.rom || "") + "\r\n" + recordText(repl)) }];
+      names.forEach(function (f, i) { members.push({ name: f, data: new Uint8Array(bufs[i]) }); });
+      var url = URL.createObjectURL(zipOf(members)), a = el("a");
+      a.href = url;
+      a.download = (data.rom || "pack") + "-replacements.zip";
+      a.hidden = true;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1000);
+      showRep(a.download + ": apply it with rom2altsound replace <the " + (data.rom || "") +
+        " folder> --apply " + a.download + " (or rom2altsound's window: Apply page changes), then open this page again.");
+    }, function (e) { showRep("Cannot read the files (" + e.message + ")."); });
+  }
+
+  // ---- Loudness, as rom2altsound measures it (loudness.rs: BS.1770, a mono file as two
+  // identical channels, a file under 400 ms padded to one gating block) ----------------
+  function biquad(x, b, a) {
+    var y = new Float64Array(x.length), x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (var i = 0; i < x.length; i++) {
+      var v = b[0] * x[i] + b[1] * x1 + b[2] * x2 - a[1] * y1 - a[2] * y2;
+      x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v;
+    }
+    return y;
+  }
+  function kWeight(x, fs) {
+    var f0 = 1681.974450955533, G = 3.999843853973347, Q = 0.7071752369554196;
+    var K = Math.tan(Math.PI * f0 / fs), Vh = Math.pow(10, G / 20), Vb = Math.pow(Vh, 0.4996667741545416);
+    var a0 = 1 + K / Q + K * K;
+    var y = biquad(x, [(Vh + Vb * K / Q + K * K) / a0, 2 * (K * K - Vh) / a0, (Vh - Vb * K / Q + K * K) / a0],
+      [1, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0]);
+    f0 = 38.13547087602444; Q = 0.5003270373238773; K = Math.tan(Math.PI * f0 / fs);
+    var d = 1 + K / Q + K * K;
+    return biquad(y, [1, -2, 1], [1, 2 * (K * K - 1) / d, (1 - K / Q + K * K) / d]);
+  }
+  // Largest magnitude between the samples (4x, windowed sinc), around the loud samples.
+  function truePeak(x) {
+    var p = 0, i;
+    for (i = 0; i < x.length; i++) if (Math.abs(x[i]) > p) p = Math.abs(x[i]);
+    var near = p * 0.6, best = p, H = 8;
+    for (i = 0; i + 1 < x.length; i++) {
+      if (Math.abs(x[i]) < near && Math.abs(x[i + 1]) < near) continue;
+      for (var ph = 1; ph < 4; ph++) {
+        var t = ph / 4, v = 0;
+        for (var k = -H + 1; k <= H; k++) {
+          var j = i + k;
+          if (j < 0 || j >= x.length) continue;
+          var u = t - k, w = Math.PI * u;
+          var sinc = Math.abs(u) < 1e-9 ? 1 : Math.sin(w) / w;
+          var win = 0.5 + 0.5 * Math.cos(Math.PI * u / H);
+          v += x[j] * sinc * win;
+        }
+        if (Math.abs(v) > best) best = Math.abs(v);
+      }
+    }
+    return best;
+  }
+  function measure(buf) {
+    var fs = buf.sampleRate, ch = buf.numberOfChannels, n = buf.length, step = Math.ceil(fs / 10);
+    var steps = Math.floor(n / step), sq = new Float64Array(Math.max(steps, 1)), all = 0, tp = 0;
+    for (var c = 0; c < ch; c++) {
+      var x = buf.getChannelData(c), y = kWeight(x, fs), w = ch === 1 ? 2 : 1;
+      for (var i = 0; i < n; i++) {
+        var e = y[i] * y[i] * w;
+        all += e;
+        var k = Math.floor(i / step);
+        if (k < steps) sq[k] += e;
+      }
+      tp = Math.max(tp, truePeak(x));
+    }
+    var blocks = [];
+    for (var j = 3; j < steps; j++) blocks.push((sq[j] + sq[j - 1] + sq[j - 2] + sq[j - 3]) / (4 * step));
+    if (!blocks.length && n) blocks.push(all / (4 * step));
+    var abs = blocks.filter(function (b) { return b > 0 && -0.691 + 10 * Math.log10(b) > -70; });
+    var level = null;
+    if (abs.length) {
+      var mean = abs.reduce(function (a, b) { return a + b; }, 0) / abs.length;
+      var rel = abs.filter(function (b) { return -0.691 + 10 * Math.log10(b) > -0.691 + 10 * Math.log10(mean) - 10; });
+      var m2 = rel.reduce(function (a, b) { return a + b; }, 0) / rel.length;
+      level = -0.691 + 10 * Math.log10(m2);
+    }
+    return { level: level, tp: tp > 0 ? 20 * Math.log10(tp) : null, secs: n / fs };
+  }
+  // 16-bit PCM WAV of the buffer times `gain`.
+  function wavOf(buf, gain) {
+    var ch = buf.numberOfChannels, n = buf.length, fs = buf.sampleRate, out = new DataView(new ArrayBuffer(44 + n * ch * 2));
+    var str = function (o, t) { for (var i = 0; i < t.length; i++) out.setUint8(o + i, t.charCodeAt(i)); };
+    str(0, "RIFF"); out.setUint32(4, 36 + n * ch * 2, true); str(8, "WAVE"); str(12, "fmt ");
+    out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, ch, true);
+    out.setUint32(24, fs, true); out.setUint32(28, fs * ch * 2, true); out.setUint16(32, ch * 2, true);
+    out.setUint16(34, 16, true); str(36, "data"); out.setUint32(40, n * ch * 2, true);
+    var chans = [];
+    for (var c = 0; c < ch; c++) chans.push(buf.getChannelData(c));
+    var o = 44;
+    for (var i = 0; i < n; i++) {
+      for (c = 0; c < ch; c++) {
+        var v = Math.round(chans[c][i] * gain * 32767);
+        out.setInt16(o, v > 32767 ? 32767 : v < -32768 ? -32768 : v, true);
+        o += 2;
+      }
+    }
+    return new Blob([out.buffer], { type: "audio/wav" });
+  }
+  function decode(file) {
+    return file.arrayBuffer().then(function (ab) {
+      var head = new Uint8Array(ab.slice(0, 64)), txt = String.fromCharCode.apply(null, head);
+      // Ogg Opus: browsers play it, AltSound (stb_vorbis) does not.
+      var opus = txt.indexOf("OggS") === 0 && txt.indexOf("OpusHead") >= 0;
+      var ctx = new OfflineAudioContext(1, 1, data.sample_rate || 44100);
+      return ctx.decodeAudioData(ab).then(function (buf) { return { buf: buf, opus: opus }; });
+    });
+  }
+
+  // ---- The dialog -----------------------------------------------------------------
+  var RAW = document.getElementById("data").textContent;
+  var dlg = $("rep"), ra = $("rep-audio"), cur = null;
+  var HEAD = -1; // a raised file peaks at -1 dBTP
+  function target(s) { return typeof s.level_lufs === "number" ? s.level_lufs : typeof s.lufs === "number" ? s.lufs : null; }
+  function gainOfDb(d) { return Math.max(0, Math.min(100, Math.round(100 * Math.pow(10, d / 20)))); }
+  function openRep(s) {
+    if (!s.rows || !s.factory_file) return;
+    if (playing) audio.pause();
+    var e = entryOf(s), n = nameOf(s);
+    cur = { s: s, e: e, file: null, dec: null, m: null, raise: false, db: e ? (e.gain > 0 ? 20 * Math.log10(e.gain / 100) : -40) : 0, side: "A", out: null };
+    $("rep-title").textContent = (e && e.fname ? "Your sound for " : "Replace ") + s.id + (n ? " " + n : "");
+    var bits = ["The ROM's sound: " + secs(s.duration)];
+    if (typeof target(s) === "number") bits.push(target(s).toFixed(1) + " LUFS");
+    if (typeof s.true_peak === "number") bits.push("peak " + s.true_peak.toFixed(1) + " dBTP");
+    $("rep-orig").textContent = bits.join(", ") + (s.rows.length > 1 ? " · rows " + s.rows.join(" ") : "") + ".";
+    var looped = !!(s.pack && s.pack.kind === "body_loop");
+    $("rep-loop").hidden = !looped;
+    $("rep-looped").checked = looped;
+    $("rep-input").value = "";
+    $("rep-revert").hidden = !e;
+    showCur();
+    ra.removeAttribute("src");
+    sideTo("A", false);
+    if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
+    $("rep-pick").focus();
+  }
+  function closeRep() {
+    ra.pause();
+    if (cur && cur.outUrl) URL.revokeObjectURL(cur.outUrl);
+    cur = null;
+    if (dlg.open) dlg.close();
+  }
+  // The file AltSound would play (with its FNAME), or null for the ROM's file.
+  function output() {
+    var c = cur;
+    if (!c.file) return null;
+    var name = cleanFile(c.file.name), dot = name.lastIndexOf("."), ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+    var stem = dot > 0 ? name.slice(0, dot) : name;
+    var asWav = c.raise || c.dec.opus || EXTS.indexOf(ext) < 0;
+    var f = REPDIR + "/" + c.s.key + "-" + (asWav ? stem + ".wav" : name);
+    // Never the name of the file it replaces: the folder still has that one.
+    var taken = function (x) { return (c.e && c.e.fname === x) || blobs[x]; };
+    for (var i = 2; taken(f); i++) f = REPDIR + "/" + c.s.key + "-" + stem + "-" + i + "." + (asWav ? "wav" : ext);
+    if (!c.out || c.out.raise !== c.raise || c.out.fname !== f) {
+      var blob = asWav ? wavOf(c.dec.buf, c.raise ? Math.pow(10, (HEAD - c.m.tp) / 20) : 1) : c.file;
+      if (c.outUrl) URL.revokeObjectURL(c.outUrl);
+      c.out = { raise: c.raise, fname: f, blob: blob, wav: asWav };
+      c.outUrl = URL.createObjectURL(blob);
+    }
+    return c.out;
+  }
+  function headroom() { var m = cur.m; return m && m.tp !== null ? HEAD - m.tp : 0; }
+  // The level of what AltSound plays: the file, raised or not, at the volume.
+  function playedLevel() {
+    var m = cur.m;
+    if (!m || m.level === null) return null;
+    return m.level + (cur.raise ? headroom() : 0) + cur.db;
+  }
+  function match() {
+    var c = cur, T = target(c.s);
+    if (!c.m || c.m.level === null || T === null) return;
+    var d = T - c.m.level, h = headroom();
+    // Louder than the ROM's: lowered by GAIN. Quieter: raised to its maximum (a WAV copy),
+    // then lowered by GAIN as far as needed.
+    c.raise = d > 0 && h > 0.1;
+    c.db = Math.max(-40, Math.min(0, d - (c.raise ? h : 0)));
+  }
+  function showCur() {
+    var c = cur, s = c.s, T = target(s), m = c.m;
+    var fileTxt = c.file
+      ? c.file.name + (m ? ": " + secs(m.secs) + (m.level !== null ? ", " + m.level.toFixed(1) + " LUFS" : ", silent") +
+        (m.tp !== null ? ", peak " + m.tp.toFixed(1) + " dBTP" : "") : ": reading...")
+      : c.e && c.e.fname ? "Now: " + (c.e.source || c.e.fname) + " (" + c.e.fname + ")" : "No file: the ROM's sound, at the volume below.";
+    $("rep-file").textContent = fileTxt;
+    var g = gainOfDb(c.db);
+    $("rep-gain").value = String(Math.max(-40, c.db));
+    $("rep-gainv").value = "GAIN " + g + " (" + gainDb(g) + ")";
+    $("rep-gainv").textContent = $("rep-gainv").value;
+    $("rep-raise").checked = c.raise;
+    $("rep-raise").disabled = !m || headroom() <= 0.1;
+    $("rep-match").disabled = !m || m.level === null || T === null;
+    var note = $("rep-note"), lv = playedLevel(), msgs = [], warn = false;
+    if (c.file && !m) msgs.push("Measuring your file...");
+    if (m) {
+      var out = output();
+      msgs.push("AltSound will play " + out.fname + (out.wav ? " (a WAV copy" + (c.raise ? ", raised " + headroom().toFixed(1) + " dB to peak at " + HEAD + " dBTP" : "") + ")" : " (your file as it is)") + " at GAIN " + g + ".");
+      if (c.dec.opus) msgs.push("Ogg Opus does not play in AltSound: saved as WAV.");
+      if (lv !== null && T !== null) {
+        var diff = lv - T;
+        if (Math.abs(diff) < 0.25) msgs.push("Same loudness as the ROM's sound (" + T.toFixed(1) + " LUFS).");
+        else {
+          msgs.push((diff > 0 ? "Louder" : "Quieter") + " than the ROM's sound by " + Math.abs(diff).toFixed(1) + " dB (" + lv.toFixed(1) + " against " + T.toFixed(1) + " LUFS).");
+          if (diff < -0.25 && g >= 100 && (c.raise || headroom() <= 0.1)) {
+            msgs.push("It cannot go louder: AltSound can only lower a sound, and the file is at its maximum.");
+            warn = true;
+          }
+        }
+      }
+    } else if (!c.file && c.e && c.e.fname) {
+      msgs.push("AltSound plays " + c.e.fname + " at GAIN " + g + ".");
+    } else if (!c.file) {
+      msgs.push(g === 100 ? "The ROM's sound as extracted." : "AltSound plays the ROM's file at GAIN " + g + ".");
+    }
+    note.textContent = msgs.join(" ");
+    note.className = warn ? "warn" : "note";
+    $("rep-b").disabled = false;
+    $("rep-ok").disabled = !!c.file && !m;
+    ra.volume = c.side === "B" ? g / 100 : 1;
+  }
+  function srcB() {
+    var c = cur, o = c.m ? output() : null;
+    if (o) return c.outUrl;
+    if (c.e && c.e.fname) return blobs[c.e.fname] ? blobUrl(blobs[c.e.fname]) : href(c.e.fname);
+    return href(c.s.factory_file);
+  }
+  function sideTo(side, keep) {
+    var c = cur, t = ra.currentTime || 0, was = keep && !ra.paused;
+    c.side = side;
+    $("rep-side").textContent = side;
+    $("rep-side").className = side === "B" ? "b" : "";
+    $("rep-a").setAttribute("aria-pressed", side === "A" ? "true" : "false");
+    $("rep-b").setAttribute("aria-pressed", side === "B" ? "true" : "false");
+    var src = side === "A" ? href(c.s.factory_file) : srcB();
+    if (ra.getAttribute("src") !== src) {
+      if (keep) {
+        var once = function () {
+          ra.removeEventListener("loadedmetadata", once);
+          try { ra.currentTime = isFinite(ra.duration) ? Math.min(t, ra.duration) : t; } catch (e) { /* not seekable */ }
+        };
+        ra.addEventListener("loadedmetadata", once);
+      }
+      ra.src = src;
+    }
+    ra.loop = $("rep-looped").checked;
+    ra.volume = side === "B" ? gainOfDb(c.db) / 100 : 1;
+    if (was) ra.play().catch(function () {});
+  }
+  $("rep-a").addEventListener("click", function () { sideTo("A", false); ra.currentTime = 0; ra.play().catch(function () {}); });
+  $("rep-b").addEventListener("click", function () { sideTo("B", false); ra.currentTime = 0; ra.play().catch(function () {}); });
+  $("rep-ab").addEventListener("click", function () {
+    var was = !ra.paused;
+    sideTo(cur.side === "A" ? "B" : "A", true);
+    if (!was) ra.play().catch(function () {});
+  });
+  $("rep-looped").addEventListener("change", function () { ra.loop = $("rep-looped").checked; });
+  $("rep-pick").addEventListener("click", function () { $("rep-input").click(); });
+  $("rep-input").addEventListener("change", function () {
+    var f = $("rep-input").files && $("rep-input").files[0], c = cur;
+    if (!f || !c) return;
+    c.file = f; c.dec = null; c.m = null; c.out = null;
+    showCur();
+    decode(f).then(function (d) {
+      if (cur !== c || c.file !== f) return;
+      c.dec = d;
+      c.m = measure(d.buf);
+      c.db = 0;
+      c.raise = false;
+      match();
+      showCur();
+      sideTo("B", false);
+    }, function (e) {
+      if (cur !== c) return;
+      c.file = null;
+      showCur();
+      $("rep-note").textContent = f.name + ": this browser cannot read it as sound" + (e && e.message ? " (" + e.message + ")" : "") + ".";
+      $("rep-note").className = "warn";
+    });
+  });
+  $("rep-gain").addEventListener("input", function () { cur.db = parseFloat($("rep-gain").value); showCur(); });
+  $("rep-match").addEventListener("click", function () { match(); showCur(); if (cur.side === "B") sideTo("B", true); });
+  $("rep-raise").addEventListener("change", function () {
+    // The same loudness as before, from the other file.
+    var lv = playedLevel();
+    cur.raise = $("rep-raise").checked;
+    if (lv !== null) cur.db = Math.max(-40, Math.min(0, lv - cur.m.level - (cur.raise ? headroom() : 0)));
+    showCur();
+    if (cur.side === "B") sideTo("B", true);
+  });
+  $("rep-cancel").addEventListener("click", closeRep);
+  dlg.addEventListener("cancel", function () { ra.pause(); cur = null; });
+  dlg.addEventListener("close", function () { ra.pause(); });
+  $("rep-revert").addEventListener("click", function () {
+    var s = cur.s;
+    closeRep();
+    setEntry(s, null, null);
+  });
+  $("rep-ok").addEventListener("click", function () {
+    var c = cur, s = c.s, g = gainOfDb(c.db), o = c.m ? output() : null;
+    closeRep();
+    if (o) setEntry(s, { fname: o.fname, gain: g, source: c.file.name }, o.blob);
+    else if (c.e && c.e.fname) setEntry(s, { fname: c.e.fname, gain: g, source: c.e.source }, null);
+    else if (g !== 100) setEntry(s, { fname: "", gain: g, source: "" }, null);
+    else if (c.e) setEntry(s, null, null);
+  });
+
+  // Changes made here earlier and not in the folder yet (browser storage), and the folder
+  // picked last time (Chrome, Edge).
+  idbGet(PENDING).then(function (p) {
+    if (!p || !p.record) return;
+    var here = recordText(disk);
+    // Applied since (the zip, or the folder written): the page now says what they said.
+    if (here !== p.base && recordText(p.record) === here) { idbDel(PENDING); return; }
+    repl = p.record;
+    blobs = p.blobs || {};
+    touched = p.touched || {};
+    sounds.forEach(function (s) { refreshFiles(s); renderBtns(s); hay(s); renderRep(s); });
+    apply();
+    showRep("Restored your changes from this browser.");
+  });
+  if (canPick) idbGet(DIRKEY).then(function (h) { if (h && h.requestPermission) { folderSaved = h; showRep(); } });
+  showRep();
 
   showEdits();
   apply();

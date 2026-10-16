@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+- **Replacement sounds: your own files instead of the ROM's, one sound at a time.** The
+  pack made from the ROM stays as extracted; the user's files go in the pack's `replace/`
+  folder and `replacements.csv` (`ID,FNAME,GAIN,SOURCE`) says which sound plays which file
+  at which GAIN. altsound.csv and g-sound.csv follow it: only FNAME and GAIN of the sound's
+  rows change (its copies under other ids included: the Whitestar `0xFDxx` rows, the
+  System 11 board 1 rows `0x00xx`), and a sound taken off the list gets the ROM's file back
+  at GAIN 100. Checked with libaltsound's own player: `replace/...` plays.
+  - **The listening page has a ⇄ button on each row** (key `r`): pick a WAV, OGG, MP3 or
+    FLAC file, listen to it against the ROM's sound (A, B, A/B at the same position, looped
+    or not), set its volume. The page measures the file as rom2altsound measures the ROM's
+    sounds (BS.1770 loudness, a mono file as two channels, true peak) and proposes the same
+    loudness: a louder file is lowered by GAIN; a quieter one is first raised to its maximum
+    (-1 dBTP) into a 16-bit WAV copy, since AltSound's GAIN only lowers. Ogg Opus (which
+    AltSound cannot play) and other formats the browser reads are saved as WAV. ⇄ without a
+    file changes only the volume of the ROM's sound. Rows are marked "replaced" or "volume
+    N%", and "Changed only" filters them; the main player plays them at their GAIN.
+  - **Saving from the page, without a server**: in Chrome and Edge, "Save in the pack
+    folder..." (File System Access) writes each change into the folder (the files,
+    replacements.csv, both CSVs and the page's own data). Other browsers keep the changes
+    in IndexedDB and "Download changes" saves a `<rom>-replacements.zip`, applied by
+    `rom2altsound replace <folder> --apply <zip>` or the window's new "Apply page
+    changes..." button (which finds the ROM's pack folder from the zip).
+  - **`rom2altsound replace <folder>`**: `--id ID --file F [--gain N]`, `--id ID --gain N`
+    (volume only), `--revert ID`, `--revert-all`, `--apply ZIP`; alone, it applies
+    replacements.csv again after a hand edit. Files no longer listed are removed from
+    `replace/`.
+  - **A new extraction into the folder keeps the replacements**: `replace/` and
+    replacements.csv are applied to the new CSVs; sounds the new pack lacks, and files
+    missing from `replace/`, are reported (those rows play the ROM's file) and kept in the
+    record.
+  - The page test (`tools/html-test`) now also runs WebKit, and replaces a sound with the
+    ROM's own file (the page must measure it as loud as the manifest says), with a copy
+    20 dB quieter (raised, then lowered to the same loudness), changes a volume and saves:
+    into a folder in Chromium, as a zip in Firefox and WebKit.
+- **The window's log stays still while ROMs run.** Each log line is one row (long ones
+  scroll sideways) of the real row height, in a column of stable width: in "every ROM"
+  mode, wrapped `[rom]` lines made the log jump at each new line.
+
 ## 0.3.0 (2026-10-15)
 
 Every sound of every supported ROM, from silence, at the game's own volume: a whole-catalog
