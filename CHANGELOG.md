@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-10-16)
+
+Replacement sounds: the pack made from the ROM stays as it is, and you replace its sounds
+one at a time with your own files, from the listening page (⇄), the window or the command
+line, at the ROM's loudness, without ever losing the ROM's sound. And the window's log no
+longer jumps.
 
 - **Replacement sounds: your own files instead of the ROM's, one sound at a time.** The
   pack made from the ROM stays as extracted; the user's files go in the pack's `replace/`
