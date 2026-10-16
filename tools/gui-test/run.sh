@@ -12,10 +12,14 @@
 #   WORK      output, PinMAME's cache and screenshots (default: ~/.cache/claude-work/r2a-gui-test)
 #   EGUI_MCP  the egui-mcp server (`cargo install egui_mcp`; default: egui-mcp on PATH)
 #   NO_BUILD  1: use the already built target/release/rom2altsound-gui
+#   DRIVER    the scenario script next to this one (default: drive.py; log_jitter.py checks
+#             that the log panel holds still while ROMs run)
+#   DRIVER_ARGS  more arguments for the scenario script (e.g. "--width 900 --trace")
 #
 # The window program is built on the host and mounted in: the image is the same Ubuntu
 # release as the build machine (24.04), so the same glibc.
 set -euo pipefail
+DRIVER_ARGS=${DRIVER_ARGS:-}
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
@@ -64,8 +68,8 @@ for z in $zips; do rom_args+=(--rom "/roms/$z.zip"); done
 # The extraction processes still alive (the window itself excluded): none after a cancel.
 procs="docker exec $name sh -c 'ps -eo args | grep -c \"^rom2altsound-gui .*--in-process\" || true'"
 status=0
-timeout 2400 python3 "$here/drive.py" --mcp "$mcp" --port "$port" --shots "$work/shots" \
-  --out /out/packs --folder /roms --check-procs "$procs" "${rom_args[@]}" || status=$?
+timeout 2400 python3 "$here/${DRIVER:-drive.py}" --mcp "$mcp" --port "$port" --shots "$work/shots" \
+  --out /out/packs --folder /roms --check-procs "$procs" "${rom_args[@]}" $DRIVER_ARGS || status=$?
 docker logs "$name" > "$work/container.log" 2>&1 || true
 echo "screenshots: $work/shots   packs: $work/out/packs   log: $work/container.log"
 exit $status

@@ -1,6 +1,6 @@
 //! The window: the ROM list, the output folder, the options, the run.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -105,6 +105,10 @@ pub struct App {
     index: Option<PathBuf>,
     last_root: Option<PathBuf>,
     log: Vec<(String, String)>,
+    /// The longest line of each ROM's log, in characters (the key "" for the lines of no
+    /// ROM): the log's width, fixed whatever lines are on screen. It never shrinks while
+    /// a run lasts, even once the oldest lines drop out of the log.
+    log_widest: HashMap<String, usize>,
     log_filter: Option<String>,
     /// The machine's cores: the most ROMs at the same time offered.
     max_jobs: u32,
@@ -150,6 +154,7 @@ impl App {
             index: None,
             last_root: None,
             log: Vec::new(),
+            log_widest: HashMap::new(),
             log_filter: None,
             max_jobs,
         }
@@ -184,8 +189,8 @@ impl App {
                     self.dispatch_check(ctx);
                 }
                 Msg::Started { rom, out } => {
-                    self.log
-                        .push((rom.clone(), format!("--- {rom} -> {}", out.display())));
+                    let line = format!("--- {rom} -> {}", out.display());
+                    self.push_log(rom.clone(), line);
                     if let Some(r) = self.row_mut(&rom) {
                         r.state = RunState::Running {
                             step: None,
@@ -193,12 +198,7 @@ impl App {
                         };
                     }
                 }
-                Msg::Log { rom, line } => {
-                    self.log.push((rom, line));
-                    if self.log.len() > LOG_LINES {
-                        self.log.drain(..self.log.len() - LOG_LINES);
-                    }
-                }
+                Msg::Log { rom, line } => self.push_log(rom, line),
                 Msg::Progress { rom, step } => {
                     if let Some(r) = self.row_mut(&rom)
                         && let RunState::Running { step: s, .. } = &mut r.state
@@ -211,7 +211,7 @@ impl App {
                         run.finished += 1;
                     }
                     let line = batch::line(&o);
-                    self.log.push((o.rom.clone(), line));
+                    self.push_log(o.rom.clone(), line);
                     if let Some(r) = self.row_mut(&o.rom) {
                         r.state = match o.error {
                             None => RunState::Done {
@@ -232,11 +232,35 @@ impl App {
                     }
                     match index {
                         Some(Ok(p)) => self.index = Some(p),
-                        Some(Err(e)) => self.log.push((String::new(), e)),
+                        Some(Err(e)) => self.push_log(String::new(), e),
                         None => {}
                     }
                 }
             }
+        }
+    }
+
+    fn push_log(&mut self, rom: String, line: String) {
+        let n = line.chars().count();
+        let w = self.log_widest.entry(rom.clone()).or_default();
+        *w = (*w).max(n);
+        self.log.push((rom, line));
+        if self.log.len() > LOG_LINES {
+            self.log.drain(..self.log.len() - LOG_LINES);
+        }
+    }
+
+    /// The longest line the log shows with the current filter, in characters (the lines
+    /// of every ROM carry a "[rom] " prefix).
+    fn log_widest_chars(&self) -> usize {
+        match &self.log_filter {
+            Some(f) => self.log_widest.get(f).copied().unwrap_or(0),
+            None => self
+                .log_widest
+                .iter()
+                .map(|(rom, n)| n + log_prefix_chars(rom))
+                .max()
+                .unwrap_or(0),
         }
     }
 
@@ -405,8 +429,8 @@ impl App {
         self.index = None;
         self.last_root = Some(root);
         self.log.clear();
-        self.log
-            .push((String::new(), format!("rom2altsound {}", args.join(" "))));
+        self.log_widest.clear();
+        self.push_log(String::new(), format!("rom2altsound {}", args.join(" ")));
         let watch = Arc::new(Watch::default());
         let tx = self.tx.clone();
         let ctx = ctx.clone();
@@ -927,20 +951,31 @@ impl App {
                     .iter()
                     .filter(|(r, _)| self.log_filter.as_ref().is_none_or(|f| f == r))
                     .collect();
-                let h = ui.text_style_height(&egui::TextStyle::Monospace);
+                // `show_rows` lays out only the rows on screen and sizes the content from
+                // the row height it is given: every row must be exactly that tall (one
+                // unwrapped line of this font), and the content as wide whatever rows are
+                // on screen. Otherwise the content's size changes with the scroll offset,
+                // and a view stuck to the bottom bounces at each new line.
+                let font = egui::FontId::monospace(11.5);
+                let (row_h, char_w) =
+                    ui.fonts_mut(|f| (f.row_height(&font), f.glyph_width(&font, 'M')));
+                let width = self.log_widest_chars() as f32 * char_w;
                 egui::ScrollArea::both()
                     .id_salt("log-scroll")
                     .max_height(220.0)
                     .stick_to_bottom(true)
                     .auto_shrink([false, true])
-                    .show_rows(ui, h, lines.len(), |ui, range| {
+                    .show_rows(ui, row_h, lines.len(), |ui, range| {
+                        ui.set_min_width(width);
                         for (rom, line) in &lines[range] {
                             let text = if self.log_filter.is_some() || rom.is_empty() {
                                 line.clone()
                             } else {
                                 format!("[{rom}] {line}")
                             };
-                            ui.label(RichText::new(text).monospace().size(11.5));
+                            ui.add(
+                                egui::Label::new(RichText::new(text).font(font.clone())).extend(),
+                            );
                         }
                     });
             });
@@ -1027,6 +1062,15 @@ impl eframe::App for App {
         if let Some(h) = self.running.as_mut().and_then(|r| r.engine.take()) {
             let _ = h.join();
         }
+    }
+}
+
+/// The characters of the "[rom] " prefix of a ROM's lines in the log of every ROM.
+fn log_prefix_chars(rom: &str) -> usize {
+    if rom.is_empty() {
+        0
+    } else {
+        rom.chars().count() + 3
     }
 }
 
