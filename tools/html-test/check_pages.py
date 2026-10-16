@@ -321,6 +321,19 @@ def exercise_replace(page, problems, shots, name, folder):
                 problems.append(f"folder: {csv} does not play {wav}")
         if '"replacements":[{' not in fs.get("index.html", ""):
             problems.append("folder: index.html has not the new record")
+        # LUFS and OFFSET: the file's loudness, matched to the ROM's sound (OFFSET about 0).
+        row_a = next((l.split(",") for l in rec.splitlines() if l.startswith(a["rows"][0] + ",")), [])
+        try:
+            if len(row_a) != 6 or abs(float(row_a[5])) > 0.3 or float(row_a[4]) > -1:
+                raise ValueError
+        except ValueError:
+            problems.append(f"folder: replacements.csv LUFS/OFFSET of {a['id']}: {row_a}")
+        # Opened again, without the file: the page knows its loudness from the record.
+        row(a).locator("button.rp").click()
+        reopened = page.locator("#rep-note").text_content()
+        page.click("#rep-cancel")
+        if "Same loudness" not in reopened:
+            problems.append(f"reopened {a['id']}: {reopened}")
         # Back to the ROM's sound: its row as extracted.
         row(b).locator("button.rp").click()
         page.click("#rep-revert")

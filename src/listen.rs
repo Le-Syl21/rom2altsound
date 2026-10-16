@@ -216,6 +216,8 @@ fn add_replacements(data: &mut Value, m: &Value, dir: &Path) -> Result<(), Strin
                 "fname": e.fname,
                 "gain": e.gain,
                 "source": e.source,
+                "lufs": e.lufs,
+                "offset": e.offset,
             }))
             .collect::<Vec<_>>()
     );

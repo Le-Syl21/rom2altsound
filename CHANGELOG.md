@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **Replacements keep their place against the ROM's sound when its level changes.**
+  `replacements.csv` gets two columns: LUFS (the replacement file's loudness at GAIN 100,
+  measured by the page, or by `rom2altsound replace --file` for a WAV file) and OFFSET (dB
+  above the ROM's sound, 0 when matched). A new extraction whose ROM sound has another
+  `level_lufs` (a PinMAME update such as the DAC change b022a0b) sets GAIN again to keep
+  that OFFSET, and says which GAINs changed. Older records (four columns) still read;
+  without LUFS and OFFSET a row keeps its GAIN. The page also uses the stored LUFS when its
+  dialog is opened again: "Match the ROM's loudness" and the loudness comparison work
+  without picking the file again.
+
 ## 0.4.0 (2026-10-16)
 
 Replacement sounds: the pack made from the ROM stays as it is, and you replace its sounds

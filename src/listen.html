@@ -986,10 +986,11 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
   function recordOf(list) {
     var r = {};
     (list || []).forEach(function (e) {
-      r[normId(e.id)] = { fname: e.fname || "", gain: e.gain, source: e.source || "" };
+      r[normId(e.id)] = { fname: e.fname || "", gain: e.gain, source: e.source || "", lufs: fin(e.lufs), offset: fin(e.offset) };
     });
     return r;
   }
+  function fin(v) { return typeof v === "number" && isFinite(v) ? v : null; }
   function entryOf(s) { return Object.prototype.hasOwnProperty.call(repl, s.key) ? repl[s.key] : null; }
   function refreshFiles(s) {
     var e = entryOf(s), own = e && e.fname;
@@ -1017,10 +1018,12 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
     return Array.from(n).slice(0, 80).join("");
   }
   function recordText(r) {
-    var out = ["ID,FNAME,GAIN,SOURCE"];
+    // LUFS: the file's loudness; OFFSET: dB above the ROM's sound. With both, a new
+    // extraction keeps the replacement OFFSET dB from the ROM's sound (replace.rs).
+    var out = ["ID,FNAME,GAIN,SOURCE,LUFS,OFFSET"], n2 = function (v) { return fin(v) === null ? "" : v.toFixed(2); };
     Object.keys(r).sort(byId).forEach(function (id) {
       var e = r[id];
-      out.push(id + "," + e.fname + "," + e.gain + "," + cleanFile(e.source));
+      out.push(id + "," + e.fname + "," + e.gain + "," + cleanFile(e.source) + "," + n2(e.lufs) + "," + n2(e.offset));
     });
     return out.join("\r\n") + "\r\n";
   }
@@ -1033,7 +1036,8 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
       var at = function (h) { var i = cols.indexOf(h); return i >= 0 ? f[i] || "" : ""; };
       var id = normId(at("ID")), g = Math.round(parseFloat(at("GAIN")));
       if (!/^0x/.test(id) || isNaN(g)) return;
-      r[id] = { fname: at("FNAME").replace(/\\/g, "/"), gain: Math.max(0, Math.min(100, g)), source: at("SOURCE") };
+      r[id] = { fname: at("FNAME").replace(/\\/g, "/"), gain: Math.max(0, Math.min(100, g)), source: at("SOURCE"),
+        lufs: fin(parseFloat(at("LUFS"))), offset: fin(parseFloat(at("OFFSET"))) };
     });
     return r;
   }
@@ -1230,7 +1234,8 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
       if (t === null) return;
       var d = JSON.parse(RAW);
       d.replacements = Object.keys(repl).sort(byId).map(function (k) {
-        return { id: k, fname: repl[k].fname, gain: repl[k].gain, source: cleanFile(repl[k].source) };
+        var e = repl[k];
+        return { id: k, fname: e.fname, gain: e.gain, source: cleanFile(e.source), lufs: fin(e.lufs), offset: fin(e.offset) };
       });
       var json = JSON.stringify(d).replace(/</g, "\\u003c");
       var nt = t.replace(/(id="data">)[\s\S]*?(<\/script>)/, function (m, a, b) { return a + json + b; });
@@ -1492,13 +1497,20 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
   }
   function headroom() { var m = cur.m; return m && m.tp !== null ? HEAD - m.tp : 0; }
   // The level of what AltSound plays: the file, raised or not, at the volume.
+  // The loudness of the file AltSound would play, at GAIN 100: the chosen file (raised or
+  // not), or the replacement already in place (its LUFS in replacements.csv).
+  function fileLevel() {
+    var m = cur.m, e = cur.e;
+    if (m) return m.level === null ? null : m.level + (cur.raise ? headroom() : 0);
+    return e && e.fname ? fin(e.lufs) : null;
+  }
   function playedLevel() {
-    var m = cur.m;
-    if (!m || m.level === null) return null;
-    return m.level + (cur.raise ? headroom() : 0) + cur.db;
+    var l = fileLevel();
+    return l === null ? null : l + cur.db;
   }
   function match() {
     var c = cur, T = target(c.s);
+    if (!c.m && fileLevel() !== null && T !== null) { c.db = Math.max(-40, Math.min(0, T - fileLevel())); return; }
     if (!c.m || c.m.level === null || T === null) return;
     var d = T - c.m.level, h = headroom();
     // Louder than the ROM's: lowered by GAIN. Quieter: raised to its maximum (a WAV copy),
@@ -1519,7 +1531,7 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
     $("rep-gainv").textContent = $("rep-gainv").value;
     $("rep-raise").checked = c.raise;
     $("rep-raise").disabled = !m || headroom() <= 0.1;
-    $("rep-match").disabled = !m || m.level === null || T === null;
+    $("rep-match").disabled = fileLevel() === null || T === null;
     var note = $("rep-note"), lv = playedLevel(), msgs = [], warn = false;
     if (c.file && !m) msgs.push("Measuring your file...");
     if (m) {
@@ -1539,6 +1551,11 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
       }
     } else if (!c.file && c.e && c.e.fname) {
       msgs.push("AltSound plays " + c.e.fname + " at GAIN " + g + ".");
+      if (lv !== null && T !== null) {
+        var dd = lv - T;
+        msgs.push(Math.abs(dd) < 0.25 ? "Same loudness as the ROM's sound (" + T.toFixed(1) + " LUFS)."
+          : (dd > 0 ? "Louder" : "Quieter") + " than the ROM's sound by " + Math.abs(dd).toFixed(1) + " dB.");
+      }
     } else if (!c.file) {
       msgs.push(g === 100 ? "The ROM's sound as extracted." : "AltSound plays the ROM's file at GAIN " + g + ".");
     }
@@ -1626,11 +1643,15 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
     setEntry(s, null, null);
   });
   $("rep-ok").addEventListener("click", function () {
-    var c = cur, s = c.s, g = gainOfDb(c.db), o = c.m ? output() : null;
+    var c = cur, s = c.s, g = gainOfDb(c.db), o = c.m ? output() : null, T = target(s);
+    // The file's loudness at GAIN 100, and where it plays against the ROM's sound.
+    var off = function (l) { return l !== null && T !== null && g > 0 ? l + 20 * Math.log10(g / 100) - T : null; };
+    var l = fileLevel();
     closeRep();
-    if (o) setEntry(s, { fname: o.fname, gain: g, source: c.file.name }, o.blob);
-    else if (c.e && c.e.fname) setEntry(s, { fname: c.e.fname, gain: g, source: c.e.source }, null);
-    else if (g !== 100) setEntry(s, { fname: "", gain: g, source: "" }, null);
+    if (o) {
+      setEntry(s, { fname: o.fname, gain: g, source: c.file.name, lufs: l, offset: off(l) }, o.blob);
+    } else if (c.e && c.e.fname) setEntry(s, { fname: c.e.fname, gain: g, source: c.e.source, lufs: fin(c.e.lufs), offset: off(fin(c.e.lufs)) }, null);
+    else if (g !== 100) setEntry(s, { fname: "", gain: g, source: "", lufs: null, offset: null }, null);
     else if (c.e) setEntry(s, null, null);
   });
 

@@ -303,8 +303,9 @@ later from the page. A file that is louder is used as it is, lowered by GAIN. If
 its maximum a file stays quieter than the ROM's sound, the page says so.
 
 Your files go in the pack's `replace/` folder (`replace/0x000A-<your file>`), and
-`replacements.csv` lists them: the sound, the file, its GAIN and the name of the file you
-picked. In `altsound.csv` and `g-sound.csv`, only the FNAME and GAIN of that sound's rows
+`replacements.csv` lists them: the sound, the file, its GAIN, the name of the file you
+picked, the file's loudness (LUFS) and how much louder or quieter than the ROM's sound you
+set it (OFFSET, in dB). In `altsound.csv` and `g-sound.csv`, only the FNAME and GAIN of that sound's rows
 change (its copies under other ids included: the Whitestar `0xFDxx` rows, the System 11
 board 1 rows); the channels, ducking and types stay the ROM's. The ROM's files are never
 touched.
@@ -336,7 +337,10 @@ rom2altsound replace altsound/taf_l5                            # after editing 
 
 Building the pack again (a new rom2altsound, a new PinMAME) keeps `replace/` and
 `replacements.csv` and applies them to the new pack; a sound the new pack no longer has is
-reported and kept in `replacements.csv`. AltSound plays WAV, MP3, FLAC and Ogg Vorbis, not
+reported and kept in `replacements.csv`. If the ROM's sound comes out at another level (a
+new PinMAME can change a board's output), GAIN is set again so that your file stays where
+you put it against the ROM's sound (its OFFSET). The command line measures WAV files for
+that; for another format given with `--file`, GAIN stays as it is. AltSound plays WAV, MP3, FLAC and Ogg Vorbis, not
 Ogg Opus: the page saves an Opus file (and any other format the browser reads) as WAV. To
 share your replacements, share `replace/` and `replacements.csv`: they hold none of the
 ROM's sounds.
@@ -1084,8 +1088,9 @@ baissé par GAIN. Si même à son maximum un fichier reste plus faible que le so
 la page le dit.
 
 Vos fichiers vont dans le dossier `replace/` du pack (`replace/0x000A-<votre fichier>`), et
-`replacements.csv` les liste : le son, le fichier, son GAIN et le nom du fichier que vous
-avez choisi. Dans `altsound.csv` et `g-sound.csv`, seuls FNAME et GAIN des lignes de ce son
+`replacements.csv` les liste : le son, le fichier, son GAIN, le nom du fichier que vous
+avez choisi, le niveau du fichier (LUFS) et de combien vous l'avez réglé plus fort ou plus
+doux que le son de la ROM (OFFSET, en dB). Dans `altsound.csv` et `g-sound.csv`, seuls FNAME et GAIN des lignes de ce son
 changent (y compris ses copies sous d'autres numéros : les lignes `0xFDxx` de Whitestar, les
 lignes de la carte 1 en System 11) ; les voies, le ducking et les types restent ceux de la
 ROM. Les fichiers de la ROM ne sont jamais modifiés.
@@ -1118,7 +1123,11 @@ rom2altsound replace altsound/taf_l5                            # après avoir m
 
 Reconstruire le pack (un nouveau rom2altsound, un nouveau PinMAME) garde `replace/` et
 `replacements.csv` et les applique au nouveau pack ; un son que le nouveau pack n'a plus est
-signalé et reste dans `replacements.csv`. AltSound joue le WAV, le MP3, le FLAC et l'Ogg
+signalé et reste dans `replacements.csv`. Si le son de la ROM sort à un autre niveau (un
+nouveau PinMAME peut changer la sortie d'une carte), GAIN est recalculé pour que votre
+fichier reste là où vous l'avez mis par rapport au son de la ROM (son OFFSET). La ligne de
+commande mesure pour cela les fichiers WAV ; pour un autre format donné avec `--file`, GAIN
+reste tel quel. AltSound joue le WAV, le MP3, le FLAC et l'Ogg
 Vorbis, pas l'Ogg Opus : la page enregistre un fichier Opus (et tout autre format que le
 navigateur sait lire) en WAV. Pour partager vos remplacements, partagez `replace/` et
 `replacements.csv` : ils ne contiennent aucun son de la ROM.

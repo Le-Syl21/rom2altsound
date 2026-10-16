@@ -5,14 +5,20 @@
 //! `replace/` folder, and `replacements.csv` lists what replaces what:
 //!
 //! ```text
-//! ID,FNAME,GAIN,SOURCE
-//! 0x000A,replace/0x000A-my jackpot.ogg,63,my jackpot.ogg
-//! 0x0012,,50,
+//! ID,FNAME,GAIN,SOURCE,LUFS,OFFSET
+//! 0x000A,replace/0x000A-my jackpot.wav,63,my jackpot.ogg,-14.20,0.00
+//! 0x0012,,50,,,
 //! ```
 //!
 //! FNAME is the file AltSound plays for that sound (empty: the ROM's own file), GAIN its
 //! volume (0 to 100, as in the CSVs: AltSound can only lower a sound), SOURCE the name of the
 //! file the user picked, for the record. A row with an empty FNAME only changes the volume.
+//!
+//! LUFS is the loudness of the file in `replace/` (as `loudness.rs` measures it, the level
+//! of a file under 400 ms included), OFFSET how much louder than the ROM's sound the user
+//! wants it, in dB (0: the same loudness). Both are optional; with both, a new extraction
+//! whose ROM sound has another level (a new PinMAME, a new volume) gets a new GAIN, so the
+//! replacement stays OFFSET dB from the ROM's sound.
 //!
 //! `replacements.csv` is the record; altsound.csv and g-sound.csv follow it: on the rows of
 //! a listed sound, and on the rows that play the same command under another id (the
@@ -41,10 +47,10 @@ pub const FILE: &str = "replacements.csv";
 pub const DIR: &str = "replace";
 /// The extensions AltSound plays.
 pub const EXTENSIONS: [&str; 4] = ["wav", "ogg", "mp3", "flac"];
-const HEADER: &str = "ID,FNAME,GAIN,SOURCE";
+const HEADER: &str = "ID,FNAME,GAIN,SOURCE,LUFS,OFFSET";
 
 /// One row of `replacements.csv`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
     pub id: u32,
     /// The file AltSound plays (`replace/...`), or empty for the ROM's own file.
@@ -53,6 +59,29 @@ pub struct Entry {
     pub gain: u32,
     /// The name of the file the user picked.
     pub source: String,
+    /// The loudness of FNAME at GAIN 100 (LUFS).
+    pub lufs: Option<f64>,
+    /// How much louder than the ROM's sound it plays (dB).
+    pub offset: Option<f64>,
+}
+
+impl Entry {
+    /// Only the volume of the ROM's file.
+    pub fn volume(id: u32, gain: u32) -> Entry {
+        Entry {
+            id,
+            fname: String::new(),
+            gain,
+            source: String::new(),
+            lufs: None,
+            offset: None,
+        }
+    }
+}
+
+/// The GAIN that changes a level by `db` (0 to 100: AltSound cannot raise a sound).
+pub fn gain_for_db(db: f64) -> u32 {
+    (100.0 * 10f64.powf(db / 20.0)).round().clamp(0.0, 100.0) as u32
 }
 
 /// What applying the record did.
@@ -68,6 +97,9 @@ pub struct Report {
     pub missing: Vec<String>,
     /// Listed files not found in `replace/`: those sounds play the ROM's file.
     pub missing_files: Vec<String>,
+    /// Sounds whose GAIN changed to stay OFFSET dB from a ROM sound of another level:
+    /// (id, old GAIN, new GAIN).
+    pub rematched: Vec<(String, u32, u32)>,
 }
 
 fn id_str(id: u32) -> String {
@@ -126,6 +158,7 @@ pub fn parse(text: &str) -> Result<Vec<Entry>, String> {
         return Err(format!("{FILE}: the header is not {HEADER}"));
     };
     let sc = col("SOURCE");
+    let (lc, oc) = (col("LUFS"), col("OFFSET"));
     let mut out: Vec<Entry> = Vec::new();
     for (n, l) in lines {
         let f: Vec<&str> = l.split(',').map(str::trim).collect();
@@ -146,6 +179,12 @@ pub fn parse(text: &str) -> Result<Vec<Entry>, String> {
             fname,
             gain: gain.round().clamp(0.0, 100.0) as u32,
             source: sc.map(at).unwrap_or("").to_owned(),
+            lufs: lc
+                .and_then(|c| at(c).parse::<f64>().ok())
+                .filter(|v| v.is_finite()),
+            offset: oc
+                .and_then(|c| at(c).parse::<f64>().ok())
+                .filter(|v| v.is_finite()),
         };
         // The last row of an id wins.
         out.retain(|x| x.id != id);
@@ -165,13 +204,16 @@ fn safe_member(path: &str) -> bool {
 /// The `replacements.csv` text.
 pub fn format(entries: &[Entry]) -> String {
     let mut s = format!("{HEADER}\r\n");
+    let num = |v: Option<f64>| v.map(|v| format!("{v:.2}")).unwrap_or_default();
     for e in entries {
         s.push_str(&format!(
-            "{},{},{},{}\r\n",
+            "{},{},{},{},{},{}\r\n",
             id_str(e.id),
             e.fname,
             e.gain,
-            clean_file_name(&e.source)
+            clean_file_name(&e.source),
+            num(e.lufs),
+            num(e.offset)
         ));
     }
     s
@@ -344,12 +386,73 @@ pub fn apply(dir: &Path, before: &[Entry]) -> Result<Report, String> {
     Ok(report)
 }
 
-/// After an extraction: the folder's `replacements.csv` (if any) applied to the new CSVs.
+/// The loudness of each sound of the pack (`level_lufs`, which a file under 400 ms has too).
+pub fn factory_levels(m: &Value) -> BTreeMap<u32, f64> {
+    m["sounds"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| Some((parse_id(s["id"].as_str()?)?, s["level_lufs"].as_f64()?)))
+        .collect()
+}
+
+/// After an extraction: the folder's `replacements.csv` (if any) applied to the new CSVs,
+/// each GAIN first set again so that the replacement stays OFFSET dB from the new ROM
+/// sound (rows with LUFS and OFFSET only).
 pub fn reapply(dir: &Path) -> Result<Option<Report>, String> {
     if !dir.join(FILE).is_file() {
         return Ok(None);
     }
-    apply(dir, &[]).map(Some)
+    let mut entries = load(dir)?;
+    let mpath = dir.join("manifest.json");
+    let m: Value = std::fs::read_to_string(&mpath)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default();
+    let levels = factory_levels(&m);
+    let mut rematched = Vec::new();
+    for e in &mut entries {
+        let (Some(l), Some(o), Some(f)) = (e.lufs, e.offset, levels.get(&e.id)) else {
+            continue;
+        };
+        if e.fname.is_empty() {
+            continue;
+        }
+        let g = gain_for_db(f + o - l);
+        if g != e.gain {
+            rematched.push((id_str(e.id), e.gain, g));
+            e.gain = g;
+        }
+    }
+    if !rematched.is_empty() {
+        let p = dir.join(FILE);
+        std::fs::write(&p, format(&entries)).map_err(|e| format!("{}: {e}", p.display()))?;
+    }
+    let mut r = apply(dir, &[])?;
+    r.rematched = rematched;
+    Ok(Some(r))
+}
+
+/// The loudness of a WAV file as `loudness.rs` measures the pack's files (`level_lufs`).
+pub fn wav_level(path: &Path) -> Option<f64> {
+    let mut r = hound::WavReader::open(path).ok()?;
+    let spec = r.spec();
+    let ch = spec.channels.max(1) as usize;
+    let s: Vec<f64> = match spec.sample_format {
+        hound::SampleFormat::Float => r
+            .samples::<f32>()
+            .filter_map(Result::ok)
+            .map(|v| f64::from(v) * 32768.0)
+            .collect(),
+        hound::SampleFormat::Int => {
+            let scale = 2f64.powi(16 - i32::from(spec.bits_per_sample));
+            r.samples::<i32>()
+                .filter_map(Result::ok)
+                .map(|v| f64::from(v) * scale)
+                .collect()
+        }
+    };
+    crate::loudness::measure_fast(&s, ch, spec.sample_rate).level_lufs
 }
 
 /// One line for the log.
@@ -366,6 +469,17 @@ pub fn summary(r: &Report) -> String {
         s.push_str(&format!(
             "; not in this pack (left in {FILE}): {}",
             r.missing.join(" ")
+        ));
+    }
+    if !r.rematched.is_empty() {
+        let list: Vec<String> = r
+            .rematched
+            .iter()
+            .map(|(id, a, b)| format!("{id} GAIN {a} -> {b}"))
+            .collect();
+        s.push_str(&format!(
+            "; matched again to the ROM's new levels: {}",
+            list.join(", ")
         ));
     }
     if !r.missing_files.is_empty() {
@@ -528,12 +642,8 @@ fn run_cli(cli: &ReplaceCli) -> Result<Report, String> {
             return Err(format!("{}: this pack has no row for it", id_str(id)));
         }
         let old = after.iter().find(|e| e.id == id).cloned();
-        let mut e = old.unwrap_or(Entry {
-            id,
-            fname: String::new(),
-            gain: 100,
-            source: String::new(),
-        });
+        let mut e = old.unwrap_or(Entry::volume(id, 100));
+        let level = factory_levels(&m).get(&id).copied();
         if let Some(f) = &cli.file {
             let source = f
                 .file_name()
@@ -544,6 +654,9 @@ fn run_cli(cli: &ReplaceCli) -> Result<Report, String> {
             std::fs::create_dir_all(dir.join(DIR))
                 .and_then(|()| std::fs::copy(f, &to).map(|_| ()))
                 .map_err(|x| format!("{} -> {}: {x}", f.display(), to.display()))?;
+            // A WAV file is measured (other formats: GAIN stays as given when the ROM's
+            // sound changes level).
+            e.lufs = wav_level(&to);
             e.fname = name;
             e.source = source;
             if cli.gain.is_none() {
@@ -553,6 +666,12 @@ fn run_cli(cli: &ReplaceCli) -> Result<Report, String> {
         if let Some(g) = cli.gain {
             e.gain = g;
         }
+        e.offset = match (e.lufs, level) {
+            (Some(l), Some(f)) if !e.fname.is_empty() && e.gain > 0 => {
+                Some(l + 20.0 * (f64::from(e.gain) / 100.0).log10() - f)
+            }
+            _ => None,
+        };
         after.retain(|x| x.id != id);
         if !e.fname.is_empty() || e.gain != 100 {
             after.push(e);
@@ -641,13 +760,10 @@ mod tests {
                 fname: "replace/0x000A-my jackpot.ogg".into(),
                 gain: 63,
                 source: "my jackpot.ogg".into(),
+                lufs: Some(-14.2),
+                offset: Some(-1.5),
             },
-            Entry {
-                id: 0x12,
-                fname: String::new(),
-                gain: 50,
-                source: String::new(),
-            },
+            Entry::volume(0x12, 50),
         ];
         assert_eq!(parse(&format(&e)).unwrap(), e);
         assert!(parse("ID,FNAME,GAIN\n0x1,../evil.wav,10\n").is_err());
@@ -765,6 +881,75 @@ mod tests {
         assert!(reapply(&pack("none")).unwrap().is_none());
         std::fs::remove_dir_all(&dir).unwrap();
         std::fs::remove_dir_all(pack("none")).unwrap();
+    }
+
+    #[test]
+    fn a_rom_sound_of_another_level_gets_a_new_gain() {
+        let dir = pack("rematch");
+        let m = json!({ "rom": "x", "sounds": [
+            { "id": "0x01", "pack": { "file": "0x0001-x_loop.wav" }, "level_lufs": -20.0 },
+            { "id": "0x0A", "pack": { "file": "0x000A-x.wav" }, "level_lufs": -26.0 },
+        ]});
+        std::fs::write(dir.join("manifest.json"), m.to_string()).unwrap();
+        std::fs::create_dir_all(dir.join(DIR)).unwrap();
+        std::fs::write(dir.join("replace/0x000A-a.ogg"), b"OggS").unwrap();
+        // Made for a ROM sound at -20 LUFS: the file at -14, 3 dB louder than it (GAIN 71).
+        std::fs::write(
+            dir.join(FILE),
+            "ID,FNAME,GAIN,SOURCE,LUFS,OFFSET\n0x000A,replace/0x000A-a.ogg,71,a.ogg,-14.00,3.00\n\
+             0x0001,,40,,,\n",
+        )
+        .unwrap();
+        // The new ROM sound is at -26: still 3 dB above it, so 6 dB lower (GAIN 35).
+        let r = reapply(&dir).unwrap().unwrap();
+        assert_eq!(r.rematched, vec![("0x000A".to_string(), 71, 35)]);
+        let rec = load(&dir).unwrap();
+        assert_eq!(rec[1].gain, 35);
+        assert_eq!(
+            rec[0].gain, 40,
+            "a volume of the ROM's file follows the file by itself"
+        );
+        assert!(
+            std::fs::read_to_string(dir.join(GSOUND_CSV))
+                .unwrap()
+                .contains("0x000A,sfx,35,0,replace/0x000A-a.ogg\r\n")
+        );
+        // Same levels again: nothing changes.
+        assert!(reapply(&dir).unwrap().unwrap().rematched.is_empty());
+
+        // The command line measures a WAV file and keeps its offset from the ROM's sound.
+        let wav = dir.join("tone.wav");
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 44100,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(&wav, spec).unwrap();
+        for i in 0..44100 {
+            let v = (i as f64 * 2.0 * std::f64::consts::PI * 1000.0 / 44100.0).sin() * 3276.8;
+            w.write_sample(v as i16).unwrap();
+        }
+        w.finalize().unwrap();
+        cli(
+            &dir,
+            &[
+                "--id",
+                "0x01",
+                "--file",
+                wav.to_str().unwrap(),
+                "--gain",
+                "50",
+            ],
+        )
+        .unwrap();
+        let e = load(&dir).unwrap().into_iter().find(|e| e.id == 1).unwrap();
+        let l = e.lufs.unwrap();
+        assert!((l - wav_level(&wav).unwrap()).abs() <= 0.005);
+        // A 1 kHz sine at -20 dBFS, mono read as two channels: about -20 LUFS.
+        assert!((l + 20.0).abs() < 0.5, "{l}");
+        assert!((e.offset.unwrap() - (l - 6.02 + 20.0)).abs() < 0.02);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
