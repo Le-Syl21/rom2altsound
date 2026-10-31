@@ -24,6 +24,7 @@ mod names;
 pub mod progress;
 pub mod replace;
 mod romcheck;
+mod romfill;
 mod sam;
 mod sampack;
 mod seqloop;
@@ -660,6 +661,18 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
         }
         None => None,
     };
+    // Files the set's zips lack under PinMAME's names, found by CRC in another zip of the
+    // ROM folder (MAME's Pinball 2000 sets): the private zip of the set gets them.
+    let filled = romfill::fill(&drivers::load(), &job.roms, &vpm.join("roms"), &job.rom)?;
+    for f in &filled {
+        eprintln!(
+            "ROM file {} (CRC32 {:08x}) taken from {} ({})",
+            f.name,
+            f.crc32,
+            f.from.display(),
+            f.from_name
+        );
+    }
     let sets: Vec<&str> = std::iter::once(job.rom.as_str())
         .chain(parent.as_deref())
         .collect();
