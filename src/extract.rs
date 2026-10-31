@@ -5098,10 +5098,12 @@ impl Extractor {
             let b = if mask == 2 { 1 } else { 0 };
             (command_sends(mask, b, &self.wpcs_bank(b, &e.bytes)), b)
         };
+        // The id is the command as libaltsound sees it: on the System 3-7 boards the byte
+        // alone, not the idle bytes sounds.dat frames it with (`FF 00 FF` is the sound `00`).
         let bytes = if mask == 3 {
             e.bytes.clone()
         } else {
-            self.wpcs_bank(if mask == 2 { 1 } else { 0 }, &e.bytes)
+            self.list_key(board, &e.bytes)
         };
         Cmd {
             id: format!("0x{}", hex(&bytes)),
@@ -5124,9 +5126,7 @@ impl Extractor {
         let mut b = self.wpcs_bank(board, bytes);
         if family == "WMSS67" && self.mask != 3 && b.len() > 1 {
             let sub = unsafe { ffi::shim_board_type(board) } & 0xFF;
-            while b.len() > 1 && b.last().is_some_and(|&x| s67s_idle(sub, x)) {
-                b.pop();
-            }
+            b = s67s_unframed(sub, b);
         }
         b
     }
@@ -6030,6 +6030,17 @@ pub(crate) fn s67s_framed(sub: c_int, bytes: &[u8]) -> Vec<u8> {
         .collect()
 }
 pub(crate) const S67S_IDLE: u8 = 0xFF;
+/// A sounds.dat command as the extraction keys it: without the idle bytes around it.
+/// sounds.dat frames each System 3-7 byte with idle ones (`FF 00 FF`, see `s67s_framed`)
+/// so that PinMAME's commander replays it; the key is the byte itself (`00`).
+pub(crate) fn s67s_unframed(sub: c_int, mut b: Vec<u8>) -> Vec<u8> {
+    while b.len() > 1 && b.last().is_some_and(|&x| s67s_idle(sub, x)) {
+        b.pop();
+    }
+    let lead = b.iter().take_while(|&&x| s67s_idle(sub, x)).count();
+    b.drain(..lead.min(b.len() - 1));
+    b
+}
 /// The World Cup (`8`) and Disco Fever (`16`) sub-types: one bit of the byte their program
 /// reads comes from the board's control port, not from the sound lines (wmssnd.c
 /// `s67s_ctrl_w`: bit 6 of the control byte as bit 5 on World Cup, bit 4 as bit 7 on Disco
@@ -7091,6 +7102,19 @@ pub(crate) fn write_wav(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn s67s_unframed_keys() {
+        // sounds.dat's framed form and the bare byte key the same sound
+        assert_eq!(s67s_unframed(0, vec![0xFF, 0x00, 0xFF]), vec![0x00]);
+        assert_eq!(s67s_unframed(0, vec![0x00]), vec![0x00]);
+        assert_eq!(s67s_unframed(0, vec![0xFF, 0x05]), vec![0x05]);
+        // a lone idle byte stays what it is
+        assert_eq!(s67s_unframed(0, vec![0xFF]), vec![0xFF]);
+        assert_eq!(s67s_unframed(0, vec![0xFF, 0xFF]), vec![0xFF]);
+        // sub-type 1: 7F is idle, FF too (b & 7F == 7F)
+        assert_eq!(s67s_unframed(1, vec![0x7F, 0x10, 0x7F]), vec![0x10]);
+    }
 
     #[test]
     fn gpsm_byte_programs_are_told_by_their_merge() {

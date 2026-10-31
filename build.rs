@@ -259,11 +259,12 @@ fn patch_cmakelists(text: &str) -> String {
         "   src/unix/sysdep\n)\n",
         "   src/unix/sysdep\n   ext/zlib\n)\n",
     );
+    // asmjit, p2k, spike1... : however many cmake fragments it pulls in.
     replace_all(
         &mut t,
         "include(${CMAKE_SOURCE_DIR}/cmake/",
         "include(${PINMAME_ROOT}/cmake/",
-        2,
+        2..,
     );
 
     // Everything before `if(BUILD_SHARED)` builds the source and include lists; make them
@@ -301,11 +302,16 @@ fn replace_once(text: &mut String, from: &str, to: &str) {
     *text = text.replace(from, to);
 }
 
-fn replace_all(text: &mut String, from: &str, to: &str, expected: usize) {
+fn replace_all(
+    text: &mut String,
+    from: &str,
+    to: &str,
+    expected: impl std::ops::RangeBounds<usize> + std::fmt::Debug,
+) {
     let n = text.matches(from).count();
     assert!(
-        n == expected,
-        "libpinmame CMakeLists.txt: expected {expected} `{from}`, found {n}"
+        expected.contains(&n),
+        "libpinmame CMakeLists.txt: expected {expected:?} `{from}`, found {n}"
     );
     *text = text.replace(from, to);
 }

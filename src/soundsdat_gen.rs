@@ -262,9 +262,7 @@ fn key_of(bytes: &[u8], families: &[String], two_boards: bool, h: Hints) -> Vec<
     let family = families.first().map_or("", String::as_str);
     let mut b = extract::wpcs_bank_of(family, bytes);
     if family == "WMSS67" {
-        while b.len() > 1 && b.last().is_some_and(|&x| extract::s67s_idle(h.s67s_sub, x)) {
-            b.pop();
-        }
+        b = extract::s67s_unframed(h.s67s_sub, b);
     }
     b
 }
