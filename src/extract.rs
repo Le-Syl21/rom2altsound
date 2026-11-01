@@ -4675,7 +4675,7 @@ impl Extractor {
                 bytes: parse_id(stop),
                 name: String::new(),
             };
-            return self.game_cmd(&e).sends;
+            return self.game_cmd(&e, &HashMap::new()).sends;
         }
         let mut v = Vec::new();
         for b in self.board_list() {
@@ -4883,7 +4883,11 @@ impl Extractor {
                 .push((if dcs { "rom track catalog" } else { "sweep" }, cmds.len()));
             cmds
         } else {
-            let mut cmds: Vec<Cmd> = entries.iter().map(|e| self.game_cmd(e)).collect();
+            let framings = self.framings();
+            let mut cmds: Vec<Cmd> = entries
+                .iter()
+                .map(|e| self.game_cmd(e, &framings))
+                .collect();
             self.commands_from = vec![format!(
                 "sounds.dat section of {} ({} commands)",
                 self.opts.parent.as_deref().unwrap_or(&self.opts.rom),
@@ -4949,10 +4953,13 @@ impl Extractor {
                     .map(|t| t.to_be_bytes().to_vec())
                     .filter(|bytes| !entries.iter().any(|e| &e.bytes == bytes))
                     .map(|bytes| {
-                        let mut c = self.game_cmd(&Entry {
-                            bytes,
-                            name: String::new(),
-                        });
+                        let mut c = self.game_cmd(
+                            &Entry {
+                                bytes,
+                                name: String::new(),
+                            },
+                            &HashMap::new(),
+                        );
                         c.board_no = dcs;
                         c
                     })
@@ -5015,19 +5022,25 @@ impl Extractor {
                     let bytes = parse_id(want);
                     // As the command list names it (a WPCS bank filler dropped).
                     let id = self
-                        .game_cmd(&Entry {
-                            bytes: bytes.clone(),
-                            name: String::new(),
-                        })
+                        .game_cmd(
+                            &Entry {
+                                bytes: bytes.clone(),
+                                name: String::new(),
+                            },
+                            &HashMap::new(),
+                        )
                         .id;
                     cmds.iter()
                         .find(|c| c.id == id)
                         .cloned()
                         .unwrap_or_else(|| {
-                            self.game_cmd(&Entry {
-                                bytes,
-                                name: "(not in sounds.dat)".into(),
-                            })
+                            self.game_cmd(
+                                &Entry {
+                                    bytes,
+                                    name: "(not in sounds.dat)".into(),
+                                },
+                                &HashMap::new(),
+                            )
                         })
                 })
                 .collect();
@@ -5055,10 +5068,13 @@ impl Extractor {
         let mut board = 0;
         for part in want.split('+') {
             if part.starts_with("0x") || part.starts_with("0X") {
-                let c = self.game_cmd(&Entry {
-                    bytes: parse_id(part),
-                    name: String::new(),
-                });
+                let c = self.game_cmd(
+                    &Entry {
+                        bytes: parse_id(part),
+                        name: String::new(),
+                    },
+                    &HashMap::new(),
+                );
                 board = c.board_no;
                 sends.extend(c.sends);
             } else if part.eq_ignore_ascii_case("reset") {
@@ -5082,8 +5098,21 @@ impl Extractor {
 
     /// A game-section command: plain bytes on one-board machines, (board, byte) pairs on
     /// two-board machines (the layout PinMAME's commander expects).
-    fn game_cmd(&self, e: &Entry) -> Cmd {
+    fn game_cmd(&self, e: &Entry, framings: &HashMap<Vec<u8>, Vec<u8>>) -> Cmd {
         let mask = self.mask;
+        let b = if mask == 2 { 1 } else { 0 };
+        if let Some(k) = framings.get(&e.bytes) {
+            return Cmd {
+                id: format!("0x{}", hex(k)),
+                name: e.name.clone(),
+                board: board_typestr(b).unwrap_or_default(),
+                board_no: b,
+                sends: command_sends(mask, b, k),
+                slot: None,
+                alt: None,
+                check: None,
+            };
+        }
         let (sends, board) = if mask == 3 {
             let sends: Vec<Send> = e
                 .bytes
@@ -5129,6 +5158,47 @@ impl Extractor {
             b = s67s_unframed(sub, b);
         }
         b
+    }
+
+    /// The commands of the sweep by the bytes sounds.dat writes for them. rom2altsound
+    /// writes each command in sounds.dat as the bytes the board's manual handler takes
+    /// (`board_sends`: Gottlieb's `01 00`, Zaccaria's `02 82 02`, Game Plan's nibbles
+    /// `0F 00 01 0F` for `10`; System 3-7's idle frame `FF 40 FF FF 50 FF`, also on the
+    /// boards with a control line), so that PinMAME's commander replays it; an entry is
+    /// the command whose framing gives exactly its bytes. Empty on two boards and on DCS,
+    /// whose entries are the commands themselves.
+    fn framings(&self) -> HashMap<Vec<u8>, Vec<u8>> {
+        let mut out = HashMap::new();
+        if self.mask == 3
+            || self
+                .board_list()
+                .any(|b| is_dcs(&self.families[b as usize]))
+        {
+            return out;
+        }
+        let board = if self.mask == 2 { 1 } else { 0 };
+        let s67s = self.families[board as usize] == "WMSS67";
+        let sub = unsafe { ffi::shim_board_type(board) } & 0xFF;
+        for c in sweep(self.mask).0 {
+            let key = parse_id(&c.id);
+            let framed: Option<Vec<u8>> = if s67s {
+                (!key.contains(&S3_CTRL) || sub & S3_CTRL_SUBS == 0).then(|| s67s_framed(sub, &key))
+            } else {
+                board_sends(self.mask, board, &key)
+                    .into_iter()
+                    .map(|s| match s {
+                        Send::Byte(_, v) => u8::try_from(v).ok(),
+                        _ => None,
+                    })
+                    .collect()
+            };
+            if let Some(f) = framed
+                && f != key
+            {
+                out.entry(f).or_insert(key);
+            }
+        }
+        out
     }
 
     /// WPCS: sounds.dat writes a sound of the second bank (`7A xx`, which the game sends as

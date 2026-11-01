@@ -260,6 +260,23 @@ fn key_of(bytes: &[u8], families: &[String], two_boards: bool, h: Hints) -> Vec<
         return bytes.to_vec();
     }
     let family = families.first().map_or("", String::as_str);
+    // The command an entry is the framing of (what `framed` writes), as the extraction
+    // reads it back (`Extractor::unframed`).
+    if bytes.len() > 1 {
+        let singles = (0..=u8::MAX).map(|b| vec![b]);
+        let pairs = bytes
+            .iter()
+            .enumerate()
+            .flat_map(|(i, &a)| bytes[i + 1..].iter().map(move |&b| vec![a, b]));
+        let windows = (2..bytes.len()).flat_map(|n| bytes.windows(n).map(<[u8]>::to_vec));
+        if let Some(k) = singles
+            .chain(pairs)
+            .chain(windows)
+            .find(|k| framed(family, k, h).as_deref() == Ok(bytes))
+        {
+            return k;
+        }
+    }
     let mut b = extract::wpcs_bank_of(family, bytes);
     if family == "WMSS67" {
         b = extract::s67s_unframed(h.s67s_sub, b);
