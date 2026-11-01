@@ -600,6 +600,9 @@ enum Pass {
     Main,
     /// The commands that played nothing, once more.
     Retry,
+    /// The long sounds again, each right after a board reset: one that plays nothing then
+    /// was only taking the music up again (`follows_previous`).
+    Fresh,
     /// The loudest files again, at another master volume.
     VolumeCheck,
     /// A few files again at the game's factory volume (`VolumeInit::Reference` only).
@@ -909,6 +912,12 @@ pub struct SoundInfo {
     /// The first try played nothing, so the command was played once more (after a stop and
     /// the volume); the fields are those of the second try.
     pub retried: bool,
+    /// The command plays the music that was playing before it again (Alvin G's `9A` after
+    /// any music, at that music's level): right after a board reset it plays nothing. Its
+    /// recording was the previous music, so no file is written and it does not count in
+    /// the loudness.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub follows_previous: bool,
     /// The file was played again at another master volume (see `master_volume_check`) and
     /// its level did not follow it the way the reference file's did (it did not move, or
     /// moved the wrong way): it is left out of the ROM's loudness totals.
@@ -986,6 +995,7 @@ impl SoundInfo {
             loop_unresolved: None,
             clean_start: true,
             retried: false,
+            follows_previous: false,
             ignores_master_volume: false,
             master_volume_check: None,
             board: "DCS".into(),
@@ -1247,6 +1257,8 @@ pub struct Counts {
     /// of them played something then.
     pub retried: usize,
     pub recovered_by_retry: usize,
+    /// Commands that only take the previous music up again (`follows_previous`).
+    pub follows_previous: usize,
     pub ignores_master_volume: usize,
 }
 
@@ -1923,6 +1935,7 @@ impl Extractor {
             clipped: written().filter(|s| s.clipped_samples > 0).count(),
             retried: r.iter().filter(|s| s.retried).count(),
             recovered_by_retry: r.iter().filter(|s| s.retried && s.onset.is_some()).count(),
+            follows_previous: r.iter().filter(|s| s.follows_previous).count(),
             ignores_master_volume: r.iter().filter(|s| s.ignores_master_volume).count(),
         }
     }
@@ -2446,6 +2459,7 @@ impl Extractor {
                 }
             }
             Phase::Record(rec) => {
+                let fresh = self.pass == Pass::Fresh;
                 let end_silence = (END_SILENCE_SECS * self.rate as f64) as u64;
                 let max_secs = (self.opts.max_secs * self.rate as f64) as u64;
                 // A loop search records past `max_secs`; a replay of a loop file (volume
@@ -2508,6 +2522,9 @@ impl Extractor {
                     && rec.drained_at.is_some_and(|d| rec.frames - d >= no_sound)
                 {
                     Some("no_sound")
+                } else if fresh && rec.first_loud.is_some() {
+                    // Whether it plays is all a fresh take tells.
+                    Some("silence")
                 } else if silent_end {
                     Some("silence")
                 } else if rec.found.is_some() {
@@ -3545,6 +3562,17 @@ impl Extractor {
                     }
                 }
                 Pass::Retry => {
+                    self.pass = Pass::Fresh;
+                    self.queue = self.fresh_commands().into();
+                    self.reset_before_pass = !self.queue.is_empty();
+                    if !self.queue.is_empty() {
+                        eprintln!(
+                            "fresh: {} long sound(s) again, each right after a board reset",
+                            self.queue.len()
+                        );
+                    }
+                }
+                Pass::Fresh => {
                     self.pass = Pass::VolumeCheck;
                     self.queue = self.volume_checks().into();
                     if let Some(n) = &self.volume_check_note {
@@ -3598,6 +3626,27 @@ impl Extractor {
             .iter()
             .enumerate()
             .filter(|(_, s)| s.ended_by == "no_sound" && !s.retried)
+            .filter_map(|(i, _)| {
+                let mut c = self.main_cmds.get(i)?.clone();
+                c.slot = Some(i);
+                Some(c)
+            })
+            .collect()
+    }
+
+    /// The written sounds that do not end by themselves, on boards whose commands are not
+    /// self-contained tracks (not DCS).
+    fn fresh_commands(&self) -> Vec<Cmd> {
+        if self
+            .board_list()
+            .any(|b| is_dcs(&self.families[b as usize]))
+        {
+            return Vec::new();
+        }
+        self.results
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.file.is_some() && s.looping_or_truncated)
             .filter_map(|(i, _)| {
                 let mut c = self.main_cmds.get(i)?.clone();
                 c.slot = Some(i);
@@ -5306,8 +5355,35 @@ impl Extractor {
             Pass::Chips => self.finish_chip_take(rec, a),
             Pass::DuckCheck => self.finish_duck_take(rec, a),
             Pass::Main | Pass::Retry | Pass::Last => self.finish_sound(rec, a, ended_by),
+            Pass::Fresh => self.finish_fresh(&rec),
         }
         self.write_manifest();
+    }
+
+    /// A long sound played right after a board reset: nothing then means the command only
+    /// took up the music before it. Its file goes, and it leaves the loudness.
+    fn finish_fresh(&mut self, rec: &Recording) {
+        let Some(i) = rec.cmd.slot else {
+            return;
+        };
+        if !self.queue.is_empty() {
+            self.reset_before_pass = true;
+        }
+        if rec.first_loud.is_some() {
+            eprintln!("plays: its own sound");
+            return;
+        }
+        let s = &mut self.results[i];
+        s.follows_previous = true;
+        let mut gone: Vec<String> = s.file.take().into_iter().collect();
+        if let Some(l) = s.loop_info.take() {
+            gone.extend(l.loop_file);
+        }
+        for f in gone {
+            let _ = std::fs::remove_file(self.opts.out_dir.join(f));
+        }
+        self.loud[i] = None;
+        eprintln!("plays nothing: it took up the music before it, no file");
     }
 
     /// A main or retry recording: written, measured, stored.
@@ -5396,6 +5472,7 @@ impl Extractor {
             loop_info,
             clean_start: rec.clean_start,
             retried: self.pass == Pass::Retry,
+            follows_previous: false,
             ignores_master_volume: false,
             master_volume_check: None,
             board: rec.cmd.board,

@@ -1132,7 +1132,7 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
     let c = x.counts();
     let boot = x.boot_report();
     println!(
-        "{rom}: {} command(s) tried, {} with sound, {} written, {} blip(s), {} silent, {} loop(s) ({} exact cycles from the DCS catalog, {} from the audio, {} from the sound CPU's state, {} cut at --max-secs), {} retried ({} recovered); {:.1} s of audio; {:.1} s emulated in {:.1} s wall (x{:.1} real time); boot {:.1} s ({}); {} board reset(s), {} not clean, {} written file(s) clipped",
+        "{rom}: {} command(s) tried, {} with sound, {} written, {} blip(s), {} silent, {} loop(s) ({} exact cycles from the DCS catalog, {} from the audio, {} from the sound CPU's state, {} cut at --max-secs), {} retried ({} recovered), {} taking up the music before them; {:.1} s of audio; {:.1} s emulated in {:.1} s wall (x{:.1} real time); boot {:.1} s ({}); {} board reset(s), {} not clean, {} written file(s) clipped",
         c.tried,
         c.with_sound,
         c.written,
@@ -1145,6 +1145,7 @@ fn summary(rom: &str, x: &Extractor, wall: f64) {
         c.loops_unresolved,
         c.retried,
         c.recovered_by_retry,
+        c.follows_previous,
         audio,
         emulated,
         wall,
