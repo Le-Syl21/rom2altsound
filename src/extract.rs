@@ -897,6 +897,12 @@ pub struct SoundInfo {
     pub rms_dbfs: Option<f64>,
     /// Raw samples at full scale (+32767 / -32768): the emulated output clipped.
     pub clipped_samples: usize,
+    /// Where in the file it clipped (the first `CLIP_EVENTS_LISTED` stretches).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub clips: Vec<ClipEvent>,
+    /// Clip events beyond the listed ones.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub clip_events_more: usize,
     /// Mean of the raw samples, in LSB (System 11 DACs idle far from 0).
     pub dc_offset: i32,
     pub ended_by: &'static str,
@@ -988,6 +994,8 @@ impl SoundInfo {
             peak_dbfs: None,
             rms_dbfs: None,
             clipped_samples: 0,
+            clips: Vec::new(),
+            clip_events_more: 0,
             dc_offset: 0,
             ended_by: "silence",
             looping_or_truncated: false,
@@ -1657,6 +1665,57 @@ pub struct Extractor {
     pub error: Option<String>,
 }
 
+/// One stretch of a file where the emulated output clipped: samples at full scale less
+/// than `CLIP_EVENT_GAP_SECS` apart count as one.
+#[derive(Debug, Clone, Serialize)]
+pub struct ClipEvent {
+    /// Where it starts in the file, in seconds.
+    pub at: f64,
+    /// From its first clipped sample to its last, in milliseconds.
+    pub ms: f64,
+    /// Samples at full scale in it (all channels).
+    pub samples: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
+/// Clipped samples closer than this belong to the same `ClipEvent`.
+const CLIP_EVENT_GAP_SECS: f64 = 0.010;
+/// The clip events a file lists; `clip_events_more` counts the rest.
+const CLIP_EVENTS_LISTED: usize = 50;
+
+/// Where the interleaved `raw` samples sit at full scale, grouped into events.
+fn clip_events(raw: &[i16], ch: usize, rate: u32) -> Vec<ClipEvent> {
+    let gap = (CLIP_EVENT_GAP_SECS * f64::from(rate)) as usize;
+    let mut out: Vec<(usize, usize, usize)> = Vec::new(); // first frame, last frame, samples
+    for (f, frame) in raw.chunks(ch.max(1)).enumerate() {
+        let n = frame
+            .iter()
+            .filter(|&&x| x == i16::MAX || x == i16::MIN)
+            .count();
+        if n == 0 {
+            continue;
+        }
+        match out.last_mut() {
+            Some(e) if f - e.1 <= gap => {
+                e.1 = f;
+                e.2 += n;
+            }
+            _ => out.push((f, f, n)),
+        }
+    }
+    let r = f64::from(rate);
+    out.into_iter()
+        .map(|(a, b, n)| ClipEvent {
+            at: round3(a as f64 / r),
+            ms: ((b - a + 1) as f64 / r * 100_000.0).round() / 100.0,
+            samples: n,
+        })
+        .collect()
+}
+
 /// What a recording contains, once trimmed.
 struct Analysis {
     /// Trimmed raw samples, interleaved.
@@ -1666,6 +1725,7 @@ struct Analysis {
     peak: Option<f64>,
     rms: Option<f64>,
     clipped_samples: usize,
+    clips: Vec<ClipEvent>,
     dc_offset: i32,
     duration: f64,
     blip: bool,
@@ -5298,6 +5358,11 @@ impl Extractor {
             .iter()
             .filter(|&&s| s == i16::MAX || s == i16::MIN)
             .count();
+        let clips = if clipped_samples > 0 {
+            clip_events(&raw, ch, self.rate)
+        } else {
+            Vec::new()
+        };
         let dc_offset = if raw.is_empty() {
             0
         } else {
@@ -5315,6 +5380,7 @@ impl Extractor {
             peak,
             rms,
             clipped_samples,
+            clips,
             dc_offset,
             duration,
         }
@@ -5465,6 +5531,8 @@ impl Extractor {
             peak_dbfs: a.peak.map(round3),
             rms_dbfs: a.rms.map(round3),
             clipped_samples: a.clipped_samples,
+            clip_events_more: a.clips.len().saturating_sub(CLIP_EVENTS_LISTED),
+            clips: a.clips.iter().take(CLIP_EVENTS_LISTED).cloned().collect(),
             dc_offset: a.dc_offset,
             ended_by,
             looping_or_truncated: ended_by == "max" || ended_by == "loop",
@@ -7249,6 +7317,23 @@ pub(crate) fn write_wav(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clip_events_group_close_samples() {
+        // Mono at 1000 Hz: a gap of 10 frames (10 ms) or less joins two clips.
+        let mut raw = vec![0i16; 3000];
+        raw[100] = i16::MAX;
+        raw[105] = i16::MIN;
+        raw[2000] = i16::MAX;
+        raw[2001] = i16::MAX;
+        let e = clip_events(&raw, 1, 1000);
+        assert_eq!(e.len(), 2);
+        assert_eq!((e[0].at, e[0].ms, e[0].samples), (0.1, 6.0, 2));
+        assert_eq!((e[1].at, e[1].samples), (2.0, 2));
+        // Stereo: frames, not samples, give the time.
+        let e = clip_events(&[0, 0, i16::MAX, i16::MAX], 2, 1000);
+        assert_eq!((e[0].at, e[0].samples), (0.001, 2));
+    }
 
     #[test]
     fn s67s_unframed_keys() {

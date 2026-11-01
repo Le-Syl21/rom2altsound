@@ -395,6 +395,10 @@ pub struct ClippedTrack {
     pub id: String,
     pub clipped_samples: u64,
     pub peak_dbfs: Option<f64>,
+    /// Where in the file it clips, in seconds (the first few stretches; the manifest has
+    /// them all, with their lengths).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub at: Vec<f64>,
 }
 
 /// How many clipped files an entry lists.
@@ -417,6 +421,13 @@ fn clipping_of(m: &serde_json::Value) -> Option<Clipping> {
                 id: s["id"].as_str()?.to_owned(),
                 clipped_samples: n,
                 peak_dbfs: s["peak_dbfs"].as_f64(),
+                at: s["clips"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|c| c["at"].as_f64())
+                    .take(5)
+                    .collect(),
             })
         })
         .collect();
@@ -437,7 +448,7 @@ fn clipping_of(m: &serde_json::Value) -> Option<Clipping> {
         samples,
         tracks,
         more,
-        details: "per file: the pack's manifest.json, sounds[] (clipped_samples, peak_dbfs, true_peak_dbtp)",
+        details: "per file: the pack's manifest.json, sounds[] (clipped_samples, clips: where and how long, peak_dbfs, true_peak_dbtp)",
     })
 }
 
