@@ -363,11 +363,82 @@ pub struct Loudness {
     /// levels above are null).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub at_reference_volume: Option<StaticFigures>,
+    /// Written files whose emulated output clipped (raw samples at full scale): absent
+    /// when none did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clipping: Option<Clipping>,
     /// The tool and the settings of the run (manifest `measurement`).
     pub measurement: serde_json::Value,
     /// The run used this catalog's measurement method and the default settings: figures
     /// comparable with every other current entry.
     pub current: bool,
+}
+
+/// The written files of a set that clipped in emulation. Every file's own figures are in
+/// the pack's manifest.json, `sounds[]` (`clipped_samples`, `peak_dbfs`,
+/// `true_peak_dbtp`): `details` says so, for debugging.
+#[derive(Debug, Clone, Serialize)]
+pub struct Clipping {
+    pub files: usize,
+    /// Raw samples at full scale, over those files.
+    pub samples: u64,
+    /// The clipped files, most clipped samples first (at most `CLIPPED_TRACKS_LISTED`).
+    pub tracks: Vec<ClippedTrack>,
+    /// Clipped files beyond the listed ones.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub more: usize,
+    pub details: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ClippedTrack {
+    pub id: String,
+    pub clipped_samples: u64,
+    pub peak_dbfs: Option<f64>,
+}
+
+/// How many clipped files an entry lists.
+const CLIPPED_TRACKS_LISTED: usize = 20;
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
+/// The clipped written files of a manifest.
+fn clipping_of(m: &serde_json::Value) -> Option<Clipping> {
+    let mut tracks: Vec<ClippedTrack> = m["sounds"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|s| !s["file"].is_null())
+        .filter_map(|s| {
+            let n = s["clipped_samples"].as_u64().filter(|&n| n > 0)?;
+            Some(ClippedTrack {
+                id: s["id"].as_str()?.to_owned(),
+                clipped_samples: n,
+                peak_dbfs: s["peak_dbfs"].as_f64(),
+            })
+        })
+        .collect();
+    if tracks.is_empty() {
+        return None;
+    }
+    tracks.sort_by(|a, b| {
+        b.clipped_samples
+            .cmp(&a.clipped_samples)
+            .then(a.id.cmp(&b.id))
+    });
+    let files = tracks.len();
+    let samples = tracks.iter().map(|t| t.clipped_samples).sum();
+    let more = files.saturating_sub(CLIPPED_TRACKS_LISTED);
+    tracks.truncate(CLIPPED_TRACKS_LISTED);
+    Some(Clipping {
+        files,
+        samples,
+        tracks,
+        more,
+        details: "per file: the pack's manifest.json, sounds[] (clipped_samples, peak_dbfs, true_peak_dbtp)",
+    })
 }
 
 /// The levels of a static decode (Stern SAM).
@@ -885,6 +956,7 @@ pub fn loudness_of(set: &str, m: &serde_json::Value, current: &serde_json::Value
         factory_volume_from: from,
         source: if sam { "static" } else { "emulation" },
         caveat: (!caveat.is_empty()).then(|| caveat.join("; ")),
+        clipping: clipping_of(m),
         measurement: m["measurement"].clone(),
         current: is_current(&m["measurement"], current),
     }
@@ -963,6 +1035,7 @@ pub fn apply_runs(
                     )),
                     static_decode: None,
                     at_reference_volume: None,
+                    clipping: None,
                     measurement: runs[&s.name]
                         .boot
                         .as_ref()
@@ -1344,6 +1417,20 @@ pub fn cli(args: Vec<String>) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clipping_lists_the_clipped_written_files() {
+        let m = serde_json::json!({"sounds": [
+            {"id": "0x01", "file": "a.wav", "clipped_samples": 0, "peak_dbfs": -3.0},
+            {"id": "0x02", "file": "b.wav", "clipped_samples": 12, "peak_dbfs": 0.1},
+            {"id": "0x03", "file": "c.wav", "clipped_samples": 109, "peak_dbfs": 0.7},
+            {"id": "0x04", "file": null, "clipped_samples": 50},
+        ]});
+        let c = clipping_of(&m).unwrap();
+        assert_eq!((c.files, c.samples, c.more), (2, 121, 0));
+        assert_eq!(c.tracks[0].id, "0x03");
+        assert!(clipping_of(&serde_json::json!({"sounds": [{"id": "0x01", "file": "a.wav", "clipped_samples": 0}]})).is_none());
+    }
 
     fn rom(name: &str, crc: u32, sha: &str, sound: bool) -> RomFile {
         RomFile {

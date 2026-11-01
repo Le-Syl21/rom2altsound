@@ -28,6 +28,7 @@
       notFound: "No entry for this link.",
       bySupport: "PinMAME sets by rom2altsound support", dash: "—",
       boards: { "NONE (Stern SAM)": "Stern SAM", "NONE (other)": "No sound board" },
+      clip: "clips", clipTip: function (c) { return c.files + " file(s) clipped in emulation (" + fmt(c.samples) + " samples at full scale): " + c.tracks.slice(0, 5).map(function (t) { return t.id + " (" + t.clipped_samples + ")"; }).join(", ") + (c.files > 5 ? ", …" : "") + ". Every file's figures: the pack's manifest.json, sounds[]."; },
       noVpx: "AltSound pack not played in VPX", newVpx: function (v) { return "pack plays in VPX after " + v; }, hideNoVpx: "Hide boards whose AltSound pack VPinball cannot play yet", dVpx: "AltSound pack in VPinball",
     },
     fr: {
@@ -53,6 +54,7 @@
       notFound: "Aucune entrée pour ce lien.",
       bySupport: "Jeux de ROM PinMAME par prise en charge", dash: "—",
       boards: { "NONE (Stern SAM)": "Stern SAM", "NONE (other)": "Aucune carte son" },
+      clip: "écrête", clipTip: function (c) { return c.files + " fichier(s) écrêté(s) en émulation (" + fmt(c.samples) + " échantillons à pleine échelle) : " + c.tracks.slice(0, 5).map(function (t) { return t.id + " (" + t.clipped_samples + ")"; }).join(", ") + (c.files > 5 ? ", …" : "") + ". Le détail de chaque fichier : le manifest.json du pack, sounds[]."; },
       noVpx: "pack AltSound non joué dans VPX", newVpx: function (v) { return "pack joué par VPX après " + v; }, hideNoVpx: "Masquer les cartes dont VPinball ne joue pas encore le pack AltSound", dVpx: "Pack AltSound dans VPinball",
     },
   }[lang];
@@ -200,7 +202,9 @@
     var v = lufs(e);
     if (v == null) return "";
     var t = v.toFixed(1);
-    return e.loudness.source === "static" ? '<em title="' + esc(e.loudness.caveat || "") + '">' + t + "</em>" : t;
+    var c = e.loudness.clipping;
+    var clip = c ? ' <span class="badge b-clip" title="' + esc(T.clipTip(c)) + '">' + esc(T.clip) + "</span>" : "";
+    return (e.loudness.source === "static" ? '<em title="' + esc(e.loudness.caveat || "") + '">' + t + "</em>" : t) + clip;
   }
 
   function row(e) {

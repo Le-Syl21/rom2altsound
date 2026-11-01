@@ -52,6 +52,7 @@ as PinMAME plays the ROM in VPinball:
 | `lufs_excluding_loops` | the same without the loops and the sounds cut at `--max-secs` |
 | `median_file_lufs` | the median per-file loudness of the non-loop files: a typical sound |
 | `true_peak_dbtp` | the loudest file's true peak |
+| `clipping` | absent when no written file clipped; else `files` and `samples` (raw samples at full scale, over those files), `tracks` (the clipped files, most clipped samples first, at most 20: `id`, `clipped_samples`, `peak_dbfs`), `more` (the clipped files not listed) and `details`: every file's figures are in the pack's `manifest.json`, `sounds[]` |
 | `seconds`, `files` | the material in `lufs` |
 | `factory_volume` | the master volume the files are at, per board with one: `board`, `family`, `bytes` (the command the game sent, e.g. `55AA6798`, `FE2C`, `790CF3`; Stern SAM: the DAC attenuation `E8E8`), `level` / `level_max` on the game's scale. Empty: the board has no master volume, or the game sends none (the files are at the board's only level) |
 | `factory_volume_from` | where that volume comes from, per board |
