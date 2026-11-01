@@ -3694,13 +3694,18 @@ impl Extractor {
             .collect()
     }
 
-    /// The written sounds that do not end by themselves, on boards whose commands are not
-    /// self-contained tracks (not DCS).
+    /// The written sounds that do not end by themselves, on Alvin G boards: some of their
+    /// commands take the music that was playing up again (`9A`, at that music's level), and
+    /// play nothing on a board just reset. Other families keep every take: on WPCS
+    /// (Twilight Zone) a reset board starts real musics later than the probe listens, and
+    /// the level of the sound before is no proof of a copy (the music taken up is not
+    /// always the last long sound), so neither test is safe there.
     fn fresh_commands(&self) -> Vec<Cmd> {
-        if self
-            .board_list()
-            .any(|b| is_dcs(&self.families[b as usize]))
-        {
+        let alvin_g = self.board_list().any(|b| {
+            let t = (unsafe { ffi::shim_board_type(b) } as u32) & !0xFF;
+            crate::drivers::board_name(t).starts_with("SNDBRD_ALVGS")
+        });
+        if !alvin_g {
             return Vec::new();
         }
         self.results
