@@ -10,6 +10,10 @@ is missing. Every statement is taken from rom2altsound's code and PinMAME's sour
   otherwise (boot, sending commands, the sweep, stops and resets, volume, loops, the
   pack's columns, VPinball). Read it first: the family sections only describe what
   differs.
+
+Every pack's `altsound.ini` declares `new_sound_commands = 1` (keyed on the real one-byte
+sound commands; see [In VPinball](common.md#in-vpinball)), and every family's "In VPinball"
+note assumes it.
 - One document per maker or board line, one section per family (each family has its own
   anchor, `#sndbrd_<name>` in lowercase); [families.json](families.json) maps every
   family to its section.

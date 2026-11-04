@@ -213,7 +213,7 @@ games, 12 sound ROM ids, 1981-2019, Bally / Bally Midway · e.g. Eight Ball Delu
   PinMAME's manual command already hands the low nibble on the first read and the high
   one on the second (`snt_manCmd_w`, `snt_8910a_r` with `manualSoundcmd`), so
   rom2altsound sends through `sndbrd_manCmd`. `06` (background on) is followed by `04`
-  (entry 0, nothing), as the game sends its next sound (`command_sends`,
+  (entry 0, a no-op that starts no sound, not a sound id the pack plays), as the game sends its next sound (`command_sends`,
   `BYSNT_BACKGROUND_ON`, `BYSNT_NOOP`).
 - **Sound list**: `01`..`DE` (`sweep`, `BYSNT_LAST`): from `DF` on the commands set the
   volume lines (eballdlx $F915).

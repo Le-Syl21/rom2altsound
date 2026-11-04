@@ -451,6 +451,10 @@ pub fn altsound_ini_dcs(callout: &[u32], sfx: &[u32]) -> String {
          ; each profile lowers the music as much as the DCS track programs do.\n\
          \n\
          [system]\n\
+         ; new_sound_commands = 1: this pack is keyed on the real one-byte sound commands (the\n\
+         ; clean stream of PinMAME 3.7 and later). Without it (0, the default) an engine reads the old\n\
+         ; noisy command stream with byte pairing, meant for legacy packs.\n\
+         new_sound_commands = 1\n\
          record_sound_cmds = 0\n\
          rom_volume_ctrl = 0\n\
          cmd_skip_count = 0\n\
@@ -483,6 +487,89 @@ pub fn altsound_ini_dcs(callout: &[u32], sfx: &[u32]) -> String {
     )
 }
 
+/// Key every generated pack declares: it is keyed on the real one-byte sound commands.
+const NEW_SOUND_COMMANDS: &str = "new_sound_commands";
+
+fn ini_header(line: &str) -> Option<String> {
+    let t = line.trim();
+    (t.starts_with('[') && t.ends_with(']')).then(|| t[1..t.len() - 1].trim().to_lowercase())
+}
+
+fn ini_key(line: &str) -> Option<String> {
+    let t = line.trim();
+    if t.is_empty() || t.starts_with(';') || t.starts_with('#') || t.starts_with('[') {
+        return None;
+    }
+    t.split_once('=').map(|(k, _)| k.trim().to_lowercase())
+}
+
+/// Merge the generated `altsound.ini` into one that already exists: the existing file is
+/// kept as it is (comments, order, the user's values), sections and keys it lacks are
+/// added, and `[system] new_sound_commands` is always forced to 1 since the generated
+/// stream is the clean one. With no existing file the generated text is returned.
+pub fn merge_ini(existing: Option<&str>, generated: &str) -> String {
+    let Some(existing) = existing else {
+        return generated.to_string();
+    };
+    let mut lines: Vec<String> = existing.lines().map(str::to_string).collect();
+    // Generated sections: (name, header line, key lines).
+    let mut gsecs: Vec<(String, String, Vec<String>)> = Vec::new();
+    for l in generated.lines() {
+        if let Some(h) = ini_header(l) {
+            gsecs.push((h, l.trim().to_string(), Vec::new()));
+        } else if ini_key(l).is_some()
+            && let Some(g) = gsecs.last_mut()
+        {
+            g.2.push(l.trim().to_string());
+        }
+    }
+    for (name, header, keys) in gsecs {
+        let start = lines
+            .iter()
+            .position(|l| ini_header(l).as_deref() == Some(&name));
+        let Some(start) = start else {
+            if lines.last().is_some_and(|l| !l.trim().is_empty()) {
+                lines.push(String::new());
+            }
+            lines.push(header);
+            lines.extend(keys);
+            continue;
+        };
+        let end = lines[start + 1..]
+            .iter()
+            .position(|l| ini_header(l).is_some())
+            .map_or(lines.len(), |p| start + 1 + p);
+        // Insert after the section's last non-blank line.
+        let mut at = end;
+        while at > start + 1 && lines[at - 1].trim().is_empty() {
+            at -= 1;
+        }
+        for k in keys {
+            let kn = ini_key(&k).unwrap();
+            let found = (start + 1..end).find(|&i| ini_key(&lines[i]).as_deref() == Some(&kn));
+            if kn == NEW_SOUND_COMMANDS && name == "system" {
+                match found {
+                    Some(i) => lines[i] = k,
+                    None => {
+                        lines.insert(at, k);
+                        lines.insert(
+                            at,
+                            "; written by rom2altsound: keyed on the real one-byte sound commands"
+                                .into(),
+                        );
+                    }
+                }
+            } else if found.is_none() {
+                lines.insert(at, k);
+                at += 1;
+            }
+        }
+    }
+    let mut out = lines.join("\n");
+    out.push('\n');
+    out
+}
+
 /// `altsound.ini`: libaltsound's own template, with the AltSound format selected and the
 /// ROM volume control off (the files already carry the right relative levels).
 pub fn altsound_ini() -> String {
@@ -494,6 +581,10 @@ pub fn altsound_ini() -> String {
      ; \"g-sound\" to use the latter.\n\
      \n\
      [system]\n\
+     ; new_sound_commands = 1: this pack is keyed on the real one-byte sound commands (the\n\
+     ; clean stream of PinMAME 3.7 and later). Without it (0, the default) an engine reads the old\n\
+     ; noisy command stream with byte pairing, meant for legacy packs.\n\
+     new_sound_commands = 1\n\
      record_sound_cmds = 0\n\
      rom_volume_ctrl = 0\n\
      cmd_skip_count = 0\n\
@@ -1116,6 +1207,11 @@ pub fn write_pack(
         (ALTSOUND_INI, ini),
     ] {
         let p = out_dir.join(name);
+        let text = if name == ALTSOUND_INI {
+            merge_ini(fs::read_to_string(&p).ok().as_deref(), &text)
+        } else {
+            text
+        };
         fs::write(&p, text).map_err(|e| err(&p, e))?;
     }
 
@@ -1709,6 +1805,33 @@ mod tests {
             (pack.music_channel_rows, pack.duck_values.clone()),
             (1, vec![50])
         );
+    }
+
+    #[test]
+    fn ini_declares_new_sound_commands() {
+        assert!(altsound_ini().contains("\nnew_sound_commands = 1\n"));
+        assert!(altsound_ini_dcs(&[], &[]).contains("\nnew_sound_commands = 1\n"));
+        assert_eq!(merge_ini(None, &altsound_ini()), altsound_ini());
+    }
+
+    #[test]
+    fn merge_keeps_user_ini_and_forces_key() {
+        let old = "[system]\nrom_volume_ctrl = 1\nnew_sound_commands = 0\nmy_key = 7\n\n[custom]\na = b\n";
+        let m = merge_ini(Some(old), &altsound_ini());
+        assert!(m.contains("rom_volume_ctrl = 1\n"), "{m}");
+        assert!(!m.contains("rom_volume_ctrl = 0"), "{m}");
+        assert!(
+            m.contains("my_key = 7\n") && m.contains("[custom]\na = b\n"),
+            "{m}"
+        );
+        assert!(m.contains("new_sound_commands = 1\n") && !m.contains("new_sound_commands = 0"));
+        assert!(m.contains("record_sound_cmds = 0\n") && m.contains("[format]\nformat = altsound"));
+        // No key from a section appears twice, and a second merge changes nothing.
+        assert_eq!(m.matches("new_sound_commands").count(), 1);
+        assert_eq!(merge_ini(Some(&m), &altsound_ini()), m);
+        // Key missing altogether is added.
+        let m2 = merge_ini(Some("[system]\nx = 1\n"), &altsound_ini());
+        assert!(m2.contains("new_sound_commands = 1\n"));
     }
 
     #[test]

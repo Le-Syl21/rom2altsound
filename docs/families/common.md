@@ -226,6 +226,17 @@ sample is the twin of an earlier one; every command keeps its own file and rows 
 
 ## In VPinball
 
+**Where the pack goes and what its ini says.** Copy the ROM's folder as
+`<table folder>/altsound/<rom>/` (the plugin also looks in `<table folder>/pinmame/altsound/<rom>/`,
+then in the global AltSound folder). Its `altsound.ini` has `new_sound_commands = 1` under
+`[system]`, which rom2altsound always writes: the pack is keyed on the real one-byte sound
+commands (the clean stream of VPX 10.8.1 / PinMAME 3.7 and later). Absent or 0, the default,
+the engine reads the old noisy stream and pairs bytes, as legacy packs expect; those keep
+working unchanged. A pack author who hand-edits a pack, or converts an old one to the real
+commands, sets it to 1. Older engines ignore the key. `record_sound_cmds` stays 0: it only
+records the received commands for debugging. The per-family notes below describe what
+each engine state looks up.
+
 What VPinball's AltSound looks up, read in the code it builds and measured. Two states
 matter: the VPinball releases up to 10.8.1-5436 (pre-release of 2026-08-21) and the master
 builds up to 2026-10-09 (PinMAME 2150eab, libaltsound f908262), and the master builds from

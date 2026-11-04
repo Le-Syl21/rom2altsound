@@ -1179,6 +1179,11 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
             (altsound::ALTSOUND_INI, sam_ini()),
         ] {
             let p = job.out.join(name);
+            let text = if name == altsound::ALTSOUND_INI {
+                altsound::merge_ini(std::fs::read_to_string(&p).ok().as_deref(), &text)
+            } else {
+                text
+            };
             std::fs::write(&p, text).map_err(|e| format!("{}: {e}", p.display()))?;
         }
     }

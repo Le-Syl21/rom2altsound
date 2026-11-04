@@ -194,6 +194,18 @@ Then copy the ROM's folder next to your table, as `<table folder>/altsound/<rom>
 example `Tables/Attack from Mars/altsound/afm_113b/`), and turn on the AltSound plugin in
 VPinball.
 
+**`new_sound_commands = 1`.** The `[system]` section of the pack's `altsound.ini` carries
+this key, and rom2altsound always writes it: the pack is keyed on the real one-byte sound
+commands, the clean stream of VPX 10.8.1 / PinMAME 3.7 and later. When the key is absent
+or 0 (the default), the engine reads the old, noisy command stream and pairs bytes, which
+is what packs made before this key expect. So an old pack keeps working unchanged, and
+unknown keys are ignored by engines that predate it. If you hand-edit a pack, or convert
+an old one so that its ids are the real commands, set `new_sound_commands = 1` yourself;
+leave it out for a legacy pack. If an `altsound.ini` already sits in the ROM's folder,
+rom2altsound keeps it (your values, comments and extra sections), adds the keys it lacks
+and sets this one to 1. `record_sound_cmds` stays 0: it only makes the engine record the
+commands it receives, for debugging, and a pack does not need it.
+
 ### What you get
 
 ```
@@ -206,7 +218,7 @@ afm_113b/
 ├── ...
 ├── altsound.csv                AltSound format (selected in altsound.ini)
 ├── g-sound.csv                 G-Sound format (set format = g-sound in altsound.ini to use it)
-├── altsound.ini                format, and the ROM's volume control turned off
+├── altsound.ini                format, new_sound_commands = 1, and the ROM's volume control turned off
 ├── manifest.json               every measure: names, lengths, loudness, loops, twins...
 ├── index.html                  a page to listen to every sound in a browser (see below)
 ├── replace/                    your own sound files, when you replace some (see below)
@@ -973,6 +985,19 @@ Copiez ensuite le dossier de la ROM à côté de votre table, en
 `<dossier de la table>/altsound/<rom>/` (par exemple
 `Tables/Attack from Mars/altsound/afm_113b/`), et activez le plugin AltSound dans VPinball.
 
+**`new_sound_commands = 1`.** La section `[system]` de l'`altsound.ini` du pack porte cette
+clé, et rom2altsound l'écrit toujours : le pack est indexé sur les vraies commandes son d'un
+octet, le flux propre de VPX 10.8.1 / PinMAME 3.7 et suivants. Absente ou à 0 (le défaut),
+le moteur lit l'ancien flux bruité et apparie les octets, ce qu'attendent les packs faits
+avant cette clé. Un ancien pack continue donc de fonctionner sans changement, et les moteurs
+plus anciens ignorent les clés inconnues. Si vous modifiez un pack à la main, ou convertissez
+un ancien pack pour que ses numéros soient les vraies commandes, mettez
+`new_sound_commands = 1` vous-même ; ne la mettez pas pour un pack hérité. Si un
+`altsound.ini` existe déjà dans le dossier de la ROM, rom2altsound le garde (vos valeurs,
+commentaires et sections), ajoute les clés manquantes et met celle-ci à 1.
+`record_sound_cmds` reste à 0 : elle sert seulement à enregistrer les commandes reçues, pour
+le débogage, et un pack n'en a pas besoin.
+
 ### Ce que vous obtenez
 
 ```
@@ -985,7 +1010,7 @@ afm_113b/
 ├── ...
 ├── altsound.csv                format AltSound (celui choisi dans altsound.ini)
 ├── g-sound.csv                 format G-Sound (mettre format = g-sound dans altsound.ini pour l'utiliser)
-├── altsound.ini                le format, et le contrôle du volume par la ROM désactivé
+├── altsound.ini                le format, new_sound_commands = 1, et le contrôle du volume par la ROM désactivé
 ├── manifest.json               toutes les mesures : noms, durées, niveaux, boucles, jumeaux...
 ├── index.html                  une page pour écouter chaque son dans un navigateur (voir plus bas)
 ├── replace/                    vos propres fichiers de sons, si vous en remplacez (voir plus bas)

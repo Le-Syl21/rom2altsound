@@ -205,7 +205,13 @@ AltSound folder).
   rest, including one-shot `Music:` jingles; `DUCKING_PROFILE` 0 (none). DCS: below.
 - **`altsound.ini`**: `format = altsound` (change it to `g-sound` to use the other CSV)
   and `rom_volume_ctrl = 0`: the files already carry the right relative levels, and the
-  ROM's volume commands must not change them. Boards other than DCS get libaltsound's own
+  ROM's volume commands must not change them. `[system] new_sound_commands = 1` is always
+  written: the ids are the real one-byte sound commands (the clean stream of VPX 10.8.1 /
+  PinMAME 3.7 and later); absent or 0 means the old noisy stream with byte pairing, for
+  legacy packs, which keep working unchanged. An `altsound.ini` already in the folder is
+  merged, not overwritten (`altsound::merge_ini`): its keys and comments stay, missing keys
+  are added, and this key is set to 1. `record_sound_cmds` stays 0 (a debugging recorder,
+  not needed to play a pack). Boards other than DCS get libaltsound's own
   G-Sound template; DCS gets the ROM's ducking profiles (below).
 - Ids that are not a single number (none so far) are left out of the CSVs.
 
