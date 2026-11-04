@@ -94,7 +94,6 @@ pub struct App {
     volume: Volume,
     jobs: u32,
     max_secs: f64,
-    sounds_dat: String,
     names_csv: String,
     /// Borrow a compatible set's sound ROM for a ticked set whose own was never dumped.
     borrow_sound: bool,
@@ -147,7 +146,6 @@ impl App {
             volume: Volume::Factory,
             jobs: DEFAULT_JOBS.min(max_jobs),
             max_secs: DEFAULT_MAX_SECS,
-            sounds_dat: String::new(),
             names_csv: String::new(),
             borrow_sound: false,
             advanced: options::advanced(),
@@ -368,10 +366,6 @@ impl App {
         if self.volume == Volume::Reference {
             a.push("--volume".into());
             a.push("reference".into());
-        }
-        if !self.sounds_dat.trim().is_empty() {
-            a.push("--sounds-dat".into());
-            a.push(self.sounds_dat.trim().to_owned());
         }
         if !self.names_csv.trim().is_empty() {
             a.push("--names".into());
@@ -794,16 +788,6 @@ impl App {
                     .on_hover_text(t.max_secs_tip);
                     ui.end_row();
 
-                    file_row(
-                        ui,
-                        t.sounds_dat,
-                        t.sounds_dat_tip,
-                        t.built_in,
-                        t.choose,
-                        &mut self.sounds_dat,
-                        "dat",
-                    );
-                    ui.end_row();
                     file_row(
                         ui,
                         t.names_csv,

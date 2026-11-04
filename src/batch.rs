@@ -107,12 +107,6 @@ fn child_args(cli: &Cli, rom: &RomSpec, out: &Path) -> Vec<OsString> {
         cli.vpm.as_ref().map(|v| v.to_string_lossy().into_owned()),
     );
     opt(
-        "--sounds-dat",
-        cli.sounds_dat
-            .as_ref()
-            .map(|v| v.to_string_lossy().into_owned()),
-    );
-    opt(
         "--names",
         cli.names.as_ref().map(|v| v.to_string_lossy().into_owned()),
     );

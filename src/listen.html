@@ -505,7 +505,7 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
       m.title = "Your name, kept in this browser (Export names saves it); the pack says: " + (s.name || "no name");
       cell.appendChild(m);
     } else if (s.dat_name !== undefined && s.dat_name !== null && s.dat_name !== s.name) {
-      cell.title = "sounds.dat: " + (s.dat_name || "no name");
+      cell.title = "previous name: " + (s.dat_name || "none");
     }
     var b = el("button", "edit", "✎");
     b.type = "button";

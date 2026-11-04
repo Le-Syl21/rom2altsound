@@ -290,6 +290,19 @@ fn by_id(names: &Names) -> Result<(HashMap<String, String>, Vec<String>), String
     Ok((map.into_iter().map(|(k, (_, n))| (k, n)).collect(), dup))
 }
 
+/// The tool's own name for a sound nobody named: `Sound 2A (3.2 s)`, `Sound 2A (loop)`,
+/// `Sound 2A (120+ s)` (cut at the cap). `ended_by` is the report's.
+pub fn generated_name(id: &str, duration: f64, ended_by: &str) -> String {
+    let id = id.trim_start_matches("0x").trim_start_matches("0X");
+    let len = match ended_by {
+        "loop" => "loop".to_owned(),
+        "max" => format!("{duration:.0}+ s"),
+        _ if duration < 10.0 => format!("{duration:.1} s"),
+        _ => format!("{duration:.0} s"),
+    };
+    format!("Sound {} ({len})", id.to_ascii_uppercase())
+}
+
 /// Applies names to a manifest (in memory) and to the text of its altsound.csv; returns the
 /// report and the new altsound.csv.
 pub fn apply(
@@ -312,7 +325,8 @@ pub fn apply(
         report.matched += 1;
         let old = e["name"].as_str().unwrap_or("").to_owned();
         if old != *name {
-            // The first name it had (sounds.dat's) stays on record.
+            // The name it had stays on record (empty for a sound nobody named; the name PinMAME's
+            // sounds.dat gave it in the reports of tool versions up to 1.0).
             if e.get("sounds_dat_name").is_none() {
                 e["sounds_dat_name"] = json!(old);
             }
@@ -614,7 +628,7 @@ mod tests {
         assert_eq!(r.changed, 2);
         assert_eq!(r.unknown, ["0x0099"]);
         assert_eq!(r.duplicates, ["0x0002"]);
-        // The manifest keeps the name readable, and sounds.dat's.
+        // The manifest keeps the name readable, and the previous one.
         assert_eq!(m["sounds"][1]["name"], "Ramp, left");
         assert_eq!(m["sounds"][1]["sounds_dat_name"], "");
         assert_eq!(m["sounds"][2]["name"], "Say \"Jackpot\" now");

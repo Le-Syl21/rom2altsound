@@ -200,12 +200,12 @@ pub struct Cli {
     /// sets that share a sound ROM with the one extracted)
     #[arg(long, conflicts_with_all = ["no_factory", "no_volume_init", "cold_boot_only", "volume", "names"])]
     boot_only: bool,
-    /// A sounds.dat to name the commands with [default: the one of the PinMAME version
-    /// built in]
-    #[arg(long)]
+    /// Deprecated and ignored: the sounds are no longer named from a sounds.dat (give names
+    /// with --names; `rom2altsound sounds-dat` writes a sounds.dat from the reports)
+    #[arg(long, hide = true)]
     sounds_dat: Option<PathBuf>,
-    /// Stop command sent after each recording, e.g. 0x0000 (default: the family's
-    /// "All sound off" / "Reset Sound System" from sounds.dat, else an audio CPU reset)
+    /// Stop command sent after each recording, e.g. 0x0000 (default: the family's own stop
+    /// measured on its boards, else an audio CPU reset)
     #[arg(long)]
     stop: Option<String>,
     /// For a set whose sound ROM was never dumped: borrow the sound ROM of another set you
@@ -251,7 +251,7 @@ pub struct Cli {
     #[arg(long)]
     no_html: bool,
     /// Sound names to apply to the pack, from a names.csv (the listening page's "Export
-    /// names"): they replace sounds.dat's names for the ids the file lists, in altsound.csv,
+    /// names"): they name the ids the file lists, in altsound.csv,
     /// manifest.json and the page (one ROM only). A file made for another sound ROM is
     /// refused (see --force-names)
     #[arg(long, value_name = "NAMES.CSV", conflicts_with = "cold_boot_only")]
@@ -571,10 +571,11 @@ pub fn cli_main() {
 
 fn run(cli: &Cli, job: &Job) -> Result<(), String> {
     let wall = Instant::now();
-    let dat = soundsdat::SoundsDat::parse(&match &cli.sounds_dat {
-        Some(p) => std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?,
-        None => soundsdat::BUILT_IN.to_owned(),
-    });
+    if cli.sounds_dat.is_some() {
+        eprintln!(
+            "warning: --sounds-dat is ignored: commands and names no longer come from a sounds.dat"
+        );
+    }
     std::fs::create_dir_all(&job.out).map_err(|e| e.to_string())?;
     let borrow = borrow_plan(cli, job)?;
     // A borrowed sound ROM gets a private directory of its own (its nvram and its combined
@@ -737,7 +738,6 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
             bsmt,
             measurement: measurement(cli),
         },
-        dat,
     ));
 
     progress::phase("boot");
@@ -983,7 +983,6 @@ pub(crate) fn measurement(cli: &Cli) -> serde_json::Value {
         "boot_secs": cli.boot_secs,
         "boot_max_secs": cli.boot_max_secs,
         "bsmt_hle": cli.bsmt_hle,
-        "sounds_dat": cli.sounds_dat.as_ref().map(|p| p.display().to_string()),
         "stop": cli.stop,
         "sound_rom_from": cli.sound_rom_from,
         "complete": cli.only.is_none() && cli.limit.is_none(),
@@ -1075,9 +1074,6 @@ fn cold_boot(cli: &Cli, job: &Job, vpm: &Path) -> Result<serde_json::Value, Stri
     }
     if cli.force_sound_rom {
         child.arg("--force-sound-rom");
-    }
-    if let Some(dat) = &cli.sounds_dat {
-        child.arg("--sounds-dat").arg(dat);
     }
     if cli.verbose {
         child.arg("--verbose");
