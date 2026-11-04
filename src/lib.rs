@@ -954,7 +954,7 @@ fn mark_borrowed(cli: &Cli, job: &Job, b: &borrow::Borrowed) -> Result<(), Strin
 /// The version of the way the manifests' loudness and coverage are measured: bumped when
 /// a change of the tool moves the figures of an unchanged ROM (a new sweep range, another
 /// gating), so that `rom2altsound catalog` and `--skip-done` can tell stale manifests.
-pub(crate) const MEASUREMENT_VERSION: u32 = 1;
+pub(crate) const MEASUREMENT_VERSION: u32 = 2;
 
 /// The tool and the settings the figures of a manifest depend on. Two runs with equal
 /// `measurement` give the same figures for the same ROM.
