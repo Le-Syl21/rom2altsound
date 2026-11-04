@@ -13,7 +13,6 @@ const MAIN: &[&str] = &[
     "jobs",
     "volume",
     "max_secs",
-    "sounds_dat",
     "names",
     "sound_rom_from",
     "help",

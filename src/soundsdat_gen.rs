@@ -26,11 +26,12 @@
 //! `7A xx`. A command the manual path cannot send (the data port, a control line, 16-bit
 //! words, more than 6 bytes) is left out and counted.
 //!
-//! The output is PinMAME's own file unchanged (every line, comments included), then the
-//! generated sections, sorted, each entry left out when the game already gets the same
-//! bytes from PinMAME's sections as the commander reads them (`soundsdat::PinmameDat`):
-//! an upstream line it cannot read (uppercase hex, a line cut by its 100-byte buffer, an
-//! entry after an empty line) is written again in a form it reads.
+//! The output is made from our measurements only: the generated sections, sorted. PinMAME's
+//! own sounds.dat is not read (its ids can be wrong: Fathom's `0604`). Only a file given
+//! explicitly with `--sounds-dat` is taken as a starting point: it is then written
+//! unchanged (every line, comments included) and each entry is left out when the game
+//! already gets the same bytes from its sections as the commander reads them
+//! (`soundsdat::PinmameDat`); its names, too, are used.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ffi::c_int;
@@ -41,7 +42,7 @@ use serde_json::Value;
 
 use crate::extract;
 use crate::names::{self, Names};
-use crate::soundsdat::{self, MAX_LINE_CHARS, MAX_NAME_CHARS, PinmameDat, SoundsDat};
+use crate::soundsdat::{MAX_LINE_CHARS, MAX_NAME_CHARS, PinmameDat, SoundsDat};
 
 #[derive(Parser)]
 #[command(
@@ -50,14 +51,15 @@ use crate::soundsdat::{self, MAX_LINE_CHARS, MAX_NAME_CHARS, PinmameDat, SoundsD
     long_about = "Write a PinMAME sounds.dat from the reports of extraction runs.
 
 PinMAME's sound command mode lists the commands sounds.dat names for the game. This
-writes PinMAME's own sounds.dat unchanged, then one section per game measured (its
-parent set's name; a clone only for what its parent's section does not give it): one
-entry per command that produced a sound, with the bytes the commander must send for it
-on that board (framing included). The names: sounds.dat's own (also the one the
-extraction took from it), else the given names files', else the one a names file gave
-the extraction, else the command and the sound's length (`Sound 2A (3.2 s)`,
-`Sound 2A (loop)`). PinMAME reads every heading that starts with the game's name or its
-parent's: an entry that another game would read too, without listing it, is held back.",
+writes a sounds.dat made of our measurements only (PinMAME's own file is not read): one
+section per game measured (its parent set's name; a clone only for what its parent's
+section does not give it), one entry per command that produced a sound, with the bytes
+the commander must send for it on that board (framing included). The names: the given
+names files', else the one a names file gave the extraction, else the command and the
+sound's length (`Sound 2A (3.2 s)`, `Sound 2A (loop)`). PinMAME reads every heading that
+starts with the game's name or its parent's: an entry that another game would read too,
+without listing it, is held back. The file replaces PinMAME's `release/sounds.dat`; to
+keep PinMAME's other games in it, start from a copy with `--sounds-dat`.",
     after_help = "Example:
   rom2altsound sounds-dat --manifests runs/full --names names/ --out sounds.dat"
 )]
@@ -72,8 +74,8 @@ struct SoundsDatCli {
     /// id. Repeatable; a later file's name wins
     #[arg(long, value_name = "FILE|DIR")]
     names: Vec<PathBuf>,
-    /// The sounds.dat to start from [default: the one of the PinMAME version this program
-    /// is built with]
+    /// A sounds.dat to start from: written unchanged, its names used, and the entries it
+    /// already gives a game left out [default: none, the output holds our measurements only]
     #[arg(long, value_name = "FILE")]
     sounds_dat: Option<PathBuf>,
     /// The sounds.dat to write
@@ -96,8 +98,7 @@ pub struct Game {
 /// Where an entry's name comes from, in priority order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Source {
-    /// The starting sounds.dat: the game's sections, its family's (`dcs:`, `wpcs:`), or
-    /// the name the extraction took from it (the report's, or its `sounds_dat_name`).
+    /// The sounds.dat given with `--sounds-dat`: the game's sections, or its family's.
     Dat,
     /// A names file (`--names`).
     Names,
@@ -125,7 +126,6 @@ struct Sound {
     bytes: Result<Vec<u8>, &'static str>,
     duration: f64,
     ended_by: String,
-    dat_name: Option<String>,
     name: Option<String>,
 }
 
@@ -334,11 +334,12 @@ fn measured(m: &Value) -> Result<Measured, &'static str> {
                 .filter(|n| !n.is_empty())
         };
         // `sounds_dat_name` is there once names were applied (`names.rs`): `name` is then
-        // the names file's. Without it, `name` is the one sounds.dat gave the extraction.
-        let (dat_name, name) = if s.get("sounds_dat_name").is_some() {
-            (text("sounds_dat_name"), text("name"))
+        // the names file's. Without it, `name` is empty, or (reports up to 1.0) a name
+        // PinMAME's sounds.dat gave, which is not taken.
+        let name = if s.get("sounds_dat_name").is_some() {
+            text("name")
         } else {
-            (text("name"), None)
+            None
         };
         out.push(Sound {
             id,
@@ -346,7 +347,6 @@ fn measured(m: &Value) -> Result<Measured, &'static str> {
             bytes,
             duration: s["duration"].as_f64().unwrap_or(0.0),
             ended_by: s["ended_by"].as_str().unwrap_or_default().to_owned(),
-            dat_name,
             name,
         });
     }
@@ -361,14 +361,7 @@ fn measured(m: &Value) -> Result<Measured, &'static str> {
 
 /// `Sound 2A (3.2 s)`, `Sound 2A (loop)`, `Sound 2A (120+ s)` (cut at the cap).
 fn fallback_name(s: &Sound) -> String {
-    let id = s.id.trim_start_matches("0x").trim_start_matches("0X");
-    let len = match s.ended_by.as_str() {
-        "loop" => "loop".to_owned(),
-        "max" => format!("{:.0}+ s", s.duration),
-        _ if s.duration < 10.0 => format!("{:.1} s", s.duration),
-        _ => format!("{:.0} s", s.duration),
-    };
-    format!("Sound {} ({len})", id.to_ascii_uppercase())
+    names::generated_name(&s.id, s.duration, &s.ended_by)
 }
 
 /// Whether a name read from the file (`read`, cut to 29 characters by the commander) is
@@ -494,7 +487,6 @@ fn wanted(g: &Game, m: &Measured, dat: &SoundsDat, names: &[&Names]) -> Wanted {
             .get(&s.key)
             .map(|n| names::clean_label(n))
             .filter(|n| !n.is_empty())
-            .or_else(|| s.dat_name.clone())
         {
             Named {
                 name: n,
@@ -702,22 +694,24 @@ pub fn generate(inp: &Inputs) -> Output {
     // The text: PinMAME's file, then the sections.
     let mut text = format!(
         "; Generated by rom2altsound {} (rom2altsound sounds-dat) from the reports of {} sets.\n\
-         ; PinMAME's sounds.dat follows unchanged, then one section per game measured: every\n\
-         ; command that produced a sound, with the bytes the commander sends on that board.\n\
+         ; One section per game measured: every command that produced a sound, with the bytes\n\
+         ; the commander sends on that board. Nothing here comes from PinMAME's sounds.dat.\n\
          ;-----------------------------------------------------------------------\n",
         inp.version,
         used.len()
     );
-    text.push_str(inp.base);
-    if !inp.base.ends_with('\n') {
-        text.push('\n');
+    if !inp.base.trim().is_empty() {
+        text.push_str(inp.base);
+        if !inp.base.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(
+            "\n;-----------------------------------------------------------------------\n\
+             ; rom2altsound sections: a game's commands that the sections above do not give it\n\
+             ; (a clone: only what its parent's section does not), sorted by command.\n\
+             ;-----------------------------------------------------------------------\n",
+        );
     }
-    text.push_str(
-        "\n;-----------------------------------------------------------------------\n\
-         ; rom2altsound sections: a game's commands that the sections above do not give it\n\
-         ; (a clone: only what its parent's section does not), sorted by command.\n\
-         ;-----------------------------------------------------------------------\n",
-    );
     for (name, list) in &sections {
         let g = &games[name];
         let (_, m) = &want[name];
@@ -895,7 +889,7 @@ pub fn cli(args: Vec<String>) -> i32 {
                 return 1;
             }
         },
-        None => soundsdat::BUILT_IN.to_owned(),
+        None => String::new(),
     };
     let games: Vec<Game> = crate::drivers::load()
         .into_iter()
@@ -1028,9 +1022,9 @@ mod tests {
         })
     }
 
-    /// The generated part: from the first heading after the banner.
+    /// The generated part: after the starting file when one was given, else the whole text.
     fn generated(text: &str) -> &str {
-        &text[text.find("; rom2altsound sections").unwrap()..]
+        text.find("; rom2altsound sections").map_or(text, |i| &text[i..])
     }
 
     #[test]
@@ -1090,6 +1084,33 @@ mod tests {
     }
 
     #[test]
+    fn nothing_comes_from_pinmames_file_by_default() {
+        // Fathom: the report's ids are `04` and `06`. The entry for `06` is `0604` in the
+        // file, the bytes the commander sends (`06`, the background sound, then the no-op
+        // `04`, see `framed`), not a sound id of its own.
+        let games = [game("fathom", None, "aa")];
+        let reports = vec![report(
+            "fathom",
+            "aa",
+            &["BYSNT"],
+            vec![
+                sound("0x04", "BYSNT", 1.0, "end", ""),
+                sound("0x06", "BYSNT", 40.0, "loop", ""),
+            ],
+        )];
+        let out = run("", &games, reports, &[]);
+        assert!(
+            out.text
+                .contains("\nfathom:\n:04:Sound 04 (1.0 s)\n:0604:Sound 06 (loop)\n"),
+            "{}",
+            out.text
+        );
+        assert!(!out.text.contains("PinMAME's sounds.dat follows"));
+        assert_eq!(out.stats.base_lines_lost, 0);
+        assert_eq!(out.stats.missing, 0);
+    }
+
+    #[test]
     fn a_clone_gets_only_what_its_parent_lacks() {
         let games = [
             game("pg_10", None, "aa"),
@@ -1145,7 +1166,14 @@ mod tests {
             vec![
                 sound("0x0001", "DCS", 3.0, "end", "Music: Theme"),
                 sound("0x0002", "DCS", 1.0, "end", ""),
+                // A report of an older version: the name is PinMAME's, not taken.
                 sound("0x0003", "DCS", 1.0, "end", "From the run's sounds.dat"),
+                // A name a names file gave the extraction (`sounds_dat_name` is there).
+                {
+                    let mut s = sound("0x0006", "DCS", 1.0, "end", "Typed at extraction");
+                    s["sounds_dat_name"] = json!("");
+                    s
+                },
                 sound("0x0004", "DCS", 120.0, "max", ""),
                 sound("0x03D4", "DCS", 0.5, "end", ""),
                 sound("0x0005", "DCS", 12.0, "silence", ""),
@@ -1160,7 +1188,8 @@ mod tests {
         // 0001 is in PinMAME's section already: not written again, its name kept.
         assert!(!g.contains(":0001:"), "{g}");
         assert!(g.contains(":0002:Typed two\n"));
-        assert!(g.contains(":0003:From the run's sounds.dat\n"));
+        assert!(g.contains(":0003:Sound 0003 (1.0 s)\n"), "{g}");
+        assert!(g.contains(":0006:Typed at extraction\n"));
         assert!(g.contains(":0004:Sound 0004 (120+ s)\n"));
         assert!(g.contains(":03d4:Menu Select A\n"));
         assert!(g.contains(":0005:Sound 0005 (12 s)\n"));
@@ -1168,8 +1197,9 @@ mod tests {
         assert!(g.contains("\npg_10:\n"));
         assert!(!g.contains("\npg_11:\n"));
         assert_eq!(out.stats.by_source.get("Names"), Some(&1));
-        assert_eq!(out.stats.by_source.get("Dat"), Some(&2));
-        assert_eq!(out.stats.by_source.get("Fallback"), Some(&2));
+        assert_eq!(out.stats.by_source.get("Dat"), Some(&1));
+        assert_eq!(out.stats.by_source.get("Manifest"), Some(&1));
+        assert_eq!(out.stats.by_source.get("Fallback"), Some(&3));
     }
 
     #[test]

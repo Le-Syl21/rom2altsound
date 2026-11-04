@@ -34,17 +34,13 @@ Funhouse (`fh_l9`)
   Addams Family's program does not wait a frame for the next byte of `79 vv ~vv`, and
   with 1 or 4 frames between them it played the level byte `0C` as a music
   ([WPCS command pacing](../how-it-works.md#reference-volume)).
-- **Sound list**: a sounds.dat section where one matches (`cftbl_l4`, `dw_l2`, `fh_l9`,
-  `tz_94h`, with PinMAME's prefix rule), with its names, first. sounds.dat writes the
-  second bank `01 7A xx`; the filler `01` is dropped (`Extractor::wpcs_bank`: on Twilight
-  Zone `01` fades the music out). Then, with or without a section (since 0.3: Funhouse's
-  section has no `7A xx` bank, "Unable to access 7a bank in this game either"), the raw
-  sweep (`sweep`, `"WPCS"`): `01`..`FF` without the tempo, volume and prefix bytes of
-  sounds.dat `wpcs:` (`WPCS_STATE`: `1E`..`2F`, `60`..`72`, `79`, `7A`), then the whole
-  bank `7A00`..`7AFF` (ids `0x7Axx`); the commands the section names are not played twice;
-  empty slots end as `no_sound` (the bank's table in the program is not read).
-- **Stop, boot and resets**: stop `00`, "Reset Sound System" in sounds.dat's `wpcs:`
-  section (`stop_sends`), sent through `sndbrd_data_w`. A reset goes through the control
+- **Sound list**: the raw sweep (`sweep`, `"WPCS"`), in natural order, sounds.dat not
+  read: `01`..`FF` without the tempo, volume and prefix bytes of PinMAME's sounds.dat
+  `wpcs:` (`WPCS_STATE`: `1E`..`2F`, `60`..`72`, `79`, `7A`), then the whole bank
+  `7A00`..`7AFF` (ids `0x7Axx`). A second-bank command typed `01 7A xx` is `7A xx`
+  (`Extractor::wpcs_bank`: the filler `01` fades the music out on Twilight Zone). Empty
+  slots end as `no_sound` (the bank's table in the program is not read).
+- **Stop, boot and resets**: stop `00 00` ("Reset Sound System", `BUILTIN_STOPS`), sent through `sndbrd_data_w`. A reset goes through the control
   port (`CTRL_RESET`), then the volume is sent again. 0.2.0 reset taf_l5's board forever
   (the volume re-sent after each reset restarted the music `0C`): the 3-waits limit
   (`MAX_STOP_FAILURES`) and the burst came from that.

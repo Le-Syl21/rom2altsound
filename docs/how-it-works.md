@@ -197,8 +197,8 @@ AltSound folder).
   ducking), `STOP` 0. Their sound programs are code for the board's own CPU, with nothing
   that says how one sound changes another's level, so nothing is made up. DCS: from the
   track programs, see "Ducking, stops and channels" below. Everywhere: `GAIN` 100 (every
-  file is at the same master volume, the game's factory one by default). `NAME` is the sounds.dat name without commas and
-  quotes (the parser splits on commas and deletes quotes), or `sound <id>`.
+  file is at the same master volume, the game's factory one by default). `NAME` is the name given with `--names`, without commas and
+  quotes (the parser splits on commas and deletes quotes), else the generated `Sound 2A (3.2 s)`.
 - **`g-sound.csv`** (`ID,TYPE,GAIN,DUCKING_PROFILE,FNAME`, `gsound_csv_parser`). Boards
   other than DCS: `music` for loops and sounds that never ended (in G-Sound every music
   sample loops), `callout` for voice lines (quoted sounds.dat names, `VOX:`), `sfx` for the
@@ -1111,10 +1111,11 @@ flight, the longest a 17.7-minute song).
 
 ### Commands
 
-They come from PinMAME's `release/sounds.dat`: the sections whose header starts with the game
-name or the parent name (afm_113b uses `afm_113:`). The generic `dcs:` / `wpcs:` sections
-supply the stop command. If a game has no section, the tool sweeps raw commands instead,
-leaving out those that change the board's state (`commands_from` says what was swept).
+They do not come from PinMAME's `release/sounds.dat` (its ids can be wrong, and a typed list
+played first made the results depend on the board's state carried between commands). The
+tool sweeps the board's command space, in natural order as one list, leaving out the commands
+that change the board's state (`commands_from` says what was swept); the commands after which
+a board plays nothing more (`BOARD_KILLERS`) go last. The stops are in `BUILTIN_STOPS`.
 Each board's sweep is made of one or more ranges (WPCS: its single bytes, then the `7A`
 bank), printed before the run with how many commands each holds, and again in the summary
 with what came out of it, as in
@@ -1126,11 +1127,8 @@ with what came out of it, as in
   mjrgh's DCSExplorer: catalog in U2 at $3000/$4000/$6000, track index pointer at +$40,
   track count at +$46, `FFxxxx` = empty slot). A DCS command below the track count plays
   that track; `0000` (stop) and the `55 xx` specials are left out. Without a catalog:
-  0001..03FF. **A DCS game with a sounds.dat section gets the union**: the section's
-  commands (with their names) plus the catalog's populated tracks it leaves out, sorted by
-  track number. afm_113b: 1130 tracks, 589 populated besides `0000`; its section lists 575
-  of them and misses 14, among them `0013`, a 120 s loop at -47.6 LUFS (the 13 others play
-  nothing).
+  0001..03FF. afm_113b: 1130 tracks, 589 populated besides `0000`, among them `0013`, a 120 s
+  loop at -47.6 LUFS (the 13 others play nothing).
 - Pinball 2000: the same catalog, in the board's 16-bit words read as two bytes each, high
   byte first (`dcsrom::p2k_image`; PinMAME's region holds the 1 MiB sound flash at 0, U109
   at $400000 and U110 at $800000, little-endian words), at $10000 of that image: the flash's

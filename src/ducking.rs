@@ -8,7 +8,6 @@
 use std::collections::BTreeMap;
 
 use crate::dcsrom;
-use crate::soundsdat::SoundsDat;
 
 /// The fit of a recording of the music with another sound on top (MC) against the music
 /// alone (M) and the sound alone (C), all three trimmed at their first sound.
@@ -121,8 +120,7 @@ fn read_mono(path: &str) -> (Vec<f64>, u32) {
 }
 
 /// `dcs-effects <region.bin> <rom> [--json FILE] [--max-secs S]`: what every command of a
-/// DCS sound region (dumped with `--dump-sound-region`) does, one line per command, names
-/// from the built-in sounds.dat section of `<rom>`.
+/// DCS sound region (dumped with `--dump-sound-region`) does, one line per command.
 pub fn dcs_effects(args: Vec<String>) {
     let mut it = args.into_iter();
     let Some(path) = it.next() else {
@@ -131,7 +129,8 @@ pub fn dcs_effects(args: Vec<String>) {
         );
         return;
     };
-    let rom = it.next().unwrap_or_default();
+    // The set name stays a positional argument (it used to pick the sounds.dat names).
+    let _rom = it.next();
     let (mut json, mut max_secs) = (None, dcsrom::EFFECTS_MAX_SECS);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -141,13 +140,6 @@ pub fn dcs_effects(args: Vec<String>) {
         }
     }
     let region = std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
-    let dat = SoundsDat::parse(crate::soundsdat::BUILT_IN);
-    let names: BTreeMap<u16, String> = dat
-        .game_entries(&rom, None)
-        .into_iter()
-        .filter(|e| e.bytes.len() == 2)
-        .map(|e| (u16::from_be_bytes([e.bytes[0], e.bytes[1]]), e.name))
-        .collect();
     let Some((count, tracks)) = dcsrom::tracks(&region) else {
         eprintln!("no DCS catalog");
         return;
@@ -177,7 +169,7 @@ pub fn dcs_effects(args: Vec<String>) {
             })
             .collect();
         println!(
-            "0x{t:04X} t{} ch{} streams {:?} stops {:?} deferred {:?} queues {:?} own {:?} len {} | {} | {}{}",
+            "0x{t:04X} t{} ch{} streams {:?} stops {:?} deferred {:?} queues {:?} own {:?} len {} | {}{}",
             e.track_type,
             e.channel,
             e.streams,
@@ -187,7 +179,6 @@ pub fn dcs_effects(args: Vec<String>) {
             e.own_level,
             e.length_s.map_or("-".into(), |x| format!("{x:.2}s")),
             ducks.join("; "),
-            names.get(&t).map_or("", String::as_str),
             e.error
                 .as_ref()
                 .map_or(String::new(), |e| format!(" ERROR {e}")),

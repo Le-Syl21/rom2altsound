@@ -16,7 +16,7 @@
 //! exact cycle of its loop is confirmed (`looping`, and on DCS the track program's own period
 //! from `dcsrom::track_run`); the file is then its intro and one loop body.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::ffi::{c_int, c_uint};
 use std::path::PathBuf;
 
@@ -24,7 +24,6 @@ use serde::Serialize;
 
 use crate::gamesound::{self, Poke, Request};
 use crate::loudness::{self, Aggregate, FileLoudness};
-use crate::soundsdat::{Entry, SoundsDat};
 use crate::volume::{self, VolumeCmd};
 use crate::{dcsrom, ducking, ffi, looping, seqloop, seqstate};
 
@@ -235,6 +234,12 @@ const BUILTIN_STOPS: &[(&str, &[u8])] = &[
     ("CAPCOMS", &[0xDA, 0x02, 0x03, 0x01]),
     // game.rom `DCSQuietAllTracks`: 55AE, then the mask of the six channels in the high byte.
     ("DCSP2K", &[0x55, 0xAE, 0x3F, 0x00]),
+    // DCS: track 0000, "all sound off" (every DCS ROM's catalog slot 0 is empty and the
+    // board's command 0000 stops every channel; measured on the 1995-1998 games).
+    ("DCS", &[0x00, 0x00]),
+    // WPCS: `00 00`, the pair the board reads as the sound command 00, which the games send
+    // at power-up and which resets the sound system.
+    ("WPCS", &[0x00, 0x00]),
 ];
 /// Sounds Plus -51 programs whose background sound is turned off by another entry than 1
 /// (`1E`, see `BUILTIN_STOPS`), by set (the set or its parent): the byte that runs the entry
@@ -1273,7 +1278,7 @@ pub struct Counts {
 /// One source of the main command list.
 #[derive(Serialize, Clone)]
 pub struct CoverageSource {
-    /// "sounds.dat", "sweep" (the board's command space), "rom track catalog" (DCS),
+    /// "sweep" (the board's command space), "rom track catalog" (DCS),
     /// "game sound layer" (game-driven boards), "--only".
     pub source: &'static str,
     /// Commands that source gives (before the union; a swept command the section names
@@ -1318,7 +1323,7 @@ pub struct DeadBoard {
     pub silent_after: usize,
 }
 
-const COVERAGE_NOTE: &str = "expected = every command of the list played (sounds.dat's section, the board's swept command space, the DCS ROM's track catalog or the game's own sound layer, as sources says); written + the not_written classes = expected";
+const COVERAGE_NOTE: &str = "expected = every command of the list played (the board's swept command space, the DCS ROM's track catalog or the game's own sound layer, as sources says); written + the not_written classes = expected";
 
 #[derive(Serialize)]
 pub struct LoudnessReport {
@@ -1404,7 +1409,7 @@ struct Manifest<'a> {
     /// where the program refers to each sound.
     #[serde(skip_serializing_if = "Option::is_none")]
     game_sound: Option<serde_json::Value>,
-    /// Raw sweep (no sounds.dat section): per board and range, what came out of it.
+    /// Raw sweep: per board and range, what came out of it.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     sweep: Vec<SweepResult>,
     counts: Counts,
@@ -1544,7 +1549,6 @@ struct RecordingCap {
 
 pub struct Extractor {
     opts: Options,
-    dat: SoundsDat,
     /// The BSMT2000 emulation that ran, on machines with the chip (known once booted).
     bsmt: Option<crate::bsmtfw::Report>,
     pub rate: u32,
@@ -1613,7 +1617,7 @@ pub struct Extractor {
     volume_replays: u32,
     /// How the command list was made, per board.
     commands_from: Vec<String>,
-    /// Raw sweep (no sounds.dat section): the ranges tried, per board.
+    /// Raw sweep: the ranges tried, per board.
     sweep: Vec<SweepRange>,
     volume_check_note: Option<String>,
     /// Volume check references: (board, id, how much its level moved).
@@ -1734,10 +1738,9 @@ struct Analysis {
 }
 
 impl Extractor {
-    pub fn new(opts: Options, dat: SoundsDat) -> Self {
+    pub fn new(opts: Options) -> Self {
         Self {
             opts,
-            dat,
             bsmt: None,
             rate: 0,
             channels: 0,
@@ -2093,7 +2096,7 @@ impl Extractor {
     }
 
     /// Per raw sweep range, what came out of it (empty when the commands came from
-    /// sounds.dat or `--only`).
+    /// the game's own sound layer or `--only`).
     pub fn sweep_results(&self) -> Vec<SweepResult> {
         self.sweep
             .iter()
@@ -4778,18 +4781,14 @@ impl Extractor {
         (0..2).filter(move |&b| mask & (1 << b) != 0)
     }
 
-    /// The family's own stop command from sounds.dat ("All sound off" for DCS, "Reset Sound
-    /// System" for WPCS), else from `BUILTIN_STOPS`; boards without one are reset instead.
+    /// The family's own stop command from `BUILTIN_STOPS` (or the game's, see `stop_bytes`);
+    /// boards without one are reset instead.
     fn stop_sends(&self) -> Vec<Send> {
         if let Some(game) = &self.game {
             return requests(&game.stop);
         }
         if let Some(stop) = &self.opts.stop {
-            let e = Entry {
-                bytes: parse_id(stop),
-                name: String::new(),
-            };
-            return self.game_cmd(&e, &HashMap::new()).sends;
+            return self.game_cmd(&parse_id(stop)).sends;
         }
         let mut v = Vec::new();
         for b in self.board_list() {
@@ -4810,14 +4809,9 @@ impl Extractor {
         v
     }
 
-    /// A family's stop command: sounds.dat's "All sound off" / "Reset Sound System" of its
-    /// generic section, else the game's own (`BY51_GAME_STOPS`, `WMSS11C_GAME_STOPS`), else
-    /// `BUILTIN_STOPS`.
+    /// A family's stop command: the game's own (`BY51_GAME_STOPS`, `WMSS11C_GAME_STOPS`),
+    /// else `BUILTIN_STOPS`.
     fn stop_bytes(&self, typestr: &str) -> Option<Vec<u8>> {
-        let stop = self.dat.family_entries(typestr).into_iter().find(|e| {
-            let n = e.name.to_ascii_lowercase();
-            n.contains("sound off") || n.contains("reset sound")
-        });
         let games = match typestr {
             "BY51" => BY51_GAME_STOPS,
             "WMSS11C" => WMSS11C_GAME_STOPS,
@@ -4826,8 +4820,7 @@ impl Extractor {
         let game = games
             .iter()
             .find(|(set, _)| self.opts.rom == *set || self.opts.parent.as_deref() == Some(*set));
-        stop.map(|e| e.bytes)
-            .or_else(|| game.map(|&(_, byte)| vec![byte]))
+        game.map(|&(_, byte)| vec![byte])
             .or_else(|| {
                 BUILTIN_STOPS
                     .iter()
@@ -4837,18 +4830,14 @@ impl Extractor {
     }
 
     /// What a command of the main list is when it is not a sound: the board's stop, or a
-    /// volume command (master or music volume), from its bytes or its sounds.dat name.
+    /// volume command (master or music volume), from its bytes.
     fn command_role(&self, c: &Cmd) -> Option<&'static str> {
         let mut bytes = parse_id(&c.id);
         if self.mask == 3 && !bytes.is_empty() {
             bytes.remove(0);
         }
         let family = self.families.get(c.board_no as usize)?.as_str();
-        let name = c.name.to_ascii_lowercase();
-        if name.contains("sound off")
-            || name.contains("reset sound")
-            || self.stop_bytes(family).is_some_and(|s| s == bytes)
-        {
+        if self.stop_bytes(family).is_some_and(|s| s == bytes) {
             return Some("stop_command");
         }
         let volume = volume::decode(family, c.board_no, &bytes, 0.0).is_some()
@@ -4950,9 +4939,6 @@ impl Extractor {
     }
 
     fn build_commands(&mut self) -> Vec<Cmd> {
-        let entries = self
-            .dat
-            .game_entries(&self.opts.rom, self.opts.parent.as_deref());
         let mut cmds: Vec<Cmd> = if let Some(game) = &self.game {
             let digits = game.id_digits;
             self.commands_from = vec![format!(
@@ -4979,12 +4965,11 @@ impl Extractor {
                     check: None,
                 })
                 .collect()
-        } else if entries.is_empty() {
+        } else {
+            // The board's own command space, in natural order (one ordered list: no list
+            // typed by anyone is consulted, so the order of play does not depend on one).
             let (cmds, notes, ranges) = sweep(self.mask);
-            eprintln!(
-                "no sounds.dat section for {}: sweeping raw commands",
-                self.opts.rom
-            );
+            eprintln!("sweeping the board's commands of {}", self.opts.rom);
             for r in &ranges {
                 eprintln!("  {}: {} commands", r.label(), r.ids.len());
             }
@@ -4995,100 +4980,6 @@ impl Extractor {
                 .any(|b| is_dcs(&self.families[b as usize]));
             self.sources
                 .push((if dcs { "rom track catalog" } else { "sweep" }, cmds.len()));
-            cmds
-        } else {
-            let framings = self.framings();
-            let mut cmds: Vec<Cmd> = entries
-                .iter()
-                .map(|e| self.game_cmd(e, &framings))
-                .collect();
-            self.commands_from = vec![format!(
-                "sounds.dat section of {} ({} commands)",
-                self.opts.parent.as_deref().unwrap_or(&self.opts.rom),
-                entries.len()
-            )];
-            self.sources.push(("sounds.dat", entries.len()));
-            // A sounds.dat section is a list someone typed, not the board's command space:
-            // Funhouse's has no `7A xx` bank ("Unable to access 7a bank in this game
-            // either"), Kingpin's and Big Bang Bar's name 5 and 21 of Capcom's samples, the
-            // DE3S sections 390 to 625 of the 717 two-byte commands. Every board but DCS
-            // (whose ROM catalog is added below) also gets its sweep, after the named
-            // commands; a swept command the section already names is not played twice.
-            if !self
-                .board_list()
-                .any(|b| is_dcs(&self.families[b as usize]))
-            {
-                let (sweep, notes, ranges) = sweep(self.mask);
-                let space = sweep.len();
-                let named: std::collections::HashSet<Vec<u8>> = cmds
-                    .iter()
-                    .map(|c| self.list_key(c.board_no, &parse_id(&c.id)))
-                    .collect();
-                let mut extra = Vec::new();
-                for c in sweep {
-                    if named.contains(&self.list_key(c.board_no, &parse_id(&c.id))) {
-                        continue;
-                    }
-                    extra.push(c);
-                }
-                self.commands_from.push(format!(
-                    "{} ({space} commands): + {} not in the section",
-                    notes.join("; "),
-                    extra.len()
-                ));
-                self.sources.push(("sweep", space));
-                // The sweep's report covers its whole range, named commands included.
-                // Ids the section names under another spelling (Firepower's `001F` for the
-                // swept `00`) are reported under the section's.
-                let spelled: HashMap<Vec<u8>, String> = cmds
-                    .iter()
-                    .map(|c| (self.list_key(c.board_no, &parse_id(&c.id)), c.id.clone()))
-                    .collect();
-                for mut r in ranges {
-                    for id in r.ids.iter_mut() {
-                        if let Some(s) = spelled.get(&self.list_key(r.board, &parse_id(id))) {
-                            *id = s.clone();
-                        }
-                    }
-                    self.sweep.push(r);
-                }
-                cmds.extend(extra);
-            }
-            // A sounds.dat section is not always complete (afm_113b leaves out 14 populated
-            // tracks, among them 0013, a 120 s loop): on DCS, add the catalog's other tracks.
-            if let Some(dcs) = self
-                .board_list()
-                .find(|&b| is_dcs(&self.families[b as usize]))
-                && let Some((count, tracks)) = ffi::dcs_rom().and_then(dcsrom::tracks)
-            {
-                let extra: Vec<Cmd> = tracks
-                    .iter()
-                    .filter(|&&t| t != 0)
-                    .map(|t| t.to_be_bytes().to_vec())
-                    .filter(|bytes| !entries.iter().any(|e| &e.bytes == bytes))
-                    .map(|bytes| {
-                        let mut c = self.game_cmd(
-                            &Entry {
-                                bytes,
-                                name: String::new(),
-                            },
-                            &HashMap::new(),
-                        );
-                        c.board_no = dcs;
-                        c
-                    })
-                    .collect();
-                self.commands_from.push(format!(
-                    "board {dcs} (DCS): + {} populated tracks of the ROM catalog's {count} not in sounds.dat (sorted in by track number)",
-                    extra.len()
-                ));
-                self.sources.push((
-                    "rom track catalog",
-                    tracks.iter().filter(|&&t| t != 0).count(),
-                ));
-                cmds.extend(extra);
-                cmds.sort_by_key(|c| parse_id(&c.id));
-            }
             cmds
         };
         // Commands after which a board plays nothing more in emulation, board reset or not:
@@ -5135,27 +5026,11 @@ impl Extractor {
                     }
                     let bytes = parse_id(want);
                     // As the command list names it (a WPCS bank filler dropped).
-                    let id = self
-                        .game_cmd(
-                            &Entry {
-                                bytes: bytes.clone(),
-                                name: String::new(),
-                            },
-                            &HashMap::new(),
-                        )
-                        .id;
+                    let id = self.game_cmd(&bytes).id;
                     cmds.iter()
                         .find(|c| c.id == id)
                         .cloned()
-                        .unwrap_or_else(|| {
-                            self.game_cmd(
-                                &Entry {
-                                    bytes,
-                                    name: "(not in sounds.dat)".into(),
-                                },
-                                &HashMap::new(),
-                            )
-                        })
+                        .unwrap_or_else(|| self.game_cmd(&bytes))
                 })
                 .collect();
             self.commands_from = vec![format!("--only ({} commands)", cmds.len())];
@@ -5182,13 +5057,7 @@ impl Extractor {
         let mut board = 0;
         for part in want.split('+') {
             if part.starts_with("0x") || part.starts_with("0X") {
-                let c = self.game_cmd(
-                    &Entry {
-                        bytes: parse_id(part),
-                        name: String::new(),
-                    },
-                    &HashMap::new(),
-                );
+                let c = self.game_cmd(&parse_id(part));
                 board = c.board_no;
                 sends.extend(c.sends);
             } else if part.eq_ignore_ascii_case("reset") {
@@ -5210,47 +5079,33 @@ impl Extractor {
         }
     }
 
-    /// A game-section command: plain bytes on one-board machines, (board, byte) pairs on
-    /// two-board machines (the layout PinMAME's commander expects).
-    fn game_cmd(&self, e: &Entry, framings: &HashMap<Vec<u8>, Vec<u8>>) -> Cmd {
+    /// A command given by its bytes (`--only`, the stop): plain bytes on one-board machines,
+    /// (board, byte) pairs on two-board machines.
+    fn game_cmd(&self, given: &[u8]) -> Cmd {
         let mask = self.mask;
-        let b = if mask == 2 { 1 } else { 0 };
-        if let Some(k) = framings.get(&e.bytes) {
-            return Cmd {
-                id: format!("0x{}", hex(k)),
-                name: e.name.clone(),
-                board: board_typestr(b).unwrap_or_default(),
-                board_no: b,
-                sends: command_sends(mask, b, k),
-                slot: None,
-                alt: None,
-                check: None,
-            };
-        }
         let (sends, board) = if mask == 3 {
-            let sends: Vec<Send> = e
-                .bytes
+            let sends: Vec<Send> = given
                 .as_chunks::<2>()
                 .0
                 .iter()
                 .map(|[b, v]| Send::Byte(*b as c_int, *v as c_int))
                 .collect();
-            let board = e.bytes.first().map_or(0, |&b| (b & 1) as c_int);
+            let board = given.first().map_or(0, |&b| (b & 1) as c_int);
             (sends, board)
         } else {
             let b = if mask == 2 { 1 } else { 0 };
-            (command_sends(mask, b, &self.wpcs_bank(b, &e.bytes)), b)
+            (command_sends(mask, b, &self.wpcs_bank(b, given)), b)
         };
         // The id is the command as libaltsound sees it: on the System 3-7 boards the byte
-        // alone, not the idle bytes sounds.dat frames it with (`FF 00 FF` is the sound `00`).
+        // alone, not the idle bytes around it (`FF 00 FF` is the sound `00`).
         let bytes = if mask == 3 {
-            e.bytes.clone()
+            given.to_vec()
         } else {
-            self.list_key(board, &e.bytes)
+            self.list_key(board, given)
         };
         Cmd {
             id: format!("0x{}", hex(&bytes)),
-            name: e.name.clone(),
+            name: String::new(),
             board: board_typestr(board).unwrap_or_default(),
             board_no: board,
             sends,
@@ -5260,9 +5115,8 @@ impl Extractor {
         }
     }
 
-    /// The command a list entry stands for, to match a sounds.dat entry with a swept one:
-    /// the bytes, without a trailing idle byte on the System 3-7 boards (Firepower's
-    /// section writes the sound `00` as `001F`, `1F` being the board's idle byte, which
+    /// The command the given bytes stand for: without a trailing idle byte on the System
+    /// 3-7 boards (`00` given as `001F`, `1F` being the board's idle byte, which
     /// `s67s_framed` sends around every byte anyway).
     fn list_key(&self, board: c_int, bytes: &[u8]) -> Vec<u8> {
         let family = self.families.get(board as usize).map_or("", String::as_str);
@@ -5272,47 +5126,6 @@ impl Extractor {
             b = s67s_unframed(sub, b);
         }
         b
-    }
-
-    /// The commands of the sweep by the bytes sounds.dat writes for them. rom2altsound
-    /// writes each command in sounds.dat as the bytes the board's manual handler takes
-    /// (`board_sends`: Gottlieb's `01 00`, Zaccaria's `02 82 02`, Game Plan's nibbles
-    /// `0F 00 01 0F` for `10`; System 3-7's idle frame `FF 40 FF FF 50 FF`, also on the
-    /// boards with a control line), so that PinMAME's commander replays it; an entry is
-    /// the command whose framing gives exactly its bytes. Empty on two boards and on DCS,
-    /// whose entries are the commands themselves.
-    fn framings(&self) -> HashMap<Vec<u8>, Vec<u8>> {
-        let mut out = HashMap::new();
-        if self.mask == 3
-            || self
-                .board_list()
-                .any(|b| is_dcs(&self.families[b as usize]))
-        {
-            return out;
-        }
-        let board = if self.mask == 2 { 1 } else { 0 };
-        let s67s = self.families[board as usize] == "WMSS67";
-        let sub = unsafe { ffi::shim_board_type(board) } & 0xFF;
-        for c in sweep(self.mask).0 {
-            let key = parse_id(&c.id);
-            let framed: Option<Vec<u8>> = if s67s {
-                (!key.contains(&S3_CTRL) || sub & S3_CTRL_SUBS == 0).then(|| s67s_framed(sub, &key))
-            } else {
-                board_sends(self.mask, board, &key)
-                    .into_iter()
-                    .map(|s| match s {
-                        Send::Byte(_, v) => u8::try_from(v).ok(),
-                        _ => None,
-                    })
-                    .collect()
-            };
-            if let Some(f) = framed
-                && f != key
-            {
-                out.entry(f).or_insert(key);
-            }
-        }
-        out
     }
 
     /// WPCS: sounds.dat writes a sound of the second bank (`7A xx`, which the game sends as
@@ -6453,7 +6266,7 @@ fn by45bp_sends(t: c_int, b: u8) -> Vec<Send> {
 /// One range of a sweep while it is built: what it is, and its commands.
 type SweepPart = (String, Vec<Vec<u8>>);
 
-/// Raw command sweep for games without a sounds.dat section, leaving out the commands that
+/// Raw command sweep, in natural order per board, leaving out the commands that
 /// change the board's state instead of playing something. Returns the commands, one line
 /// per board saying what was swept, and the ranges swept (one or more per board).
 fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {

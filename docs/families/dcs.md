@@ -38,13 +38,10 @@ Theatre of Magic (`tom_13`), Red & Ted's Road Show (`rs_l6`), Who Dunnit (`wd_12
   `tracks`: U2 at $3000, $4000 or $6000, track index at +$40, count at +$46, `FF`xxxx =
   empty slot; layout from mjrgh's DCSExplorer), `0000` (stop) left out
   (`src/extract.rs`, `sweep`). Without a catalog: `0001`..`03FF` (`DCS_FALLBACK_LAST`). A
-  game with a sounds.dat section (`dm_lx4`, `wcs_l2`, `tom_13` and the sets their prefix
-  matches) gets the union: the section's named commands plus the catalog tracks it
-  leaves out (`build_commands`). Twins: the same audio on two channels is common on DCS
+  sounds.dat is not read: the catalog is the list, in track order. Twins: the same audio on two channels is common on DCS
   (see [Twins](../how-it-works.md#twins)); each keeps its own file and rows, with
   `twin_reason` naming the two channels.
-- **Stop, boot and resets**: the stop is `0000` ("All sound off" in sounds.dat's `dcs:`
-  section, `stop_sends` via `family_entries`). The boot also waits until the game's
+- **Stop, boot and resets**: the stop is `0000` ("All sound off", `BUILTIN_STOPS`). The boot also waits until the game's
   master volume was seen (`Extractor::step`, `Phase::Boot`): with no nvram (the cold
   boot) these games send no sound byte at all for 60 s; on the warm boot they send
   `55 AA 67 98` after 6 to 12 s. A reset goes through the control port

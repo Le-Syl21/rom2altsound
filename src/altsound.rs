@@ -247,7 +247,7 @@ pub fn duck_percent(units: f64) -> u32 {
         .clamp(0.0, 100.0) as u32
 }
 
-/// Classifies a sound from its sounds.dat name and whether it keeps playing: loops and
+/// Classifies a sound from its name (the user's, `--names`) and whether it keeps playing: loops and
 /// sounds that never end are music; "Music:" names are music too; voice lines (quoted
 /// text or "VOX:") are callouts; the rest is SFX.
 pub fn classify(name: &str, looped: bool) -> Kind {
@@ -1160,7 +1160,14 @@ pub fn write_pack(
             classify(&s.name, looped || continuous),
             looped,
             continuous,
-            csv_name(&s.name, &s.id),
+            csv_name(
+                &if s.name.trim().is_empty() {
+                    crate::names::generated_name(&s.id, s.duration, s.ended_by)
+                } else {
+                    s.name.clone()
+                },
+                &s.id,
+            ),
             fname,
         ));
         row_sound.push(i);

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **PinMAME's sounds.dat is no longer a source of anything.** Its ids can be wrong (Fathom
+  and 16 other BYSNT/BY56 sets list `0604` where `06` was meant, which played a spurious
+  duplicate of 06 and 04), and playing its section first, the sweep's extras after, made a
+  result depend on the board's state carried over between commands. Every board now plays
+  its own command space as one list in natural order (DCS: the ROM's track catalog; a
+  game-driven board: the game's own sound layer), the commands after which a board plays
+  nothing more (`BOARD_KILLERS`) still last. The stops of DCS and WPCS are in
+  `BUILTIN_STOPS` (`00 00`). Sounds are named `Sound 06 (loop)` until `--names` says
+  otherwise; `sounds_dat_name` stays in the manifest as the previous name (empty). The
+  extraction's `--sounds-dat` is accepted and ignored. `rom2altsound sounds-dat` writes
+  its file from the measurements alone (PinMAME's file is no longer copied into it; give
+  one with `--sounds-dat` to start from it). Reports of earlier versions keep their
+  names, which `sounds-dat` does not take.
 - **Replacements keep their place against the ROM's sound when its level changes.**
   `replacements.csv` gets two columns: LUFS (the replacement file's loudness at GAIN 100,
   measured by the page, or by `rom2altsound replace --file` for a WAV file) and OFFSET (dB

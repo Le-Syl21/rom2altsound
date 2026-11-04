@@ -79,20 +79,19 @@ set to 0, so the emulation runs as fast as the host allows.
 
 ## The list of commands
 
-- **sounds.dat**: if PinMAME's `release/sounds.dat` has a section whose header starts
-  with the game's name or its parent's (`src/soundsdat.rs`, `game_entries`, the prefix
-  rule of PinMAME's `readCmds`), its commands are played first, with their names. Only 20
-  sections exist in the PinMAME submodule, so most families have none.
-- **Raw sweep** (`src/extract.rs`, `sweep`): the single bytes `01`..`FF` for every
-  interface the function does not name (DCS, BSMT/AT91, BY51/BY32, BYSNT and WPCS have
-  their own ranges). `00` is not swept: on most boards it is a stop or an idle value. A
-  sounds.dat section is a list someone typed, not the board's command space (Funhouse's
-  has no `7A xx` bank, the DE3S sections name 390 to 625 of the 717 two-byte commands), so
-  since 0.3 the sweep runs **on top of** the section on every board but DCS (whose ROM
-  track catalog is added instead): the swept commands the section does not name follow
-  the named ones (`build_commands`; a section's `001F` and the swept `00` are the same
-  command on the System 3-7 boards, `list_key`). The ranges are printed before the run and
-  in `manifest.json` (`sweep`).
+- **No sounds.dat.** The tool does not read PinMAME's `release/sounds.dat` any more, for
+  commands or for names: its ids can be wrong (Fathom lists `0604` where `06` was meant,
+  and 16 other BYSNT/BY56 sets the same), and a section played first made the result depend
+  on the board's state carried from one command to the next.
+- **Raw sweep** (`src/extract.rs`, `sweep`): the board's command space, in natural order,
+  as one list: the single bytes `01`..`FF` for every interface the function does not name
+  (DCS, BSMT/AT91, BY51/BY32, BYSNT and WPCS have their own ranges). `00` is not swept: on
+  most boards it is a stop or an idle value. DCS plays the populated tracks of the ROM's
+  catalog; a game-driven board plays the game's own sound layer. The commands after which
+  a board plays nothing more (`BOARD_KILLERS`) are played last, a safety device so that
+  they cost no other command its sound. The ranges are printed before the run and in
+  `manifest.json` (`sweep`). Sounds are named `Sound 06 (loop)` (`names::generated_name`)
+  until a names file (`--names`) says otherwise.
 - `--only` and `--limit` restrict the list.
 - **Coverage** (`manifest.json` `coverage`): where the list came from (`sources`: the
   section, the sweep's command space, the DCS track catalog or the game's sound layer,
@@ -126,9 +125,8 @@ Per command (`Extractor::step`, `Phase::Record`):
 
 - **The stop** (`Extractor::stop_sends`): after every recording the tool sends the
   family's stop command and waits for 0.5 s of silence (`QUIET_SECS`), at most 10 s
-  (`QUIET_MAX_SECS`). The stop comes from, in this order: `--stop`; an entry named
-  "sound off" or "reset sound" in a sounds.dat section named after the interface
-  (`family_entries`: only `dcs:` and `wpcs:` exist); the table `BUILTIN_STOPS` (System 11,
+  (`QUIET_MAX_SECS`). The stop comes from, in this order: `--stop`; the table `BUILTIN_STOPS` (`DCS`
+  and `WPCS` `00 00` among them; the game's own stop for the few sets that have one) (System 11,
   BSMT, the Bally boards, Pinball 2000, Zaccaria's `ZAC1370`, Taito). **A family with none of these has no stop
   command: its stop is a board reset**, after every sound.
 - **Board reset** (`Extractor::reset_boards`): DCS, Pinball 2000 and WPCS through their

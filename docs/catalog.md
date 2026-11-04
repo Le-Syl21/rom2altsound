@@ -93,7 +93,7 @@ and a `caveat`: not measured in a game. The site shows them in italics.
 `coverage` is the measured set's `manifest.json` `coverage` (plus `twins`, from the pack):
 
 - `sources`: where the command list came from and how many commands each gave:
-  `sounds.dat` (the game's section), `sweep` (the board's command space,
+  `sweep` (the board's command space,
   [the list of commands](families/common.md#the-list-of-commands)), `rom track catalog`
   (DCS, Pinball 2000), `game sound layer` (game-driven boards), `rom call table` (Stern
   SAM);
