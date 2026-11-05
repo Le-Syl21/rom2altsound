@@ -134,6 +134,7 @@ dialog.rep .warn { color: var(--warn); background: var(--warn-bg); padding: 4px 
 dialog.rep button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 dialog.rep #rep-side { font-weight: 600; font-size: 13px; border-radius: 4px; padding: 1px 7px; background: var(--tag-bg); }
 dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
+select.kind { font: inherit; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 2px; }
 .lrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
 .lrow .nm { flex: 1 1 14em; min-width: 0; overflow-wrap: anywhere; font-size: 13.5px; }
 .lrow.off .nm { color: var(--muted); text-decoration: line-through; }
@@ -282,6 +283,22 @@ td.btns button.rp.ln { padding-left: 6px; padding-right: 6px; }
   try { edits = JSON.parse(load(NAMES) || "{}") || {}; } catch (e) { edits = {}; }
   if (typeof edits !== "object" || Array.isArray(edits)) edits = {};
   function saveEdits() { save(NAMES, Object.keys(edits).length ? JSON.stringify(edits) : ""); }
+  // The type of a sound is said in its name by a marker (as classify() reads it in the
+  // program): "Music: ", "VOX: " or "SFX: ". The page shows the type apart and writes the marker.
+  var MARKS = { music: "Music: ", callout: "VOX: ", sfx: "SFX: " };
+  var MARKRE = /^\s*(music|vox|voice|sfx)\s*:\s*/i;
+  function markKind(n) {
+    var m = MARKRE.exec(n || "");
+    if (m) return { music: "music", vox: "callout", voice: "callout", sfx: "sfx" }[m[1].toLowerCase()];
+    return /^\s*"/.test(n || "") ? "callout" : null;
+  }
+  function bareName(n) { return String(n || "").replace(MARKRE, ""); }
+  function kindNow(s) { return s.typ; }
+  // What the audio tagger heard (a guess, shown until a name is typed).
+  function heard(s) { return s.ced && s.ced.top && s.ced.top.length ? s.ced.top[0][0] : ""; }
+  function heardTip(s) {
+    return s.ced && s.ced.top ? "Heard by the audio tagger (a guess): " + s.ced.top.map(function (t) { return t[0] + " " + Math.round(t[1] * 100) + "%"; }).join(", ") : "";
+  }
   function nameOf(s) { return Object.prototype.hasOwnProperty.call(edits, s.id) ? edits[s.id] : (s.name || ""); }
   function edited(s) { return Object.prototype.hasOwnProperty.call(edits, s.id); }
   function cleanName(n) { return String(n).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim(); }
@@ -312,7 +329,8 @@ td.btns button.rp.ln { padding-left: 6px; padding-right: 6px; }
     s.key = normId(s.id);
     s.base = s.files;
     refreshFiles(s);
-    s.typ = typeOf(s);
+    s.packTyp = typeOf(s);
+    s.typ = markKind(nameOf(s)) || s.packTyp;
     // An edit that says what the pack says is no edit (names applied with `rom2altsound names`).
     if (edited(s) && edits[s.id] === (s.name || "")) delete edits[s.id];
     hay(s);
@@ -321,7 +339,7 @@ td.btns button.rp.ln { padding-left: 6px; padding-right: 6px; }
   function hay(s) {
     var e = entryOf(s);
     s.hay = [s.id, nameOf(s), edited(s) ? "edited" : "", e ? (e.fname ? "replaced " + e.source : "volume") : "",
-      s.typ, s.board, s.twin_of ? "twin " + s.twin_of : "",
+      s.typ, heard(s), s.board, s.twin_of ? "twin " + s.twin_of : "",
       s.loop ? "loop " + s.loop.method : ""].concat(s.flags || []).join(" ").toLowerCase();
   }
   function typeOf(s) {
@@ -417,7 +435,8 @@ td.btns button.rp.ln { padding-left: 6px; padding-right: 6px; }
     renderName(s);
 
     var ty = td("tags");
-    tag(ty, s.typ === "callout" ? "voice" : s.typ);
+    s.typeSel = typeSelect(s);
+    ty.appendChild(s.typeSel);
     if (multiBoard && s.board) tag(ty, s.board);
     tr.appendChild(ty);
     tr.appendChild(td("n", secs(s.duration)));
@@ -544,7 +563,12 @@ td.btns button.rp.ln { padding-left: 6px; padding-right: 6px; }
   function renderName(s) {
     var cell = s.nameCell, n = nameOf(s), on = rows && rows[s.i] && rows[s.i].tabIndex === 0;
     while (cell.firstChild) cell.removeChild(cell.firstChild);
-    cell.appendChild(n ? el("span", "nm", n) : el("span", "unnamed", "no name"));
+    if (n) cell.appendChild(el("span", "nm", n));
+    else if (heard(s)) {
+      var g = el("span", "unnamed", "~" + heard(s));
+      g.title = heardTip(s);
+      cell.appendChild(g);
+    } else cell.appendChild(el("span", "unnamed", "no name"));
     if (edited(s)) {
       var m = el("span", "edited", "edited");
       m.title = "Your name, kept in this browser (Export names saves it); the pack says: " + (s.name || "no name");
@@ -590,6 +614,26 @@ td.btns button.rp.ln { padding-left: 6px; padding-right: 6px; }
     });
     inp.addEventListener("blur", function () { finish(true); });
   }
+  function typeSelect(s) {
+    var sel = el("select", "kind");
+    [["music", "music"], ["callout", "voice"], ["sfx", "effect"]].forEach(function (o) {
+      var op = el("option", null, o[1]);
+      op.value = o[0];
+      sel.appendChild(op);
+    });
+    sel.value = kindNow(s);
+    sel.setAttribute("aria-label", "Type of " + s.id);
+    sel.title = "Type of the sound for g-sound.csv. Changing it writes the marker (" + MARKS.music.trim() + " " + MARKS.callout.trim() + " " + MARKS.sfx.trim() + ") in the name; Export names keeps it" + (s.ced ? ". " + heardTip(s) : "");
+    sel.addEventListener("click", function (e) { e.stopPropagation(); });
+    sel.addEventListener("keydown", function (e) { e.stopPropagation(); });
+    sel.addEventListener("change", function () {
+      var base = bareName(nameOf(s)) || (heard(s) ? heard(s) : "Sound " + s.id.replace(/^0x/i, ""));
+      setName(s, MARKS[sel.value] + base);
+      renderName(s);
+      apply();
+    });
+    return sel;
+  }
   function setName(s, n) {
     n = cleanName(n);
     if (n === (s.name || "")) delete edits[s.id];
@@ -597,6 +641,8 @@ td.btns button.rp.ln { padding-left: 6px; padding-right: 6px; }
     saveEdits();
     hay(s);
     showEdits();
+    s.typ = markKind(nameOf(s)) || s.packTyp;
+    if (s.typeSel) s.typeSel.value = s.typ;
   }
 
   // Rows are built once; filters only show or hide them.

@@ -262,6 +262,22 @@ pub fn classify(name: &str, looped: bool) -> Kind {
     }
 }
 
+/// The kind a name says out loud with its marker: "Music:", "VOX:" / "Voice:" or a quoted
+/// line, "SFX:". None when the name says nothing about it (the audio tagger decides then).
+pub fn named_kind(name: &str) -> Option<Kind> {
+    let n = name.trim_start();
+    let lower = n.to_ascii_lowercase();
+    if lower.starts_with("music:") {
+        Some(Kind::Music)
+    } else if n.starts_with('"') || lower.starts_with("vox:") || lower.starts_with("voice:") {
+        Some(Kind::Callout)
+    } else if lower.starts_with("sfx:") {
+        Some(Kind::Sfx)
+    } else {
+        None
+    }
+}
+
 /// A CSV-safe NAME: libaltsound splits on commas and deletes double quotes, so both go.
 pub fn csv_name(name: &str, id: &str) -> String {
     let cleaned: String = name
@@ -1159,9 +1175,13 @@ pub fn write_pack(
         // whose names (if any) say nothing about it.
         let tags = crate::ced::tag(&out_dir.join(file));
         let playing = looped || continuous;
-        let row_kind = match (classify(&s.name, playing), &tags) {
-            (Kind::Sfx, Some(t)) => t.kind(s.duration, playing),
-            (k, _) => k,
+        // A sound that keeps playing is music, whatever it is called (every "music" sample
+        // of g-sound.csv loops).
+        let row_kind = match (playing, named_kind(&s.name), &tags) {
+            (true, ..) => Kind::Music,
+            (_, Some(k), _) => k,
+            (_, None, Some(t)) => t.kind(s.duration, false),
+            (_, None, None) => classify(&s.name, false),
         };
         rows.push(Row::plain(
             id,
@@ -1525,6 +1545,16 @@ mod tests {
         assert_eq!(classify("SFX: Whack", false), Kind::Sfx);
         assert_eq!(classify("\"Hey look\"", false), Kind::Callout);
         assert_eq!(classify("VOX: Jackpot", false), Kind::Callout);
+    }
+
+    #[test]
+    fn a_name_says_its_kind_with_a_marker() {
+        assert_eq!(named_kind("Music: Main Theme"), Some(Kind::Music));
+        assert_eq!(named_kind("  vox: Jackpot"), Some(Kind::Callout));
+        assert_eq!(named_kind("\"Hey look\""), Some(Kind::Callout));
+        assert_eq!(named_kind("SFX: Whack"), Some(Kind::Sfx));
+        assert_eq!(named_kind("Jackpot"), None);
+        assert_eq!(named_kind(""), None);
     }
 
     #[test]

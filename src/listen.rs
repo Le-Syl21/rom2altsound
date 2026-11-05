@@ -392,6 +392,7 @@ fn sound(s: &Value, rate: f64, exists: &impl Fn(&str) -> bool) -> Value {
         "dcs_channel": s["dcs"]["channel"],
         "chip": s["mix"]["chip"],
         "twin_of": s["twin_of"],
+        "ced": s["ced"],
         "flags": flags,
     })
 }

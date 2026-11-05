@@ -11,7 +11,12 @@
   tags: a voice is a `callout`, a sound that loops or lasts 20 s or more is `music`, the
   rest `sfx`. Names from `--names` and the markers in a name (`Music:`, `VOX:`, quotes)
   win over the tagger. The tags are a guess: on Fathom and Sorcerer's Lair the voices are
-  found, the short effects are the uncertain ones.
+  found, the short effects are the uncertain ones. The listening page shows what the tagger
+  heard (`~Speech`, muted) where a sound has no name, and its Type column is a menu
+  (music, voice, effect) set from the pack: choosing a type writes the marker in the
+  sound's name (`Music: `, `VOX: `, `SFX: `, the ones `--names` already reads), so Export
+  names, Send names and `rom2altsound names` carry it; `SFX:` is new, for an effect the
+  tagger would take for something else.
 - **PinMAME's sounds.dat is no longer a source of anything.** Its ids can be wrong (Fathom
   and 16 other BYSNT/BY56 sets list `0604` where `06` was meant, which played a spurious
   duplicate of 06 and 04), and playing its section first, the sweep's extras after, made a
