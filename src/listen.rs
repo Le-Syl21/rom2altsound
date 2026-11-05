@@ -198,7 +198,17 @@ fn add_replacements(data: &mut Value, m: &Value, dir: &Path) -> Result<(), Strin
         .iter()
         .find_map(|n| std::fs::read_to_string(dir.join(n)).ok())
         .unwrap_or_default();
-    let rows = replace::rows_of(&csv, &factory);
+    let mut rows = replace::rows_of(&csv, &factory);
+    // A sound with every line off has no row in the CSV any more.
+    for (o, saved) in crate::lines::saved_rows(dir, &factory) {
+        let v = rows.entry(o).or_default();
+        for r in saved {
+            if !v.contains(&r) {
+                v.push(r);
+            }
+        }
+        v.sort_unstable();
+    }
     for s in data["sounds"].as_array_mut().into_iter().flatten() {
         let Some(id) = s["id"].as_str().and_then(crate::altsound::parse_id) else {
             continue;
@@ -221,6 +231,20 @@ fn add_replacements(data: &mut Value, m: &Value, dir: &Path) -> Result<(), Strin
             }))
             .collect::<Vec<_>>()
     );
+    let lines = crate::lines::load(dir)?;
+    data["lines"] = json!(
+        lines
+            .iter()
+            .map(|(id, s)| json!({
+                "id": format!("0x{id:04X}"),
+                "base_off": s.base_off,
+                "extras": s.extras.iter().map(|e| json!({
+                    "fname": e.fname, "gain": e.gain, "source": e.source, "on": e.on,
+                })).collect::<Vec<_>>(),
+            }))
+            .collect::<Vec<_>>()
+    );
+    data["lines_file"] = json!(crate::lines::FILE);
     data["replace_dir"] = json!(replace::DIR);
     data["replace_file"] = json!(replace::FILE);
     data["replace_exts"] = json!(replace::EXTENSIONS);

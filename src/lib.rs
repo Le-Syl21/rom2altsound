@@ -22,6 +22,7 @@ mod looping;
 mod loudness;
 mod names;
 pub mod progress;
+pub mod lines;
 pub mod replace;
 mod romcheck;
 mod romfill;

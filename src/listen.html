@@ -134,6 +134,11 @@ dialog.rep .warn { color: var(--warn); background: var(--warn-bg); padding: 4px 
 dialog.rep button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 dialog.rep #rep-side { font-weight: 600; font-size: 13px; border-radius: 4px; padding: 1px 7px; background: var(--tag-bg); }
 dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
+.lrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.lrow .nm { flex: 1 1 14em; min-width: 0; overflow-wrap: anywhere; font-size: 13.5px; }
+.lrow.off .nm { color: var(--muted); text-decoration: line-through; }
+.lrow input[type=number] { width: 4.5em; }
+td.btns button.rp.ln { padding-left: 6px; padding-right: 6px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 600px) {
   #now { display: none; }
@@ -203,6 +208,19 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
     <button type="button" id="rep-ok" class="primary">Use it</button>
   </div>
 </dialog>
+<dialog class="rep" id="lns" aria-labelledby="lns-title">
+  <h2 id="lns-title"></h2>
+  <p class="note">AltSound plays one of the lines that are on, picked at random each time the sound starts. The sound's own line carries the id: it can be turned off (the ROM's own sound plays when every line is off), not deleted.</p>
+  <div id="lns-list"></div>
+  <p id="lns-note" class="note"></p>
+  <div class="line">
+    <button type="button" id="lns-add" title="Another line for this sound, with a file of yours">Add a line with a file...</button>
+    <input type="file" id="lns-input" hidden accept="audio/*,.wav,.ogg,.mp3,.flac" aria-label="File of the line">
+    <span class="grow"></span>
+    <button type="button" id="lns-close" class="primary">Done</button>
+  </div>
+  <audio id="lns-audio" preload="none"></audio>
+</dialog>
 <div class="player" id="player" hidden>
   <div class="wrap"><span id="side" hidden>A</span><span id="now">Nothing playing</span><audio id="audio" controls preload="none"></audio></div>
 </div>
@@ -256,7 +274,7 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
   if (vol.length) head.appendChild(el("p", "meta", vol.join("; ")));
   if (data.levels_note) head.appendChild(el("p", "meta", data.levels_note));
   if (data.borrowed) head.appendChild(el("p", "borrowed", data.borrowed));
-  head.appendChild(el("p", "meta", "Click a column title to sort (again to reverse). Space or Enter plays the selected sound, arrows move, / searches, F2 or ✎ renames, ⇄ replaces a sound with your own file or changes its volume, b flips A/B (with a folder to compare). rom2altsound " + data.version));
+  head.appendChild(el("p", "meta", "Click a column title to sort (again to reverse). Space or Enter plays the selected sound, arrows move, / searches, F2 or ✎ renames, ⇄ replaces a sound with your own file or changes its volume, ≡ (l) turns lines off or adds lines for a random pick, b flips A/B (with a folder to compare). rom2altsound " + data.version));
 
   // Names typed on this page, by sound id ("" = no name), kept in the browser for this ROM;
   // "Export names" writes them to a names.csv for `rom2altsound names`.
@@ -276,6 +294,17 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
   var repl = recordOf(data.replacements), blobs = {}, touched = {};
   // What the folder's replacements.csv says (as far as this page knows).
   var disk = recordOf(data.replacements);
+  // Line edits (lines.csv): a sound's own line turned off, other lines with the same id.
+  function linesOf(list) {
+    var r = {};
+    (list || []).forEach(function (e) {
+      r[normId(e.id)] = { base_off: !!e.base_off, extras: (e.extras || []).map(function (x) {
+        return { fname: x.fname, gain: x.gain, source: x.source || "", on: x.on !== false };
+      }) };
+    });
+    return r;
+  }
+  var lns = linesOf(data.lines), diskLns = linesOf(data.lines), LINESFILE = data.lines_file || "lines.csv";
 
   var sounds = data.sounds || [];
   sounds.forEach(function (s, i) {
@@ -479,11 +508,27 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
       rp.setAttribute("aria-label", "Replace " + s.id);
       rp.addEventListener("click", function () { openRep(s); });
       btns.appendChild(rp);
+      var x = lns[s.key], lb = el("button", "rp ln" + (x ? " on" : ""), "≡");
+      lb.type = "button";
+      lb.tabIndex = on ? 0 : -1;
+      lb.title = x ? "Lines of this sound: " + linesOn(x) + " on of " + linesCount(x) + " (l)"
+        : "Lines of this sound: turn its line off, or add lines for a random pick (l)";
+      lb.setAttribute("aria-label", "Lines of " + s.id);
+      lb.addEventListener("click", function () { openLines(s); });
+      btns.appendChild(lb);
     }
   }
   // The row's mark of a replacement: "replaced: <file>" or "volume 63%".
   function renderRep(s) {
     if (s.repTag) { s.repTag.remove(); s.repTag = null; }
+    if (s.lnTag) { s.lnTag.remove(); s.lnTag = null; }
+    var x = lns[s.key];
+    if (x) {
+      var lt = el("span", "tag rep", linesOn(x) ? linesOn(x) + " of " + linesCount(x) + " lines" : "off");
+      lt.title = linesOn(x) ? "AltSound picks one of " + linesOn(x) + " lines at random" : "Every line is off: the ROM's own sound plays";
+      s.info.insertBefore(lt, s.info.firstChild);
+      s.lnTag = lt;
+    }
     var e = entryOf(s);
     if (!e) return;
     var t = el("span", "tag rep", e.fname ? "replaced" : "volume " + e.gain + "%");
@@ -617,6 +662,10 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
     } else if ((e.key === "r" || e.key === "R") && !e.ctrlKey && !e.metaKey && !e.altKey) {
       var t = sounds[+r.dataset.i];
       if (t.rows && t.factory_file) { e.preventDefault(); openRep(t); }
+      return;
+    } else if ((e.key === "l" || e.key === "L") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      var u = sounds[+r.dataset.i];
+      if (u.rows && u.factory_file) { e.preventDefault(); openLines(u); }
       return;
     } else if ((e.key === " " || e.key === "Enter") && e.target === r) {
       e.preventDefault();
@@ -1041,9 +1090,39 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
     });
     return r;
   }
-  function dirty() { return recordText(repl) !== recordText(disk) || Object.keys(blobs).length > 0; }
+  function linesText(r) {
+    var out = ["ID,KIND,STATE,FNAME,GAIN,SOURCE"];
+    Object.keys(r).sort(byId).forEach(function (id) {
+      var x = r[id];
+      if (x.base_off) out.push(id + ",base,off,,,");
+      x.extras.forEach(function (e) {
+        out.push(id + ",extra," + (e.on ? "on" : "off") + "," + e.fname + "," + e.gain + "," + cleanFile(e.source));
+      });
+    });
+    return out.join("\r\n") + "\r\n";
+  }
+  function parseLines(text) {
+    var r = {}, cols = null;
+    parseCsv(text || "").forEach(function (x) {
+      if (!x.fields || x.fields.every(function (f) { return !f.trim(); })) return;
+      var f = x.fields.map(function (v) { return v.trim(); });
+      if (!cols) { cols = f.map(function (v) { return v.toUpperCase(); }); return; }
+      var at = function (h) { var i = cols.indexOf(h); return i >= 0 ? f[i] || "" : ""; };
+      var id = normId(at("ID"));
+      if (!/^0x/.test(id)) return;
+      var o = r[id] || (r[id] = { base_off: false, extras: [] }), on = at("STATE") !== "off";
+      if (at("KIND") === "base") o.base_off = !on;
+      else o.extras.push({ fname: at("FNAME").replace(/\\/g, "/"), gain: Math.max(0, Math.min(100, Math.round(parseFloat(at("GAIN"))) || 0)), source: at("SOURCE"), on: on });
+    });
+    return r;
+  }
+  function linesCount(x) { return x ? x.extras.length + 1 : 1; }
+  function linesOn(x) { return x ? x.extras.filter(function (e) { return e.on; }).length + (x.base_off ? 0 : 1) : 1; }
+  function dirty() {
+    return recordText(repl) !== recordText(disk) || linesText(lns) !== linesText(diskLns) || Object.keys(blobs).length > 0;
+  }
   function counts() {
-    var n = { rep: 0, vol: 0 };
+    var n = { rep: 0, vol: 0, lines: Object.keys(lns).length };
     Object.keys(repl).forEach(function (k) { if (repl[k].fname) n.rep++; else n.vol++; });
     return n;
   }
@@ -1075,7 +1154,7 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
   function idbDel(k) { return idbDo("readwrite", function (st) { return st.delete(k); }); }
   function keepPending() {
     if (!dirty()) return idbDel(PENDING);
-    return idbPut(PENDING, { base: recordText(disk), record: repl, blobs: blobs, touched: touched });
+    return idbPut(PENDING, { base: recordText(disk) + linesText(diskLns), record: repl, lines: lns, blobs: blobs, touched: touched });
   }
 
   // The tools line.
@@ -1114,6 +1193,7 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
     var n = counts(), d = dirty(), bits = [];
     if (n.rep) bits.push(n.rep + " sound" + (n.rep > 1 ? "s" : "") + " replaced");
     if (n.vol) bits.push(n.vol + " volume" + (n.vol > 1 ? "s" : "") + " changed");
+    if (n.lines) bits.push(n.lines + " sound" + (n.lines > 1 ? "s" : "") + " with line edits");
     var where = folder ? (saving ? "saving in " : "saved in ") + folder.name + "/" : d ? (canPick ? "not saved yet: Save in the pack folder, or Download changes"
       : "not saved yet: Download changes, then apply the zip") : bits.length ? "in the pack" : "";
     rstatus.textContent = (msg ? msg + " " : "") + (bits.length ? bits.join(", ") + (where ? " · " + where : "") + "."
@@ -1125,12 +1205,17 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
   }
 
   // What changed for a sound: the rows, the tag, the files, and the save.
+  // A file of replace/ that a replacement or an extra line plays.
+  function fileUsed(f) {
+    return Object.keys(repl).some(function (k) { return repl[k].fname === f; }) ||
+      Object.keys(lns).some(function (k) { return lns[k].extras.some(function (x) { return x.fname === f; }); });
+  }
   function setEntry(s, e, blob) {
     if (e) repl[s.key] = e; else delete repl[s.key];
     if (blob && e) blobs[e.fname] = blob;
     // Files chosen here that nothing plays any more are dropped.
     Object.keys(blobs).forEach(function (f) {
-      if (!Object.keys(repl).some(function (k) { return repl[k].fname === f; })) delete blobs[f];
+      if (!fileUsed(f)) delete blobs[f];
     });
     touched[s.key] = true;
     if (playing && playing.s === s) { audio.pause(); mark(false); playing = null; $("now").textContent = "Nothing playing"; }
@@ -1205,28 +1290,108 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
     }
     return out.join(eol) + eol;
   }
+  // The CSVs with the line edits (as lines.rs): the rows of each sound that has some are made
+  // again from its base row, the first one the CSV has, kept in lines-base.csv because a line
+  // that is off leaves nothing to copy the other columns from.
+  function parseBases(text) {
+    var out = {};
+    String(text || "").split(/\r?\n/).slice(1).forEach(function (l) {
+      var a = l.indexOf(","), b = l.indexOf(",", a + 1);
+      if (a < 0 || b < 0) return;
+      var row = l.slice(b + 1);
+      if (row.length > 1 && row[0] === "\"" && row[row.length - 1] === "\"") row = row.slice(1, -1).replace(/""/g, "\"");
+      out[l.slice(0, a) + "|" + normId(l.slice(a + 1, b))] = row;
+    });
+    return out;
+  }
+  function basesText(b) {
+    var keys = Object.keys(b).sort();
+    if (!keys.length) return null;
+    return ["FILE,ID,ROW"].concat(keys.map(function (k) {
+      var i = k.indexOf("|");
+      return k.slice(0, i) + "," + k.slice(i + 1) + ",\"" + b[k].replace(/"/g, "\"\"") + "\"";
+    })).join("\r\n") + "\r\n";
+  }
+  function ownerSound(r) {
+    for (var i = 0; i < sounds.length; i++) if (sounds[i].rows && sounds[i].rows.some(function (x) { return normId(x) === r; })) return sounds[i];
+    return null;
+  }
+  function applyLinesCsv(text, name, bases) {
+    var eol = text.indexOf("\r\n") >= 0 ? "\r\n" : "\n", all = text.split(/\r?\n/);
+    var cols = all[0].split(",").map(function (c) { return c.trim().toUpperCase(); });
+    var ic = cols.indexOf("ID"), fc = cols.indexOf("FNAME"), gc = cols.indexOf("GAIN");
+    if (ic < 0 || fc < 0 || gc < 0) throw new Error("no ID, FNAME or GAIN column");
+    var rows = all.slice(1).filter(function (l) { return l.trim(); }), seen = {}, done = {}, out = [all[0]];
+    var managed = function (r) { var o = ownerSound(r); return !!(o && lns[o.key]); };
+    rows.forEach(function (l) {
+      var r = normId((l.split(",")[ic] || "").trim()), k = name + "|" + r;
+      if ((bases[k] !== undefined || managed(r)) && !seen[r]) {
+        seen[r] = true;
+        if (bases[k] === undefined) bases[k] = l;
+      }
+    });
+    var withFile = function (row, fname, gain) {
+      var f = row.split(",");
+      while (f.length < cols.length) f.push("");
+      f[fc] = fname;
+      f[gc] = String(gain);
+      return f.join(",");
+    };
+    var emit = function (r) {
+      var o = ownerSound(r), base = bases[name + "|" + r];
+      if (!o || base === undefined) return;
+      var x = lns[o.key] || { base_off: false, extras: [] }, e = entryOf(o);
+      if (!x.base_off) out.push(withFile(base, e && e.fname ? e.fname : o.factory_file, e ? e.gain : 100));
+      x.extras.forEach(function (y) { if (y.on) out.push(withFile(base, y.fname, y.gain)); });
+    };
+    rows.forEach(function (l) {
+      var r = normId((l.split(",")[ic] || "").trim());
+      if (bases[name + "|" + r] === undefined) { out.push(l); return; }
+      if (!done[r]) { done[r] = true; emit(r); }
+    });
+    Object.keys(bases).forEach(function (k) {
+      var i = k.indexOf("|"), r = k.slice(i + 1);
+      if (k.slice(0, i) === name && !done[r]) { done[r] = true; emit(r); }
+    });
+    return out.join(eol) + eol;
+  }
   function writeFolder() {
-    var dir = folder, ids = {};
+    var dir = folder, ids = {}, bases = {};
     Object.keys(touched).concat(Object.keys(repl), Object.keys(disk)).forEach(function (k) { ids[k] = true; });
     var p = Promise.resolve();
     Object.keys(blobs).forEach(function (f) { p = p.then(function () { return writeFile(dir, f, blobs[f]); }); });
     p = p.then(function () {
       return Object.keys(repl).length ? writeFile(dir, REPFILE, recordText(repl)) : removeFile(dir, REPFILE);
     });
+    p = p.then(function () {
+      return Object.keys(lns).length ? writeFile(dir, LINESFILE, linesText(lns)) : removeFile(dir, LINESFILE);
+    });
+    p = p.then(function () { return readText(dir, "lines-base.csv"); }).then(function (t) { bases = parseBases(t); });
     ["altsound.csv", "g-sound.csv"].forEach(function (n) {
       p = p.then(function () { return readText(dir, n); }).then(function (t) {
         if (t === null) return;
-        var nt = rewriteCsv(t, ids);
+        var nt = applyLinesCsv(rewriteCsv(t, ids), n, bases);
         if (nt !== t) return writeFile(dir, n, nt);
       });
+    });
+    p = p.then(function () {
+      // No base row for a sound that has no edits any more (its rows are back above).
+      Object.keys(bases).forEach(function (k) {
+        var o = ownerSound(k.slice(k.indexOf("|") + 1));
+        if (!o || !lns[o.key]) delete bases[k];
+      });
+      var bt = basesText(bases);
+      return bt === null ? removeFile(dir, "lines-base.csv") : writeFile(dir, "lines-base.csv", bt);
     });
     // The files the folder's record listed and nothing plays now.
     p = p.then(function () {
       var kept = {};
       Object.keys(repl).forEach(function (k) { kept[repl[k].fname] = true; });
-      return Promise.all(Object.keys(disk).map(function (k) {
-        var f = disk[k].fname;
-        return f && !kept[f] ? removeFile(dir, f) : null;
+      Object.keys(lns).forEach(function (k) { lns[k].extras.forEach(function (x) { kept[x.fname] = true; }); });
+      var old = Object.keys(disk).map(function (k) { return disk[k].fname; });
+      Object.keys(diskLns).forEach(function (k) { diskLns[k].extras.forEach(function (x) { old.push(x.fname); }); });
+      return Promise.all(old.map(function (f) {
+        return f && f.indexOf(REPDIR + "/") === 0 && !kept[f] ? removeFile(dir, f) : null;
       }));
     });
     // This page, with the new record in its data: opened again, it shows what the folder has.
@@ -1237,12 +1402,18 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
         var e = repl[k];
         return { id: k, fname: e.fname, gain: e.gain, source: cleanFile(e.source), lufs: fin(e.lufs), offset: fin(e.offset) };
       });
+      d.lines = Object.keys(lns).sort(byId).map(function (k) {
+        return { id: k, base_off: lns[k].base_off, extras: lns[k].extras.map(function (x) {
+          return { fname: x.fname, gain: x.gain, source: cleanFile(x.source), on: x.on };
+        }) };
+      });
       var json = JSON.stringify(d).replace(/</g, "\\u003c");
       var nt = t.replace(/(id="data">)[\s\S]*?(<\/script>)/, function (m, a, b) { return a + json + b; });
       if (nt !== t) return writeFile(dir, "index.html", nt);
     });
     return p.then(function () {
       disk = JSON.parse(JSON.stringify(repl));
+      diskLns = JSON.parse(JSON.stringify(lns));
       // What is written is now played from the folder.
       Object.keys(blobs).forEach(function (f) { delete blobs[f]; });
       touched = {};
@@ -1265,7 +1436,16 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
           folderSaved = null;
           throw new Error(h.name + "/ is not the folder of " + data.rom + " (its manifest.json says " + (m ? m.rom : "nothing") + ")");
         }
-        return readText(h, REPFILE);
+        return readText(h, LINESFILE).then(function (lt) {
+          // Lines of the folder (a command run since), the changes made here on top.
+          var theirs = parseLines(lt);
+          if (linesText(theirs) !== linesText(diskLns)) {
+            Object.keys(theirs).forEach(function (k) { if (!touched[k]) lns[k] = theirs[k]; });
+            Object.keys(lns).forEach(function (k) { if (!touched[k] && !theirs[k]) delete lns[k]; });
+            diskLns = theirs;
+          }
+          return readText(h, REPFILE);
+        });
       }).then(function (t) {
         // The folder may be newer than this page (a command run since): its record, with
         // the changes made here on top.
@@ -1331,7 +1511,8 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
   function downloadChanges() {
     var names = Object.keys(blobs);
     Promise.all(names.map(function (f) { return blobs[f].arrayBuffer(); })).then(function (bufs) {
-      var members = [{ name: REPFILE, data: new TextEncoder().encode("# rom: " + (data.rom || "") + "\r\n" + recordText(repl)) }];
+      var members = [{ name: REPFILE, data: new TextEncoder().encode("# rom: " + (data.rom || "") + "\r\n" + recordText(repl)) },
+        { name: LINESFILE, data: new TextEncoder().encode(linesText(lns)) }];
       names.forEach(function (f, i) { members.push({ name: f, data: new Uint8Array(bufs[i]) }); });
       var url = URL.createObjectURL(zipOf(members)), a = el("a");
       a.href = url;
@@ -1655,14 +1836,126 @@ dialog.rep #rep-side.b { background: var(--accent); color: var(--accent-fg); }
     else if (c.e) setEntry(s, null, null);
   });
 
+  // ---- Lines of a sound: on/off, duplicate, delete, another file ---------------------
+  var ldlg = $("lns"), la = $("lns-audio"), lcur = null, lpick = null;
+  function linesOfSound(s) { return lns[s.key] || { base_off: false, extras: [] }; }
+  // The file the sound's own line plays: your replacement, or the ROM's.
+  function baseFile(s) { var e = entryOf(s); return e && e.fname ? e.fname : s.factory_file; }
+  function playLine(path) {
+    var b = blobs[path];
+    la.src = b ? blobUrl(b) : href(path);
+    la.currentTime = 0;
+    la.play().catch(function () {});
+  }
+  function lineChanged(s) {
+    var x = lns[s.key];
+    if (x && !x.base_off && !x.extras.length) delete lns[s.key];
+    touched[s.key] = true;
+    Object.keys(blobs).forEach(function (f) { if (!fileUsed(f)) delete blobs[f]; });
+    if (playing && playing.s === s) { audio.pause(); mark(false); playing = null; $("now").textContent = "Nothing playing"; }
+    renderBtns(s);
+    hay(s);
+    apply();
+    var r = rows[s.i];
+    if (r.tabIndex === 0) setCurrent(r, false);
+    renderLines();
+    return persist();
+  }
+  function iconBtn(text, title, fn) {
+    var b = el("button", null, text);
+    b.type = "button";
+    b.title = title;
+    b.setAttribute("aria-label", title);
+    b.addEventListener("click", fn);
+    return b;
+  }
+  function lineRow(s, label, path, on, gain, who) {
+    var r = el("div", "lrow" + (on ? "" : " off")), cb = el("input");
+    cb.type = "checkbox";
+    cb.checked = on;
+    cb.setAttribute("aria-label", "Line " + label + " on");
+    cb.title = on ? "On: AltSound can pick this line" : "Off: not in the CSV";
+    cb.addEventListener("change", function () { who.set(cb.checked); });
+    r.appendChild(cb);
+    r.appendChild(el("span", "nm", label + (path ? " · " + path : "")));
+    if (path) r.appendChild(iconBtn("▶", "Play " + path, function () { playLine(path); }));
+    if (who.gain) {
+      var g = el("input");
+      g.type = "number"; g.min = "0"; g.max = "100"; g.value = String(gain);
+      g.setAttribute("aria-label", "GAIN of " + label + " (0 to 100)");
+      g.title = "GAIN 0 to 100 (" + gainDb(gain) + ")";
+      g.addEventListener("change", function () { who.gain(Math.max(0, Math.min(100, Math.round(parseFloat(g.value)) || 0))); });
+      r.appendChild(g);
+    }
+    r.appendChild(iconBtn("⧉", "Duplicate this line: another line with the same sound, to pick at random", who.dup));
+    if (who.file) r.appendChild(iconBtn("📁", "Another file for this line", who.file));
+    if (who.del) r.appendChild(iconBtn("✕", "Delete this line", who.del));
+    return r;
+  }
+  function renderLines() {
+    if (!lcur) return;
+    var s = lcur, list = $("lns-list"), x = linesOfSound(s);
+    while (list.firstChild) list.removeChild(list.firstChild);
+    var bf = baseFile(s), e = entryOf(s);
+    var edit = function () { if (!lns[s.key]) lns[s.key] = x; return lns[s.key]; };
+    list.appendChild(lineRow(s, "The sound's own line", bf, !x.base_off, e ? e.gain : 100, {
+      set: function (v) { edit().base_off = !v; lineChanged(s); },
+      dup: function () { edit().extras.push({ fname: bf, gain: e ? e.gain : 100, source: e ? e.source : "", on: true }); lineChanged(s); },
+    }));
+    x.extras.forEach(function (y, i) {
+      list.appendChild(lineRow(s, "Line " + (i + 2), y.fname, y.on, y.gain, {
+        set: function (v) { y.on = v; edit(); lineChanged(s); },
+        gain: function (g) { y.gain = g; edit(); lineChanged(s); },
+        dup: function () { edit().extras.splice(i + 1, 0, { fname: y.fname, gain: y.gain, source: y.source, on: true }); lineChanged(s); },
+        file: function () { lpick = y; $("lns-input").click(); },
+        del: function () { edit().extras.splice(i, 1); lineChanged(s); },
+      }));
+    });
+    var n = linesOn(x);
+    $("lns-note").textContent = !n ? "Every line is off: the ROM's own sound plays, not an AltSound one."
+      : n > 1 ? "AltSound picks one of the " + n + " lines that are on, at random." : "";
+  }
+  function openLines(s) {
+    if (!s.rows || !s.factory_file) return;
+    if (playing) audio.pause();
+    lcur = s;
+    $("lns-title").textContent = "Lines of " + s.id + (nameOf(s) ? " " + nameOf(s) : "");
+    renderLines();
+    if (typeof ldlg.showModal === "function") ldlg.showModal(); else ldlg.setAttribute("open", "");
+    $("lns-close").focus();
+  }
+  function closeLines() { la.pause(); lcur = null; lpick = null; if (ldlg.open) ldlg.close(); }
+  $("lns-close").addEventListener("click", closeLines);
+  ldlg.addEventListener("close", function () { la.pause(); lcur = null; });
+  $("lns-add").addEventListener("click", function () { lpick = null; $("lns-input").click(); });
+  $("lns-input").addEventListener("change", function () {
+    var f = $("lns-input").files && $("lns-input").files[0], s = lcur, y = lpick;
+    $("lns-input").value = "";
+    if (!f || !s) return;
+    var name = cleanFile(f.name), dot = name.lastIndexOf("."), ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+    if (EXTS.indexOf(ext) < 0) {
+      $("lns-note").textContent = f.name + ": AltSound plays " + EXTS.join(", ") + " files (Ogg Vorbis, not Opus).";
+      return;
+    }
+    var path = REPDIR + "/" + s.key + "-" + name, stem = name.slice(0, dot);
+    for (var i = 2; blobs[path] || fileUsed(path); i++) path = REPDIR + "/" + s.key + "-" + stem + "-" + i + "." + ext;
+    blobs[path] = f;
+    var x = lns[s.key] || (lns[s.key] = linesOfSound(s));
+    if (y) { y.fname = path; y.source = f.name; }
+    else x.extras.push({ fname: path, gain: 100, source: f.name, on: true });
+    lcur = s;
+    lineChanged(s);
+  });
+
   // Changes made here earlier and not in the folder yet (browser storage), and the folder
   // picked last time (Chrome, Edge).
   idbGet(PENDING).then(function (p) {
     if (!p || !p.record) return;
-    var here = recordText(disk);
+    var here = recordText(disk) + linesText(diskLns);
     // Applied since (the zip, or the folder written): the page now says what they said.
-    if (here !== p.base && recordText(p.record) === here) { idbDel(PENDING); return; }
+    if (here !== p.base && recordText(p.record) + linesText(p.lines || {}) === here) { idbDel(PENDING); return; }
     repl = p.record;
+    lns = p.lines || {};
     blobs = p.blobs || {};
     touched = p.touched || {};
     sounds.forEach(function (s) { refreshFiles(s); renderBtns(s); hay(s); renderRep(s); });

@@ -223,6 +223,7 @@ afm_113b/
 ├── index.html                  a page to listen to every sound in a browser (see below)
 ├── replace/                    your own sound files, when you replace some (see below)
 ├── replacements.csv            which sound plays which of your files, at which volume
+├── lines.csv                   lines turned off, and lines added to a sound (see below)
 ├── cold-boot.json              how the factory boot went
 └── factory-nvram/afm_113b.nv   the factory settings the ROM was played with
 ```
@@ -356,6 +357,15 @@ that; for another format given with `--file`, GAIN stays as it is. AltSound play
 Ogg Opus: the page saves an Opus file (and any other format the browser reads) as WAV. To
 share your replacements, share `replace/` and `replacements.csv`: they hold none of the
 ROM's sounds.
+
+**Lines of a sound.** The **≡** button of a row (or `l`) lists the lines the sound has in
+`altsound.csv`. Turn a line off and it leaves the CSV, so the ROM's own sound plays if every
+line is off: an easy way to get a sound back without deleting a pack. **⧉** duplicates a
+line and **Add a line with a file...** adds one of your files: with several lines on, AltSound
+picks one at random each time the sound starts. A line has its own GAIN; **✕** deletes an added
+line. The sound's own line carries the id, so it can only be turned off. `lines.csv` records
+this (`lines-base.csv` keeps the rows it was made from); a new extraction applies it again, and
+`rom2altsound replace <folder>` applies it after you edited it by hand.
 
 **On DCS boards (Williams/Bally 1993-1999), the mix comes from the ROM itself.** Each DCS
 sound command is a small program that says which of the board's channels it plays on and
@@ -1015,6 +1025,7 @@ afm_113b/
 ├── index.html                  une page pour écouter chaque son dans un navigateur (voir plus bas)
 ├── replace/                    vos propres fichiers de sons, si vous en remplacez (voir plus bas)
 ├── replacements.csv            quel son joue lequel de vos fichiers, à quel volume
+├── lines.csv                   lignes désactivées, et lignes ajoutées à un son (voir plus bas)
 ├── cold-boot.json              le déroulé du démarrage en réglages d'usine
 └── factory-nvram/afm_113b.nv   les réglages d'usine avec lesquels la ROM a été jouée
 ```
@@ -1156,6 +1167,16 @@ reste tel quel. AltSound joue le WAV, le MP3, le FLAC et l'Ogg
 Vorbis, pas l'Ogg Opus : la page enregistre un fichier Opus (et tout autre format que le
 navigateur sait lire) en WAV. Pour partager vos remplacements, partagez `replace/` et
 `replacements.csv` : ils ne contiennent aucun son de la ROM.
+
+**Les lignes d'un son.** Le bouton **≡** d'une ligne (ou `l`) liste les lignes que le son a dans
+`altsound.csv`. Désactiver une ligne la retire du CSV : si toutes les lignes sont désactivées,
+c'est le son de la ROM qui joue, un moyen simple de récupérer un son sans supprimer le pack.
+**⧉** duplique une ligne et **Add a line with a file...** en ajoute une avec un de vos fichiers :
+avec plusieurs lignes actives, AltSound en tire une au hasard à chaque départ du son. Chaque
+ligne a son GAIN ; **✕** supprime une ligne ajoutée. La ligne propre du son porte l'id : on peut
+seulement la désactiver. `lines.csv` garde tout cela (`lines-base.csv` les lignes d'origine) ;
+une nouvelle extraction le réapplique, et `rom2altsound replace <dossier>` l'applique après une
+modification à la main.
 
 **Sur les cartes DCS (Williams/Bally 1993-1999), le mixage vient de la ROM elle-même.**
 Chaque commande de son DCS est un petit programme qui dit sur quelle voie de la carte elle

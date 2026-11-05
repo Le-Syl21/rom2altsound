@@ -100,6 +100,8 @@ pub struct Report {
     /// Sounds whose GAIN changed to stay OFFSET dB from a ROM sound of another level:
     /// (id, old GAIN, new GAIN).
     pub rematched: Vec<(String, u32, u32)>,
+    /// Extra lines (`lines.csv`) now in the CSVs.
+    pub extra_lines: usize,
 }
 
 fn id_str(id: u32) -> String {
@@ -195,7 +197,7 @@ pub fn parse(text: &str) -> Result<Vec<Entry>, String> {
 }
 
 /// `replace/<name>` with a plain file name (no other folder, no `..`).
-fn safe_member(path: &str) -> bool {
+pub(crate) fn safe_member(path: &str) -> bool {
     path.strip_prefix(DIR)
         .and_then(|r| r.strip_prefix('/'))
         .is_some_and(|n| !n.is_empty() && clean_file_name(n) == n)
@@ -334,6 +336,11 @@ fn rewrite_csv(
 /// Rewrites the pack's CSVs for its `replacements.csv`; `before` is the record they were
 /// written for (its sounds that are no longer listed go back to the ROM's file).
 pub fn apply(dir: &Path, before: &[Entry]) -> Result<Report, String> {
+    apply_with(dir, before, false)
+}
+
+/// `apply`; `fresh`: the CSVs were just written by an extraction.
+fn apply_with(dir: &Path, before: &[Entry], fresh: bool) -> Result<Report, String> {
     let entries = load(dir)?;
     let mpath = dir.join("manifest.json");
     let m: Value = std::fs::read_to_string(&mpath)
@@ -383,6 +390,7 @@ pub fn apply(dir: &Path, before: &[Entry]) -> Result<Report, String> {
             std::fs::write(&p, new).map_err(|e| format!("{}: {e}", p.display()))?;
         }
     }
+    report.extra_lines = crate::lines::apply(dir, &sounds, &by_id, fresh)?;
     Ok(report)
 }
 
@@ -400,7 +408,7 @@ pub fn factory_levels(m: &Value) -> BTreeMap<u32, f64> {
 /// each GAIN first set again so that the replacement stays OFFSET dB from the new ROM
 /// sound (rows with LUFS and OFFSET only).
 pub fn reapply(dir: &Path) -> Result<Option<Report>, String> {
-    if !dir.join(FILE).is_file() {
+    if !dir.join(FILE).is_file() && !dir.join(crate::lines::FILE).is_file() {
         return Ok(None);
     }
     let mut entries = load(dir)?;
@@ -428,7 +436,7 @@ pub fn reapply(dir: &Path) -> Result<Option<Report>, String> {
         let p = dir.join(FILE);
         std::fs::write(&p, format(&entries)).map_err(|e| format!("{}: {e}", p.display()))?;
     }
-    let mut r = apply(dir, &[])?;
+    let mut r = apply_with(dir, &[], true)?;
     r.rematched = rematched;
     Ok(Some(r))
 }
@@ -465,6 +473,13 @@ pub fn summary(r: &Report) -> String {
         r.rows,
         if r.rows == 1 { "" } else { "s" },
     );
+    if r.extra_lines > 0 {
+        s.push_str(&format!(
+            "; {} extra line{} (random pick)",
+            r.extra_lines,
+            if r.extra_lines == 1 { "" } else { "s" }
+        ));
+    }
     if !r.missing.is_empty() {
         s.push_str(&format!(
             "; not in this pack (left in {FILE}): {}",
@@ -493,7 +508,12 @@ pub fn summary(r: &Report) -> String {
 
 /// Writes the record and applies it; then removes the files of `replace/` that the old
 /// record listed and the new one does not.
-fn commit(dir: &Path, before: &[Entry], after: &[Entry]) -> Result<Report, String> {
+fn commit(
+    dir: &Path,
+    before: &[Entry],
+    after: &[Entry],
+    before_lines: &crate::lines::Spec,
+) -> Result<Report, String> {
     let p = dir.join(FILE);
     if after.is_empty() {
         match std::fs::remove_file(&p) {
@@ -505,10 +525,16 @@ fn commit(dir: &Path, before: &[Entry], after: &[Entry]) -> Result<Report, Strin
         std::fs::write(&p, format(after)).map_err(|e| format!("{}: {e}", p.display()))?;
     }
     let report = apply(dir, before)?;
-    let kept: BTreeSet<&str> = after.iter().map(|e| e.fname.as_str()).collect();
-    for e in before {
-        if !e.fname.is_empty() && !kept.contains(e.fname.as_str()) {
-            let _ = std::fs::remove_file(dir.join(&e.fname));
+    let now = crate::lines::files(&crate::lines::load(dir)?);
+    let mut kept: BTreeSet<&str> = after.iter().map(|e| e.fname.as_str()).collect();
+    kept.extend(now.iter().map(String::as_str));
+    let listed = before
+        .iter()
+        .map(|e| e.fname.clone())
+        .chain(crate::lines::files(before_lines));
+    for f in listed {
+        if !f.is_empty() && !kept.contains(f.as_str()) {
+            let _ = std::fs::remove_file(dir.join(&f));
         }
     }
     Ok(report)
@@ -518,8 +544,10 @@ fn commit(dir: &Path, before: &[Entry], after: &[Entry]) -> Result<Report, Strin
 /// (`<rom>-replacements.zip`: `replacements.csv` and the new files of `replace/`).
 pub fn apply_zip(dir: &Path, zip: &Path) -> Result<Report, String> {
     let before = load(dir)?;
+    let before_lines = crate::lines::load(dir)?;
     let members = crate::zipread::list(zip)?;
     let mut record = None;
+    let mut lines = None;
     let mut files = Vec::new();
     for e in &members {
         let name = e.name.replace('\\', "/");
@@ -529,6 +557,11 @@ pub fn apply_zip(dir: &Path, zip: &Path) -> Result<Report, String> {
         if name == FILE {
             let b = crate::zipread::read(zip, e)?;
             record = Some(String::from_utf8(b).map_err(|_| format!("{FILE}: not UTF-8"))?);
+        } else if name == crate::lines::FILE {
+            let b = crate::zipread::read(zip, e)?;
+            let t = String::from_utf8(b).map_err(|_| format!("{name}: not UTF-8"))?;
+            crate::lines::parse(&t)?;
+            lines = Some(t);
         } else if safe_member(&name) {
             files.push((name, e));
         } else {
@@ -546,7 +579,15 @@ pub fn apply_zip(dir: &Path, zip: &Path) -> Result<Report, String> {
         let p = dir.join(&name);
         std::fs::write(&p, b).map_err(|e| format!("{}: {e}", p.display()))?;
     }
-    commit(dir, &before, &after)
+    if let Some(t) = lines {
+        let p = dir.join(crate::lines::FILE);
+        if crate::lines::parse(&t)?.is_empty() {
+            let _ = std::fs::remove_file(&p);
+        } else {
+            std::fs::write(&p, t).map_err(|e| format!("{}: {e}", p.display()))?;
+        }
+    }
+    commit(dir, &before, &after, &before_lines)
 }
 
 /// The ROM a zip of the page is for: its `# rom:` line, else its name
@@ -678,7 +719,7 @@ fn run_cli(cli: &ReplaceCli) -> Result<Report, String> {
         }
         after.sort_by_key(|e| e.id);
     }
-    commit(dir, &before, &after)
+    commit(dir, &before, &after, &crate::lines::load(dir)?)
 }
 
 /// `rom2altsound replace <folder> [...]`.
@@ -996,5 +1037,62 @@ mod tests {
         std::fs::write(&named, w.finish()).unwrap();
         assert_eq!(zip_rom(&named).as_deref(), Some("afm_113b"));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn line_edits_follow_the_record() {
+        let dir = pack("lines");
+        std::fs::create_dir_all(dir.join(DIR)).unwrap();
+        std::fs::write(dir.join("replace/0x000A-b.wav"), b"x").unwrap();
+        let rec = format!(
+            "{}\r\n0x000A,base,off,,,\r\n0x000A,extra,on,replace/0x000A-b.wav,80,b.wav\r\n\
+             0x000A,extra,off,replace/0x000A-b.wav,50,\r\n",
+            "ID,KIND,STATE,FNAME,GAIN,SOURCE"
+        );
+        std::fs::write(dir.join(crate::lines::FILE), rec).unwrap();
+        let r = apply(&dir, &[]).unwrap();
+        assert_eq!(r.extra_lines, 4); // the 0x000A and 0xFD0A rows, in both CSVs
+        let alt = std::fs::read_to_string(dir.join(ALTSOUND_CSV)).unwrap();
+        assert!(alt.contains("0x000A,,100,80,0,0,Jackpot,replace/0x000A-b.wav\r\n"));
+        assert!(alt.contains("0xFD0A,,100,80,0,0,Jackpot,replace/0x000A-b.wav\r\n"));
+        assert!(
+            !alt.contains("0x000A-x.wav\r\n0x000B") || alt.contains("0x000B,,100,100,0,0,Twin")
+        );
+        assert_eq!(alt.matches("Jackpot").count(), 2);
+        // A second run changes nothing.
+        apply(&dir, &[]).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join(ALTSOUND_CSV)).unwrap(),
+            alt
+        );
+        // Another file for the base follows replacements.csv, extras keep theirs.
+        std::fs::write(
+            dir.join(crate::lines::FILE),
+            "ID,KIND,STATE,FNAME,GAIN,SOURCE\r\n0x000A,extra,on,replace/0x000A-b.wav,80,\r\n",
+        )
+        .unwrap();
+        apply(&dir, &[]).unwrap();
+        let alt = std::fs::read_to_string(dir.join(ALTSOUND_CSV)).unwrap();
+        assert!(alt.contains("0x000A,,100,100,0,0,Jackpot,0x000A-x.wav\r\n0x000A,,100,80,0,0,Jackpot,replace/0x000A-b.wav"));
+        // Every line off: no row, and the page still knows the row.
+        std::fs::write(
+            dir.join(crate::lines::FILE),
+            "ID,KIND,STATE,FNAME,GAIN,SOURCE\r\n0x000A,base,off,,,\r\n",
+        )
+        .unwrap();
+        apply(&dir, &[]).unwrap();
+        let alt = std::fs::read_to_string(dir.join(ALTSOUND_CSV)).unwrap();
+        assert!(!alt.contains("Jackpot"));
+        let m: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json")).unwrap())
+                .unwrap();
+        let rows = crate::lines::saved_rows(&dir, &factory_files(&m));
+        assert_eq!(rows[&0x0A], vec![0x0A, 0xFD0A]);
+        // The record gone: the ROM's rows are back.
+        std::fs::remove_file(dir.join(crate::lines::FILE)).unwrap();
+        apply(&dir, &[]).unwrap();
+        let alt2 = std::fs::read_to_string(dir.join(ALTSOUND_CSV)).unwrap();
+        assert_eq!(alt2.matches("Jackpot").count(), 2);
+        assert!(!dir.join(crate::lines::BASE_FILE).exists());
     }
 }
