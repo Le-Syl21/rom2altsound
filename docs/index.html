@@ -50,7 +50,7 @@
 <label class="check"><input type="checkbox" id="hideNoVpx"><span id="lHideNoVpx"></span></label>
 </div>
 <p id="count" class="count"></p>
-<div class="table"><table><thead><tr><th data-k="title" class="" aria-sort="none"><button type="button">Game</button></th><th data-k="maker" class="hide-sm" aria-sort="none"><button type="button">Maker</button></th><th data-k="year" class="" aria-sort="none"><button type="button">Year</button></th><th data-k="family" class="" aria-sort="none"><button type="button">Board</button></th><th data-k="support" class="" aria-sort="none"><button type="button">rom2altsound</button></th><th data-k="sets" class="num" aria-sort="none"><button type="button">Sets</button></th><th data-k="sounds" class="num" aria-sort="none"><button type="button">Sounds</button></th><th data-k="names" class="num" aria-sort="none"><button type="button">Names</button></th><th data-k="lufs" class="num" aria-sort="none"><button type="button">LUFS</button></th><th data-k="id" class="hide-sm" aria-sort="none"><button type="button">Sound ROM id</button></th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="table"><table><thead><tr><th data-k="title" class="" aria-sort="none"><button type="button">Game</button></th><th data-k="maker" class="hide-sm" aria-sort="none"><button type="button">Maker</button></th><th data-k="year" class="" aria-sort="none"><button type="button">Year</button></th><th data-k="family" class="" aria-sort="none"><button type="button">Board</button></th><th data-k="support" class="" aria-sort="none"><button type="button">rom2altsound</button></th><th data-k="sets" class="num" aria-sort="none"><button type="button">Sets</button></th><th data-k="sounds" class="num" aria-sort="none"><button type="button">Sounds</button></th><th data-k="lufs" class="num" aria-sort="none"><button type="button">LUFS</button></th><th data-k="id" class="hide-sm" aria-sort="none"><button type="button">Sound ROM id</button></th></tr></thead><tbody id="rows"></tbody></table></div>
 <p class="more"><button class="btn" type="button" id="more" hidden></button></p>
 </div>
 <section class="about">
@@ -73,9 +73,7 @@ sound ROM id, and <strong>Send names</strong> shares that same file, after a con
 shared naming of sounds (public domain, CC0; nothing else is sent). Put it in a pack with</p>
 <pre><code>rom2altsound names afm_113b names.csv
 rom2altsound afm_113b --names names.csv</code></pre>
-<p>A <code>names.csv</code> fits every set of the same entry, and is refused for other sound ROMs.
-The <em>Names</em> column counts the commands that PinMAME's <a href="https://github.com/vpinball/pinmame/blob/master/release/sounds.dat">sounds.dat</a>
-names for the entry's sets (the names themselves are not reproduced here).</p>
+<p>A <code>names.csv</code> fits every set of the same entry, and is refused for other sound ROMs.</p>
 <h3>The columns</h3>
 <ul>
 <li><strong>Board</strong>: the sound board family (PinMAME's <code>SNDBRD_*</code>), as the game's machine
@@ -95,7 +93,9 @@ the other boards: their commands are only found by playing them.</li>
 <li><strong>LUFS</strong>: the average loudness of the entry's sounds as rom2altsound wrote them, at the game's
 factory volume, as PinMAME plays them in VPinball: the EBU R128 integrated loudness of every file played
 back to back (<code>catalog.json</code> <code>loudness.lufs</code>). In italics: Stern SAM, decoded from the image
-at full bus level, not the level of a game. Empty: not measured yet.</li>
+at full bus level, not the level of a game. Empty: not measured yet. A <em>clips</em> badge: some of the files
+clipped in emulation (samples at full scale); its tooltip lists the worst ones (<code>loudness.clipping</code>), and
+the pack's <code>manifest.json</code> has every file's figures.</li>
 </ul>
 <h3>Rebuilding the catalog</h3>
 <pre><code>rom2altsound catalog ~/vpinball/roms --out docs/catalog.json
