@@ -1099,7 +1099,7 @@ pub fn write_pack(
     let mut rows = Vec::new();
     // The sound (index in `sounds`) of each row, and the file it plays with the reason.
     let mut row_sound = Vec::new();
-    let mut row_file: Vec<(FileKind, String)> = Vec::new();
+    let mut row_file: Vec<(FileKind, String, Option<crate::ced::Tags>)> = Vec::new();
     let mut referenced = std::collections::BTreeSet::new();
     for (i, s) in sounds.iter().enumerate() {
         let Some(file) = &s.file else { continue };
@@ -1155,14 +1155,27 @@ pub fn write_pack(
         let continuous = kind == FileKind::IntroLoopExtended
             || (src.loop_info.is_none() && src.loop_unresolved.is_some());
         referenced.insert(fname.clone());
+        // What the audio tagger hears: it names a sound nobody named and types the sounds
+        // whose names (if any) say nothing about it.
+        let tags = crate::ced::tag(&out_dir.join(file));
+        let playing = looped || continuous;
+        let row_kind = match (classify(&s.name, playing), &tags) {
+            (Kind::Sfx, Some(t)) => t.kind(s.duration, playing),
+            (k, _) => k,
+        };
         rows.push(Row::plain(
             id,
-            classify(&s.name, looped || continuous),
+            row_kind,
             looped,
             continuous,
             csv_name(
                 &if s.name.trim().is_empty() {
-                    crate::names::generated_name(&s.id, s.duration, s.ended_by)
+                    crate::names::generated_name_with(
+                        &s.id,
+                        s.duration,
+                        s.ended_by,
+                        tags.as_ref().map(|t| t.label()),
+                    )
                 } else {
                     s.name.clone()
                 },
@@ -1171,7 +1184,7 @@ pub fn write_pack(
             fname,
         ));
         row_sound.push(i);
-        row_file.push((kind, reason));
+        row_file.push((kind, reason, tags));
     }
     report.rows = rows.len();
     report.files_referenced = referenced.len();
@@ -1415,7 +1428,7 @@ fn annotate_manifest(
     twins: &[Twin],
     rows: &[Row],
     row_sound: &[usize],
-    row_file: &[(FileKind, String)],
+    row_file: &[(FileKind, String, Option<crate::ced::Tags>)],
     report: &PackReport,
 ) -> Result<(), String> {
     let path = out_dir.join("manifest.json");
@@ -1446,8 +1459,11 @@ fn annotate_manifest(
             }
         }
         // What each row became in the two CSVs.
-        for ((row, &i), (kind, reason)) in rows.iter().zip(row_sound).zip(row_file) {
+        for ((row, &i), (kind, reason, tags)) in rows.iter().zip(row_sound).zip(row_file) {
             if let Some(e) = list.iter_mut().find(|e| e["id"] == sounds[i].id) {
+                if let Some(t) = tags {
+                    e["ced"] = t.to_json();
+                }
                 e["pack"] = serde_json::json!({
                     "file": row.fname,
                     "file_kind": kind.as_str(),

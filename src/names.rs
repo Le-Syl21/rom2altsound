@@ -293,6 +293,12 @@ fn by_id(names: &Names) -> Result<(HashMap<String, String>, Vec<String>), String
 /// The tool's own name for a sound nobody named: `Sound 2A (3.2 s)`, `Sound 2A (loop)`,
 /// `Sound 2A (120+ s)` (cut at the cap). `ended_by` is the report's.
 pub fn generated_name(id: &str, duration: f64, ended_by: &str) -> String {
+    generated_name_with(id, duration, ended_by, None)
+}
+
+/// `generated_name`, with what the audio tagger hears when it has an idea: `Sound 2A ~Bell (3.2 s)`
+/// (the `~` says it is a guess, not a name).
+pub fn generated_name_with(id: &str, duration: f64, ended_by: &str, heard: Option<&str>) -> String {
     let id = id.trim_start_matches("0x").trim_start_matches("0X");
     let len = match ended_by {
         "loop" => "loop".to_owned(),
@@ -300,7 +306,10 @@ pub fn generated_name(id: &str, duration: f64, ended_by: &str) -> String {
         _ if duration < 10.0 => format!("{duration:.1} s"),
         _ => format!("{duration:.0} s"),
     };
-    format!("Sound {} ({len})", id.to_ascii_uppercase())
+    match heard {
+        Some(h) if !h.is_empty() => format!("Sound {} ~{h} ({len})", id.to_ascii_uppercase()),
+        _ => format!("Sound {} ({len})", id.to_ascii_uppercase()),
+    }
 }
 
 /// Applies names to a manifest (in memory) and to the text of its altsound.csv; returns the
@@ -735,5 +744,18 @@ mod tests {
                 .contains(",Ramp,")
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn generated_name_says_what_the_tagger_heard() {
+        assert_eq!(generated_name("0x2F", 1.3, "end"), "Sound 2F (1.3 s)");
+        assert_eq!(
+            generated_name_with("0x2F", 1.3, "end", Some("Speech")),
+            "Sound 2F ~Speech (1.3 s)"
+        );
+        assert_eq!(
+            generated_name_with("0x2F", 1.3, "end", Some("")),
+            "Sound 2F (1.3 s)"
+        );
     }
 }

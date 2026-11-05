@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **A small audio tagger names and types the sounds nobody named.** CED (the "tiny" model,
+  Apache-2.0, trained on AudioSet, 6 MB in the program, pure Rust with tract, so the same
+  file gets the same tags on every machine) gives each sound its most probable classes.
+  `manifest.json` keeps the top five and the Music and Speech scores in `ced`; a sound with
+  no name is called `Sound 2F ~Speech (1.3 s)` in altsound.csv (the `~` says it is a guess),
+  and a sound whose name says nothing about its kind gets its g-sound.csv TYPE from the
+  tags: a voice is a `callout`, a sound that loops or lasts 20 s or more is `music`, the
+  rest `sfx`. Names from `--names` and the markers in a name (`Music:`, `VOX:`, quotes)
+  win over the tagger. The tags are a guess: on Fathom and Sorcerer's Lair the voices are
+  found, the short effects are the uncertain ones.
 - **PinMAME's sounds.dat is no longer a source of anything.** Its ids can be wrong (Fathom
   and 16 other BYSNT/BY56 sets list `0604` where `06` was meant, which played a spurious
   duplicate of 06 and 04), and playing its section first, the sweep's extras after, made a
