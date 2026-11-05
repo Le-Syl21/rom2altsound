@@ -17,7 +17,6 @@ SITE = "https://le-syl21.github.io/rom2altsound/"
 GOOGLE_VERIFICATION = "TqbXre6qrm9jaoj6tFwRRiI2vuQilAZLm6kUJA-etmo"
 REPO = "https://github.com/Le-Syl21/rom2altsound"
 BLOB = REPO + "/blob/main/"
-SOUNDS_DAT = "https://github.com/vpinball/pinmame/blob/master/release/sounds.dat"
 
 UI = {
     "en": {
@@ -39,7 +38,7 @@ UI = {
         "family": "Board family", "support": "rom2altsound support", "maker": "Maker",
         "cols": [("title", "Game", ""), ("maker", "Maker", "hide-sm"), ("year", "Year", ""),
                  ("family", "Board", ""), ("support", "rom2altsound", ""), ("sets", "Sets", "num"),
-                 ("sounds", "Sounds", "num"), ("names", "Names", "num"), ("lufs", "LUFS", "num"),
+                 ("sounds", "Sounds", "num"), ("lufs", "LUFS", "num"),
                  ("id", "Sound ROM id", "hide-sm")],
         "about": f"""
 <h2 id="about">About</h2>
@@ -61,9 +60,7 @@ sound ROM id, and <strong>Send names</strong> shares that same file, after a con
 shared naming of sounds (public domain, CC0; nothing else is sent). Put it in a pack with</p>
 <pre><code>rom2altsound names afm_113b names.csv
 rom2altsound afm_113b --names names.csv</code></pre>
-<p>A <code>names.csv</code> fits every set of the same entry, and is refused for other sound ROMs.
-The <em>Names</em> column counts the commands that PinMAME's <a href="{SOUNDS_DAT}">sounds.dat</a>
-names for the entry's sets (the names themselves are not reproduced here).</p>
+<p>A <code>names.csv</code> fits every set of the same entry, and is refused for other sound ROMs.</p>
 <h3>The columns</h3>
 <ul>
 <li><strong>Board</strong>: the sound board family (PinMAME's <code>SNDBRD_*</code>), as the game's machine
@@ -117,7 +114,7 @@ python3 docs/build_site.py</code></pre>
         "family": "Famille de carte", "support": "Prise en charge", "maker": "Fabricant",
         "cols": [("title", "Jeu", ""), ("maker", "Fabricant", "hide-sm"), ("year", "Année", ""),
                  ("family", "Carte", ""), ("support", "rom2altsound", ""), ("sets", "Jeux de ROM", "num"),
-                 ("sounds", "Sons", "num"), ("names", "Noms", "num"), ("lufs", "LUFS", "num"),
+                 ("sounds", "Sons", "num"), ("lufs", "LUFS", "num"),
                  ("id", "Id de ROM son", "hide-sm")],
         "about": f"""
 <h2 id="about">À propos</h2>
@@ -141,8 +138,7 @@ commun des sons (domaine public, CC0 ; rien d'autre n'est envoyé). Mettez-le da
 <pre><code>rom2altsound names afm_113b names.csv
 rom2altsound afm_113b --names names.csv</code></pre>
 <p>Un <code>names.csv</code> convient à tous les jeux de ROM d'une même entrée, et il est refusé pour d'autres
-ROM son. La colonne <em>Noms</em> compte les commandes que le <a href="{SOUNDS_DAT}">sounds.dat</a> de PinMAME
-nomme pour les jeux de ROM de l'entrée (les noms eux-mêmes ne sont pas reproduits ici).</p>
+ROM son.</p>
 <h3>Les colonnes</h3>
 <ul>
 <li><strong>Carte</strong> : la famille de carte son (le <code>SNDBRD_*</code> de PinMAME), telle que
