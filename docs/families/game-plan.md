@@ -215,3 +215,14 @@ Sharpshooter (`ladyshot`), Cyclopes (`cyclopes`)
   generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)); `andromed` sent no sound command in 45 s of attract
   mode with a coin and start, so nothing was measured.
+  **Rows cannot cover it** (`GP_UpdateSolenoids`, `gp.c`, passes every write of the
+  second solenoid bank to `sndbrd_0_data_w`, so PinMAME logs `0F`, the low nibble, the
+  high nibble, `0F`: ids `000F`, `000X`, `000Y`, `000F`; the same per-write logging was
+  measured in VPinball 10.8.1-6577 on `babypac`). One row `000X` fires for any command
+  that has `X` in either half, and the idle `0F` would play whatever sound is at `0F`
+  every time; a pair cannot be keyed with a one-byte row. What would make the pack play:
+  `gp.c` should assemble the MSU-3's byte (low nibble, high nibble, back to `0F`, the
+  sequence the board's program reads) and call `snd_cmd_log` once with it, turning the
+  per-write logging off (`sndbrd_logData`) for that board; libaltsound needs nothing
+  more. Not proposed upstream. The logging itself was read in the source, not measured on
+  this board (`andromed` sends no command in the bench's 240 s).
