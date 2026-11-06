@@ -13,6 +13,10 @@
   `0000` and `0001`, none matching the pack's two-nibble ids), so no row can cover it: the
   family notes say so (`docs/vpx_playback.json` keeps it `partial`). Nothing in the packs
   changed.
+- **Baby Pac-Man and Game Plan MSU-3 packs cannot be made to play by extra rows.** Measured
+  in VPinball 10.8.1-6577: PinMAME logs each 4-bit nibble of a command, so AltSound looks up
+  `0008`, `0001`... and a one-byte row cannot be keyed on a pair. The family notes now say
+  what PinMAME would have to log instead. No change to the packs.
 - **System 3 to 7 packs also carry the ids AltSound looks up.** The game writes the
   inverted solenoid byte to the sound board, so what PinMAME logs keeps bits 5-7 as the
   solenoid lines leave them (bk_l4: `2C` for the command `0C`) while the board reads the

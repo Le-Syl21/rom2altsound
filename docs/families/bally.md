@@ -334,6 +334,17 @@ Cheap Squeak behind the Baby Pac-Man video board · interface `BY45`, sub-type 1
   ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
   looks up `0008 0001 0003 0001`. PinMAME logs each nibble write (two per command,
   the high nibble second), so even then the ids would be the nibbles.
+  **Rows cannot cover it** (checked in VPinball 10.8.1-6577, `babypac`: 13 lookups of
+  `0000`, 7 of `000F`, one of `0008`, one of `0001`, nothing else): the lookup key is one
+  nibble, so one row `000X` would fire for the low nibble of one command and the high
+  nibble of every other (`0x18` is logged `08 01`, `0x13` is `03 01`: the `01` is the
+  high half of both), and only 16 ids exist for 46 sounds. A pair cannot be keyed with a
+  one-byte row. What would make the pack play: PinMAME's `byvidpin.c` `pia2cb2_w` should
+  log the byte the board reads, once per command (low nibble kept on the strobe's rising
+  edge, high nibble on its falling edge, then `snd_cmd_log(0, (high << 4) | low)`), and
+  stop logging each nibble (`sndbrd_logData(0, 0)` for the video board, as by35.c did in
+  vpinball/pinmame#717). libaltsound needs nothing more (one byte per command since #20).
+  Not proposed upstream.
 
 ## <a name="sndbrd_bytcs"></a>SNDBRD_BYTCS
 
