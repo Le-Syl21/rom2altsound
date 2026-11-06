@@ -121,6 +121,9 @@ sets, 38 games, 28 sound ROM ids, 1978-2022, Williams, Williams / Oliver · e.g.
   looks up `005F 005F 007F 005F`. Every byte the game writes, the idle bytes
   included, is logged with bits 5-7 as the solenoid lines leave them; the `frpwr_l2`
   section gives two-byte ids (`0x001F`) that AltSound would not look up either way.
+  The pack now also carries the rows `0x20|xx`..`0xE0|xx` for every five-bit row (same
+  file; `solenoid_line_aliases`), so a command logged with any bits 5-7 finds its sound
+  (System 4 to 7 boards of sub-type 0; not yet played in VPinball itself).
 
 ## <a name="sndbrd_s3s"></a>SNDBRD_S3S
 

@@ -303,6 +303,8 @@ pub enum Aliases {
     Whitestar,
     /// `0x00xx` for each board 1 row `0x01xx` (`system11_board1_aliases`).
     System11Board1,
+    /// `0x20..0xE0 | xx` for each five-bit row (`solenoid_line_aliases`).
+    SolenoidLines,
 }
 
 impl Aliases {
@@ -311,6 +313,7 @@ impl Aliases {
             Aliases::None => None,
             Aliases::Whitestar => Some("whitestar FD xx"),
             Aliases::System11Board1 => Some("system 11 board 1 as 0x00xx"),
+            Aliases::SolenoidLines => Some("solenoid lines in bits 5-7"),
         }
     }
 }
@@ -334,6 +337,28 @@ pub fn system11_board1_aliases(rows: &mut Vec<Row>) -> usize {
             ..r.clone()
         })
         .collect();
+    let n = aliases.len();
+    rows.extend(aliases);
+    n
+}
+
+/// Williams System 4 to 7 sound board (`SNDBRD_S67S`, five command bits): the game writes
+/// the inverted solenoid byte to the board, so the byte PinMAME logs (and AltSound looks
+/// up) keeps bits 5-7 as the solenoid lines leave them (bk_l4 logs `2C` for the command
+/// `0C`), while the board only reads the low five bits. Each row `xx` (`00`..`1E`) also
+/// gets the rows with bits 5-7 set in every combination, with the same file, unless the pack
+/// already has them. Returns how many rows were added.
+pub fn solenoid_line_aliases(rows: &mut Vec<Row>) -> usize {
+    let ids: std::collections::BTreeSet<u32> = rows.iter().map(|r| r.id).collect();
+    let mut aliases = Vec::new();
+    for r in rows.iter().filter(|r| r.id < 0x1F) {
+        for lines in 1..8u32 {
+            let id = r.id | lines << 5;
+            if !ids.contains(&id) {
+                aliases.push(Row { id, ..r.clone() });
+            }
+        }
+    }
     let n = aliases.len();
     rows.extend(aliases);
     n
@@ -1233,6 +1258,7 @@ pub fn write_pack(
         Aliases::None => 0,
         Aliases::Whitestar => whitestar_aliases(&mut rows),
         Aliases::System11Board1 => system11_board1_aliases(&mut rows),
+        Aliases::SolenoidLines => solenoid_line_aliases(&mut rows),
     };
     report.aliases_kind = aliases.kind();
 

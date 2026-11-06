@@ -1892,6 +1892,11 @@ impl Extractor {
             && self.families[1].starts_with("WMSS11")
         {
             crate::altsound::Aliases::System11Board1
+        } else if self.mask == 1
+            && self.families[0] == "WMSS67"
+            && unsafe { ffi::shim_board_type(0) } & 0xFF == 0
+        {
+            crate::altsound::Aliases::SolenoidLines
         } else {
             crate::altsound::Aliases::None
         }

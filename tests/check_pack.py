@@ -139,6 +139,11 @@ def main():
     with open(os.path.join(pack, "altsound.csv"), newline="") as f:
         rows = list(csv.DictReader(f))
     want_ids = [f"0x{s['id']:04X}" for s in expected["sounds"]]
+    base_ids = list(want_ids)
+    # System 4 to 7 packs also carry 0x20|xx .. 0xE0|xx (the solenoid lines of a logged byte).
+    want_ids += [f"0x{s['id'] | k << 5:04X}" for s in expected["sounds"] for k in range(1, 8)
+                 if s["id"] < 0x1F]
+    want_ids.sort()
     got_ids = sorted(r["ID"] for r in rows)
     if got_ids != want_ids:
         fail(f"altsound.csv: ids {got_ids}, expected {want_ids}")
@@ -149,7 +154,7 @@ def main():
     if written != [f"0x{s['id']:02X}" for s in expected["sounds"]]:
         fail(f"manifest.json: sounds with a file {written}, expected {want_ids}")
     counts = manifest.get("counts", {})
-    if counts.get("written") != len(want_ids) or counts.get("tried", 0) < len(want_ids):
+    if counts.get("written") != len(base_ids) or counts.get("tried", 0) < len(base_ids):
         fail(f"manifest.json: counts {counts}")
 
     by_id = {r["ID"]: r for r in rows}
@@ -175,7 +180,7 @@ def main():
             errors.append(f"{line}: wrong frequency")
     if errors:
         fail("; ".join(errors))
-    print(f"OK: {len(want_ids)} sounds, pack in {pack}")
+    print(f"OK: {len(base_ids)} sounds, pack in {pack}")
 
 
 if __name__ == "__main__":
