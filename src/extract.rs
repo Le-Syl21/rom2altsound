@@ -1596,6 +1596,9 @@ pub struct Extractor {
     board_power_cycles: u32,
     /// Sound commands written by the game CPU during boot, as (time, board, byte).
     boot_log: Vec<(u64, c_int, u8)>,
+    /// Board 0's sub-type (`SNDBRD_TYPE` low byte) at the end of the boot: the boards are
+    /// gone when the pack is written.
+    board0_sub: c_int,
     /// (board, previous byte, byte) seen during boot, and when the last unseen one arrived.
     boot_pairs: std::collections::HashSet<(c_int, Option<u8>, u8)>,
     last_novel: u64,
@@ -1771,6 +1774,7 @@ impl Extractor {
             trace_sends: Vec::new(),
             boot_loud_frames: 0,
             boot_log: Vec::new(),
+            board0_sub: 0,
             boot_pairs: Default::default(),
             last_novel: 0,
             recent: [Vec::new(), Vec::new()],
@@ -1897,6 +1901,8 @@ impl Extractor {
             && matches!(unsafe { ffi::shim_board_type(0) } & 0xFF, 0 | 2)
         {
             crate::altsound::Aliases::SolenoidLines
+        } else if self.mask == 1 && self.families[0] == "TABART" && self.board0_sub == 1 {
+            crate::altsound::Aliases::SoundDips
         } else {
             crate::altsound::Aliases::None
         }
@@ -3289,6 +3295,7 @@ impl Extractor {
         self.boards = self.board_list().filter_map(board_typestr).collect();
         // The reports are also written after PinmameStop, when the boards are gone.
         self.families = [0, 1].map(|b| board_typestr(b).unwrap_or_default());
+        self.board0_sub = unsafe { ffi::shim_board_type(0) } & 0xFF;
         // Inder's first machines start no board (the game CPU writes its chip): board 0
         // stands for that chip, game-driven (`gamesound::inder`).
         if self.mask == 0 {
