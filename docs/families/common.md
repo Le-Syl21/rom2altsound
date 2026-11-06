@@ -285,7 +285,8 @@ last board, Romstar, Spinball and Inder (the game writes the latch itself, `spin
 `soundbd_w`, `inder.c` `snd_w`, `snd2_w`) and Zaccaria 1311, whose packs stay unplayable. Nor where
 what the game makes PinMAME log is not the byte the pack is keyed by: Baby Pac-Man and Game Plan's
 MSU-3 (nibbles), Tabart's L'Hexagone (line and chime state), Stern SB-300 with its
-Vocalizer (the speech goes through the unlogged `sndbrd_ctrl_w`); in part only on Hankin,
+Vocalizer (the speech goes through the unlogged `sndbrd_ctrl_w`); on Hankin (every write of the solenoid lines is
+logged, measured on empsback in 10.8.1-6577), in part only on
 Playmatic's third board (Cerberus), System 3's Disco Fever and World Cup boards and Tabart's
 second board. Taito's Sintetizador (a command logged with and without bit 7) and
 Tecnoplay's Scramble (each command logged twice) play: both rows exist, the second one

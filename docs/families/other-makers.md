@@ -442,6 +442,20 @@ status ✅ · 5 sets, 5 games, 5 sound ROM ids, 1978-1981, Hankin · e.g. FJ Hol
   ... 0102 0304`; with one byte per command
   ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
   looks up `0001 0002 0003 0004`.
+  **Played in VPinball 10.8.1-6577 (master, one byte per command) on `empsback`** with the
+  pack as written (223 rows `01`..`FF`; `0D` and `0E` are silent and have no row): in 240 s
+  of attract and a credit, AltSound's log shows 10385 lookups, every one a nibble `00`..`0F`.
+  `0F` (the idle value of the lines) 9701 times, `02` 108, `04` 37, and so on, `00` 271 times
+  (no row, nothing to play), `0D` 18 and `0E` 16 (no row). So **no row or alias can fix this
+  family**: PinMAME's `by35.c` `pia1b_w` still calls `sndbrd_0_data_w(0, data & 0x0f)` on
+  every write of the shared solenoid/sound lines, and the HNK board is not in the `sndCmdMode`
+  switch of `by35_init` (only BY32, BY51, BY56, BY61, BY45, 51N, 61N and Nuova have it), so
+  solenoid pulses and the idle `0F` are looked up as if they were commands, and a real
+  command cannot be told from them. The strobe that makes a write a command is `CA2`
+  (`pia1ca2_w` → `sndbrd_0_ctrl_w`, `BY35HW_SCTRL`); logging the nibble when it rises, like
+  `by35_sndCmd` does for the other boards, is a change in PinMAME, not in the pack (not
+  proposed upstream, not tested). Until then the pack plays the wrong sounds at the wrong times
+  in VPinball, which is why the family stays `partial`.
 
 ## <a name="sndbrd_grand"></a>SNDBRD_GRAND
 

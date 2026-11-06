@@ -2,6 +2,12 @@
 
 ## 0.5.0 (2026-11-06)
 
+- **Hankin in VPinball master: measured, not fixable in the pack.** Played `empsback` in
+  10.8.1-6577: every command AltSound looks up is a nibble `00`..`0F`, but PinMAME's `by35.c`
+  logs every write of the shared solenoid/sound lines (the HNK board has no `sndCmdMode`), so
+  the idle `0F` alone is 9701 of 10385 lookups and solenoid pulses hit real rows. No row or
+  alias can separate them; the fix is logging the nibble on the `CA2` strobe in PinMAME.
+  Documented in the Hankin section, the family stays `partial`.
 - **System 3 to 7 packs also carry the ids AltSound looks up.** The game writes the
   inverted solenoid byte to the sound board, so what PinMAME logs keeps bits 5-7 as the
   solenoid lines leave them (bk_l4: `2C` for the command `0C`) while the board reads the
