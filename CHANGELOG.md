@@ -8,6 +8,12 @@
   low five bits. Each row `xx` now has seven more rows `0x20|xx` ... `0xE0|xx` with the same
   file (210 rows on bk_l4), as is done for Whitestar and System 11. Played in VPinball
   10.8.1-6577 on Black Knight and Contact.
+- **Sahara Love packs carry the ids AltSound looks up.** PinMAME logs the sound lines the
+  game writes with the two sound DIPs in bits 4 and 7 (gts1.c `snd_w`), while the pack's
+  ids are the lines alone. Each row `xx` now has three more rows, `0x10|xx`, `0x80|xx` and
+  `0x90|xx`, with the same file (84 rows on sahalove). Read in the code, not played: no
+  Sahara Love table. L'Hexagone's pack still cannot play (VPinball 10.8.1-6577 looks up
+  `0050`, `0010` and `0058`: line states, not the switch numbers the pack is keyed by).
 - **A small audio tagger names and types the sounds nobody named.** CED (the "tiny" model,
   Apache-2.0, trained on AudioSet, 6 MB in the program, pure Rust with tract, so the same
   file gets the same tags on every machine) gives each sound its most probable classes.

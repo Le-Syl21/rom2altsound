@@ -358,13 +358,19 @@ Christian Tabart (France) · e.g. L'Hexagone (`hexagone`)
   `20` (`0879`, `088F`, `08A5`, `08BB`, chosen by the timer count) and the tune of mode
   `00` (every routine in turn) are not recorded; the minute's call is switch 70's routine
   (`05D2`).
-- **In VPinball**: **the pack does not play, in any VPinball so far**: what is logged is
-  the line and chime state (`gts1.c` `snd_w`), and the pack's ids are switch numbers;
-  up to 10.8.1-5436 libaltsound has no case for generation 0 (none) and joins the bytes two
-  by two ([In VPinball](common.md#in-vpinball)). Measured on `hexagone`: the game sent `50
-  50 50...`, AltSound looked up `5050`; with one byte per command
+- **In VPinball**: **the pack does not play, in any VPinball so far**, and no row can make it: what is logged is
+  the line and chime state (`gts1.c` `snd_w`: bit 6 game on, bit 3 tilt, bits 0-2 the chimes, bits 4 and 7 the sound DIPs), and the pack's ids are switch numbers;
+  up to 10.8.1-5436 libaltsound has no case for generation 0 (none) and joins the bytes two by two
+  ([In VPinball](common.md#in-vpinball)). Measured on `hexagone`: the game sent `50 50 50...`, AltSound looked up `5050`; with one byte per command
   ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball
-  master from 3abe805) it looks up `0050`.
+  master from 3abe805) it looks up `0050`. Played in VPinball 10.8.1-6577 on the
+  L'Hexagone table (240 s, coin and start): AltSound looked up `0050` 29 714 times, `0010`
+  803 times and `0058` (no row) 11 times: those are the line states (game on with a DIP,
+  the DIP alone, tilt with a DIP), and the first two are the ids of the switch 50 and 10
+  sounds only by chance, so the pack plays them over and over for nothing. The sounds the
+  game makes (a closed switch, found by the sound CPU in its own switch matrix) never reach AltSound: only an
+  upstream change (PinMAME logging the switch returns the sound program reads, or VPinball
+  sending them) could, not rows.
 
 ## <a name="sndbrd_tabart2"></a>SNDBRD_TABART2
 
@@ -391,11 +397,7 @@ Christian Tabart (France) · e.g. Sahara Love (`sahalove`)
   31, all from silence, 17 levels (before: 40 of 40, 39 not from silence, all at -17.0
   LUFS).
 - **Limits and what is missing**: no stop command known (the board reset is enough).
-- **In VPinball**: **the pack does not play as written, in any VPinball so far**: the logged lines are the pack's ids only while the sound DIP bits `0x90` are off; and up to 10.8.1-5436 libaltsound has no case for
-  generation 0 (none) and joins the bytes two by two ([In
-  VPinball](common.md#in-vpinball)); `sahalove` sent no sound command in 45 s of attract
-  mode with a coin and start, so nothing was measured. AltSound would get the game's raw
-  line writes, not the converted command.
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on, with the rows for the sound DIPs (below)**. What PinMAME logs is the byte gts1.c `snd_w` writes through `sndbrd_0_data_w`: the game-over line (`0x40`), the tilt (`0x08`), the three chime lines (bits 0-2) and, in bits 4 and 7, the two sound DIPs of DIP bank 3 (`core_getDip(3) & 0x90`). `tabart_data_w` reads the DIPs again from the bank itself, so the pack's ids (`01`..`0F`, `40`..`4F`, the lines without the DIPs) are what is logged only with both DIPs off. The pack now also carries the rows `0x10|xx`, `0x80|xx` and `0x90|xx` for every row `xx` (same file; `sound_dip_aliases`, 84 rows on `sahalove`), so a line state logged with any DIP bits finds its sound. Up to 10.8.1-5436 libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In VPinball](common.md#in-vpinball)). Not played in VPinball itself: no Sahara Love table exists in the collection, and `sahalove` sent no sound command in 45 s of attract mode with a coin and start; the aliases come from the code (the boot's `48`, then `00`, is the pack's `0x48` row).
 
 ## <a name="sndbrd_tabart3"></a>SNDBRD_TABART3
 

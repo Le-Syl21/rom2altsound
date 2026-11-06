@@ -284,10 +284,10 @@ not on the game-driven boards (below), SAM, Pinball 2000, Capcom, Mr. Game, Play
 last board, Romstar, Spinball and Inder (the game writes the latch itself, `spinb.c`
 `soundbd_w`, `inder.c` `snd_w`, `snd2_w`) and Zaccaria 1311, whose packs stay unplayable. Nor where
 what the game makes PinMAME log is not the byte the pack is keyed by: Baby Pac-Man and Game Plan's
-MSU-3 (nibbles), Tabart's L'Hexagone (line and chime state), Stern SB-300 with its
+MSU-3 (nibbles), Tabart's L'Hexagone (line and chime state, measured in VPinball 10.8.1-6577: it looks up `0050`, `0010` and `0058`, never a switch id), Stern SB-300 with its
 Vocalizer (the speech goes through the unlogged `sndbrd_ctrl_w`); in part only on Hankin,
-Playmatic's third board (Cerberus), System 3's Disco Fever and World Cup boards and Tabart's
-second board. Taito's Sintetizador (a command logged with and without bit 7) and
+Playmatic's third board (Cerberus), and System 3's Disco Fever and World Cup boards.
+Tabart's second board (Sahara Love) has rows for the sound DIPs logged with its lines. Taito's Sintetizador (a command logged with and without bit 7) and
 Tecnoplay's Scramble (each command logged twice) play: both rows exist, the second one
 restarts the sound (played on `shock` and `scram_tp` in 10.8.1-6577). Each family's section says which.
 `docs/vpx_playback.json` holds the result (`"state": "newer"` for the families that play

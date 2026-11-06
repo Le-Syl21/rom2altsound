@@ -305,6 +305,9 @@ pub enum Aliases {
     System11Board1,
     /// `0x20..0xE0 | xx` for each five-bit row (`solenoid_line_aliases`).
     SolenoidLines,
+    /// `0x10`, `0x80` and `0x90 | xx` for each row of Tabart's Sahara Love board
+    /// (`sound_dip_aliases`).
+    SoundDips,
 }
 
 impl Aliases {
@@ -314,6 +317,7 @@ impl Aliases {
             Aliases::Whitestar => Some("whitestar FD xx"),
             Aliases::System11Board1 => Some("system 11 board 1 as 0x00xx"),
             Aliases::SolenoidLines => Some("solenoid lines in bits 5-7"),
+            Aliases::SoundDips => Some("sound DIPs in bits 4 and 7"),
         }
     }
 }
@@ -354,6 +358,28 @@ pub fn solenoid_line_aliases(rows: &mut Vec<Row>) -> usize {
     for r in rows.iter().filter(|r| r.id < 0x1F) {
         for lines in 1..8u32 {
             let id = r.id | lines << 5;
+            if !ids.contains(&id) {
+                aliases.push(Row { id, ..r.clone() });
+            }
+        }
+    }
+    let n = aliases.len();
+    rows.extend(aliases);
+    n
+}
+
+/// Tabart's Sahara Love board (`SNDBRD_TABART`, sub-type 1): the game's sound lines are
+/// written by gts1.c `snd_w`, which also puts the two sound DIPs (DIP bank 3, `0x90`) in
+/// bits 4 and 7 of the byte PinMAME logs, while the board reads them from the DIP bank
+/// itself (`tabart_data_w`): a pack row `xx` (`01`..`0F`, `40`..`4F`) is looked up as `xx`
+/// only with both DIPs off. Each row also gets the rows `0x10|xx`, `0x80|xx` and `0x90|xx`
+/// with the same file, unless the pack already has them. Returns how many rows were added.
+pub fn sound_dip_aliases(rows: &mut Vec<Row>) -> usize {
+    let ids: std::collections::BTreeSet<u32> = rows.iter().map(|r| r.id).collect();
+    let mut aliases = Vec::new();
+    for r in rows.iter().filter(|r| r.id < 0x50) {
+        for dips in [0x10, 0x80, 0x90] {
+            let id = r.id | dips;
             if !ids.contains(&id) {
                 aliases.push(Row { id, ..r.clone() });
             }
@@ -1259,6 +1285,7 @@ pub fn write_pack(
         Aliases::Whitestar => whitestar_aliases(&mut rows),
         Aliases::System11Board1 => system11_board1_aliases(&mut rows),
         Aliases::SolenoidLines => solenoid_line_aliases(&mut rows),
+        Aliases::SoundDips => sound_dip_aliases(&mut rows),
     };
     report.aliases_kind = aliases.kind();
 
@@ -1606,6 +1633,27 @@ mod tests {
         let added = rows.last().unwrap();
         assert_eq!((added.id, added.fname.as_str()), (0xFD42, "42.wav"));
         assert_eq!(rows.iter().filter(|r| r.id == 0xFD60).count(), 1);
+    }
+
+    #[test]
+    fn sound_dip_aliases_add_the_dip_bits() {
+        let row = |id: u32| {
+            Row::plain(
+                id,
+                Kind::Sfx,
+                false,
+                false,
+                format!("s{id:X}"),
+                format!("{id:X}.wav"),
+            )
+        };
+        let mut rows = vec![row(0x01), row(0x4F), row(0x91)];
+        assert_eq!(sound_dip_aliases(&mut rows), 5);
+        let ids: std::collections::BTreeSet<u32> = rows.iter().map(|r| r.id).collect();
+        for id in [0x11, 0x81, 0x91, 0x5F, 0xCF, 0xDF] {
+            assert!(ids.contains(&id), "{id:X}");
+        }
+        assert_eq!(rows.iter().filter(|r| r.id == 0x91).count(), 1);
     }
 
     #[test]

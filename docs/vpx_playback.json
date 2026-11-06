@@ -86,7 +86,7 @@
     "ST300": "gamedriven",
     "ST300V": "gamedriven",
     "TABART": "raw",
-    "TABART2": "partial",
+    "TABART2": "one_byte",
     "TAITO_SINTETIZADOR": "one_byte",
     "TAITO_SINTETIZADORPP": "one_byte",
     "TAITO_SINTEVOX": "one_byte",
