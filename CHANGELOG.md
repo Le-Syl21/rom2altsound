@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-11-06)
 
 - **A small audio tagger names and types the sounds nobody named.** CED (the "tiny" model,
   Apache-2.0, trained on AudioSet, 6 MB in the program, pure Rust with tract, so the same

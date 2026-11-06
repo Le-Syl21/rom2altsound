@@ -4820,13 +4820,12 @@ impl Extractor {
         let game = games
             .iter()
             .find(|(set, _)| self.opts.rom == *set || self.opts.parent.as_deref() == Some(*set));
-        game.map(|&(_, byte)| vec![byte])
-            .or_else(|| {
-                BUILTIN_STOPS
-                    .iter()
-                    .find(|(t, _)| *t == typestr)
-                    .map(|(_, bytes)| bytes.to_vec())
-            })
+        game.map(|&(_, byte)| vec![byte]).or_else(|| {
+            BUILTIN_STOPS
+                .iter()
+                .find(|(t, _)| *t == typestr)
+                .map(|(_, bytes)| bytes.to_vec())
+        })
     }
 
     /// What a command of the main list is when it is not a sound: the board's stop, or a

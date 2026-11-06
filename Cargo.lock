@@ -2921,7 +2921,7 @@ dependencies = [
 
 [[package]]
 name = "rom2altsound"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "cc",
  "clap",
@@ -2937,7 +2937,7 @@ dependencies = [
 
 [[package]]
 name = "rom2altsound-gui"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "clap",
  "eframe",

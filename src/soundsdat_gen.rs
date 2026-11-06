@@ -1024,7 +1024,8 @@ mod tests {
 
     /// The generated part: after the starting file when one was given, else the whole text.
     fn generated(text: &str) -> &str {
-        text.find("; rom2altsound sections").map_or(text, |i| &text[i..])
+        text.find("; rom2altsound sections")
+            .map_or(text, |i| &text[i..])
     }
 
     #[test]

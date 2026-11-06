@@ -10,6 +10,7 @@ pub mod batch;
 pub mod borrow;
 mod bsmtfw;
 mod catalog;
+pub mod ced;
 mod dcsrom;
 mod drivers;
 mod ducking;
@@ -17,13 +18,12 @@ mod extract;
 mod ffi;
 mod gamesound;
 pub mod inventory;
+pub mod lines;
 mod listen;
 mod looping;
 mod loudness;
 mod names;
 pub mod progress;
-pub mod ced;
-pub mod lines;
 pub mod replace;
 mod romcheck;
 mod romfill;
@@ -696,51 +696,49 @@ fn run(cli: &Cli, job: &Job) -> Result<(), String> {
         );
     }
 
-    *STATE.lock().unwrap() = Some(Extractor::new(
-        Options {
-            out_dir: job.out.clone(),
-            rom: job.rom.clone(),
-            parent: parent.clone(),
-            only: cli.only.clone(),
-            limit: cli.limit,
-            volume: if cli.no_volume_init {
-                VolumeInit::Game
-            } else if cli.factory() {
-                let r = extract::Ref {
-                    dcs: cli.dcs_volume.unwrap_or(DCS_REFERENCE),
-                    p2k: cli.dcs_volume.unwrap_or(P2K_REFERENCE),
-                    whitestar: cli.whitestar_volume.unwrap_or(WHITESTAR_REFERENCE),
-                    wpcs: cli.wpcs_volume.unwrap_or(WPCS_REFERENCE),
-                };
-                match cli.volume_mode() {
-                    VolumeMode::Factory => VolumeInit::Factory(r),
-                    VolumeMode::Reference => VolumeInit::Reference(r),
-                }
-            } else {
-                VolumeInit::Dcs(
-                    cli.dcs_volume.unwrap_or(0xFF),
-                    cli.dcs_volume.unwrap_or(P2K_REFERENCE),
-                )
-            },
-            boot_secs: cli.boot_secs,
-            boot_max_secs: cli.boot_max_secs,
-            max_secs: cli.max_secs,
-            loop_max_secs: cli.loop_max_secs,
-            no_sound_secs: cli.no_sound_secs,
-            cold_boot_only: cli.cold_boot_only || cli.boot_only,
-            factory,
-            stop: cli.stop.clone(),
-            dc_block: cli.dc_block,
-            check_ducking: cli.check_ducking,
-            dump_region: cli.dump_sound_region.clone(),
-            verbose: cli.verbose,
-            no_refresh: cli.no_refresh,
-            solo: cli.solo.clone(),
-            chip_check: !cli.no_chip_check,
-            bsmt,
-            measurement: measurement(cli),
+    *STATE.lock().unwrap() = Some(Extractor::new(Options {
+        out_dir: job.out.clone(),
+        rom: job.rom.clone(),
+        parent: parent.clone(),
+        only: cli.only.clone(),
+        limit: cli.limit,
+        volume: if cli.no_volume_init {
+            VolumeInit::Game
+        } else if cli.factory() {
+            let r = extract::Ref {
+                dcs: cli.dcs_volume.unwrap_or(DCS_REFERENCE),
+                p2k: cli.dcs_volume.unwrap_or(P2K_REFERENCE),
+                whitestar: cli.whitestar_volume.unwrap_or(WHITESTAR_REFERENCE),
+                wpcs: cli.wpcs_volume.unwrap_or(WPCS_REFERENCE),
+            };
+            match cli.volume_mode() {
+                VolumeMode::Factory => VolumeInit::Factory(r),
+                VolumeMode::Reference => VolumeInit::Reference(r),
+            }
+        } else {
+            VolumeInit::Dcs(
+                cli.dcs_volume.unwrap_or(0xFF),
+                cli.dcs_volume.unwrap_or(P2K_REFERENCE),
+            )
         },
-    ));
+        boot_secs: cli.boot_secs,
+        boot_max_secs: cli.boot_max_secs,
+        max_secs: cli.max_secs,
+        loop_max_secs: cli.loop_max_secs,
+        no_sound_secs: cli.no_sound_secs,
+        cold_boot_only: cli.cold_boot_only || cli.boot_only,
+        factory,
+        stop: cli.stop.clone(),
+        dc_block: cli.dc_block,
+        check_ducking: cli.check_ducking,
+        dump_region: cli.dump_sound_region.clone(),
+        verbose: cli.verbose,
+        no_refresh: cli.no_refresh,
+        solo: cli.solo.clone(),
+        chip_check: !cli.no_chip_check,
+        bsmt,
+        measurement: measurement(cli),
+    }));
 
     progress::phase("boot");
     let st = unsafe { ffi::PinmameRun(rom_c.as_ptr()) };
