@@ -77,7 +77,7 @@ Football (`football`), Oba-Oba (`obaoba`), Gemini 2000 (`gemini`)
   does not stop; the board reset after it does.
 - **Limits and what is missing**: what the bit-7 byte does (`98` before `18`) is not
   known; a sound with bit 7 set is swept as its own command. No full run.
-- **In VPinball**: **the pack does not play as written, in any VPinball so far**: the game sends a command with and without bit 7 (`98 18`), both pack rows, so each command looks up two ids; and up to 10.8.1-5436 libaltsound has no case for
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on** (played on `shock` in 10.8.1-6577: ids `0x06`, `0x13`, `0x14`, `0x17`, `0x1E`, `0x93` found): the game sends a command with and without bit 7 (`98 18`), and both are pack rows (the bit-7 row is the same sound in 108 of 110 pairs), so each command looks up two ids; and up to 10.8.1-5436 libaltsound has no case for
   generation 0 (none) and joins the bytes two by two ([In
   VPinball](common.md#in-vpinball)); `cosmic` sent no sound command in 45 s of attract
   mode with a coin and start, so nothing was measured. AltSound sees every changed byte

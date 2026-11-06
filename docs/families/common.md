@@ -286,9 +286,10 @@ last board, Romstar, Spinball and Inder (the game writes the latch itself, `spin
 what the game makes PinMAME log is not the byte the pack is keyed by: Baby Pac-Man and Game Plan's
 MSU-3 (nibbles), Tabart's L'Hexagone (line and chime state), Stern SB-300 with its
 Vocalizer (the speech goes through the unlogged `sndbrd_ctrl_w`); in part only on Hankin,
-Playmatic's third board (Cerberus), System 3's Disco Fever and World Cup boards, Tabart's
-second board, Taito's Sintetizador (a command logged with and without bit 7) and
-Tecnoplay's Scramble (each command logged twice). Each family's section says which.
+Playmatic's third board (Cerberus), System 3's Disco Fever and World Cup boards and Tabart's
+second board. Taito's Sintetizador (a command logged with and without bit 7) and
+Tecnoplay's Scramble (each command logged twice) play: both rows exist, the second one
+restarts the sound (played on `shock` and `scram_tp` in 10.8.1-6577). Each family's section says which.
 `docs/vpx_playback.json` holds the result (`"state": "newer"` for the families that play
 from master 3abe805 on). One more difference: where the game rewrites its command on every
 pass (Game Plan, Gottlieb 80B, Playmatic, Stern MPU-100, Zaccaria 1125, System 9...), each
