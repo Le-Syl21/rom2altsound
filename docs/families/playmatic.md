@@ -104,14 +104,22 @@ e.g. Cerberus (`cerberus`), Spain 82 (`spain82`)
 - **DUCK / STOP / CHANNEL**: defaults.
 - **Measured**: `cerberus`, 19 of 40 ([board support](../board-support.md)).
 - **Limits**: only the quick survey.
-- **In VPinball**: **the pack does not play as written, in any VPinball so far**: on Cerberus `play.c` logs `(data & 0x70) >> 4`, not the bytes `play3s_man_w` splits; Spain 82 logs the pack's byte; and up to 10.8.1-5436 libaltsound has no case for
-  generation 0 (none) and joins the bytes two by two ([In
-  VPinball](common.md#in-vpinball)). Measured on `cerberus`: the game sent `00 00 00...
-  (41868 in 45 s)`, AltSound looked up `0000`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
-  looks up `0000`. The game writes 3-bit values from its lamp port, not the bytes
-  `play3s_man_w` splits into nibbles on Cerberus: the ids are not expected to match either
-  way.
+- **In VPinball**: **the pack does not play, and rows cannot fix it** (played on `cerberus` in
+  VPinball 10.8.1-6577, a master build with one byte per command, headless bench, 240 s with
+  coin and start, `logging_level = Debug`): `play.c` logs `(data & 0x70) >> 4` on **every**
+  write of the lamp port (`sndbrd_data_w` -> `snd_cmd_log`), while the board only takes a
+  value when the strobe (`sndbrd_ctrl_w`, not logged) is high. AltSound looked up 349 000
+  ids in 4 minutes: `0000` 276 000 times, `0001` 72 000 (the lamp scan, a fixed pattern
+  `0 .. 0 1 0 .. ` in attract mode, with nothing that tells it from a command), and only
+  `0002`, `0003`, `0004`, `0007` a few hundred times in all. None of them matched: **0
+  sample found** (the pack's ids are `0x12`..`0xFF`, two nibbles, as `play3s_man_w` sends
+  them). The real sounds are sequences of 3-bit values that PinMAME logs without the
+  strobe and without a boundary, and AltSound looks up one value at a time, so no row, alias
+  or file can reproduce them: a pack row for `0001` would restart on every lamp scan. It needs
+  an upstream change (log only the strobed writes, and one byte per whole command), which
+  this project does not propose. Spain 82 logs the pack's byte (`locals.lampCol` with
+  ENSN low) and was not measured. Up to 10.8.1-5436 libaltsound also has no case for
+  generation 0 (none) and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
 
 ## <a name="sndbrd_play4"></a>SNDBRD_PLAY4
 

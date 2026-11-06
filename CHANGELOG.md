@@ -8,6 +8,11 @@
   the idle `0F` alone is 9701 of 10385 lookups and solenoid pulses hit real rows. No row or
   alias can separate them; the fix is logging the nibble on the `CA2` strobe in PinMAME.
   Documented in the Hankin section, the family stays `partial`.
+- **Playmatic Cerberus (PLAY3) measured in VPinball, and it cannot play.** PinMAME logs the
+  3-bit value of every lamp write without the strobe (349 000 lookups in 4 minutes, mostly
+  `0000` and `0001`, none matching the pack's two-nibble ids), so no row can cover it: the
+  family notes say so (`docs/vpx_playback.json` keeps it `partial`). Nothing in the packs
+  changed.
 - **System 3 to 7 packs also carry the ids AltSound looks up.** The game writes the
   inverted solenoid byte to the sound board, so what PinMAME logs keeps bits 5-7 as the
   solenoid lines leave them (bk_l4: `2C` for the command `0C`) while the board reads the
