@@ -283,8 +283,7 @@ commands. This holds for the families where a command reaches AltSound at all:
 not on the game-driven boards (below), SAM, Pinball 2000, Capcom, Mr. Game, Playmatic's
 last board, Romstar, Spinball and Inder (the game writes the latch itself, `spinb.c`
 `soundbd_w`, `inder.c` `snd_w`, `snd2_w`) and Zaccaria 1311, whose packs stay unplayable. Nor where
-what the game makes PinMAME log is not the byte the pack is keyed by: System 3 and 4 to 7
-(the logged bytes keep the solenoid lines in bits 5-7), Baby Pac-Man and Game Plan's
+what the game makes PinMAME log is not the byte the pack is keyed by: Baby Pac-Man and Game Plan's
 MSU-3 (nibbles), Tabart's L'Hexagone (line and chime state), Stern SB-300 with its
 Vocalizer (the speech goes through the unlogged `sndbrd_ctrl_w`); in part only on Hankin,
 Playmatic's third board (Cerberus), System 3's Disco Fever and World Cup boards, Tabart's

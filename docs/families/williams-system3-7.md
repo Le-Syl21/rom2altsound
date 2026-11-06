@@ -113,7 +113,7 @@ sets, 38 games, 28 sound ROM ids, 1978-2022, Williams, Williams / Oliver · e.g.
   silence (bk_l4 3 of 40 and grgar_l1 3 of 40 before the idle framing). No full run.
 - **Limits**: no stop (a board reset after each sound); the ids are the command bits
   (above).
-- **In VPinball**: **the pack does not play as written, in any VPinball so far**: the logged bytes keep bits 5-7 as the solenoid lines leave them (bk_l4 `2C` for `0C`), the pack's ids are the command bits; and up to 10.8.1-5436 libaltsound has no case for
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on, with the rows for the solenoid lines (below)**: the logged bytes keep bits 5-7 as the solenoid lines leave them (bk_l4 `2C` for `0C`), the pack's ids are the command bits; and up to 10.8.1-5436 libaltsound has no case for
   `GEN_S6 / GEN_S7` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
   Measured on `algar_l1`: the game sent `5F 5F 7F 5F 5F 7F 77 7F`, AltSound looked up
   `5F5F 7F5F 5F7F 777F`; with one byte per command
@@ -123,7 +123,8 @@ sets, 38 games, 28 sound ROM ids, 1978-2022, Williams, Williams / Oliver · e.g.
   section gives two-byte ids (`0x001F`) that AltSound would not look up either way.
   The pack now also carries the rows `0x20|xx`..`0xE0|xx` for every five-bit row (same
   file; `solenoid_line_aliases`), so a command logged with any bits 5-7 finds its sound
-  (System 4 to 7 boards of sub-type 0; not yet played in VPinball itself).
+  (System 3 to 7 boards of sub-type 0 and 2). Played in VPinball 10.8.1-6577: Black Knight
+  (`bk_l4`, ids `0x23`..`0x3B`) and Contact (`cntct_l1`, `0x77`..`0x7E`) find their sounds.
 
 ## <a name="sndbrd_s3s"></a>SNDBRD_S3S
 
@@ -137,7 +138,7 @@ Williams System 3 sound board · interface `WMSS67` (sub-type 2) · ✅ · 3 set
   (0 of 40 before, with no idle byte between the commands; `00`..`0F` have data bit 4
   low, which only sets the program's flag, see [System 3's programs](#system-3s-programs)).
 - **Limits**: the priority-coded sounds (the flag, then a command) are not swept.
-- **In VPinball**: **the pack does not play as written, in any VPinball so far**: the logged bytes keep the solenoid bits 5-7 (`s4.c` `s4_sol9_16_w`), the pack's ids are the command bits; and up to 10.8.1-5436 libaltsound has no case for
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on, with the rows for the solenoid lines (below)**: the logged bytes keep the solenoid bits 5-7 (`s4.c` `s4_sol9_16_w`), the pack's ids are the command bits; and up to 10.8.1-5436 libaltsound has no case for
   `GEN_S3` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)). Measured
   on `cntct_l1`: the game sent `5F 5F 7F 5F 5F 7F 6F 7F`, AltSound looked up `5F5F 7F5F
   5F7F 6F7F`; with one byte per command

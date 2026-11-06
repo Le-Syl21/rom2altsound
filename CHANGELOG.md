@@ -2,12 +2,12 @@
 
 ## 0.5.0 (2026-11-06)
 
-- **System 4 to 7 packs also carry the ids AltSound looks up.** The game writes the
+- **System 3 to 7 packs also carry the ids AltSound looks up.** The game writes the
   inverted solenoid byte to the sound board, so what PinMAME logs keeps bits 5-7 as the
   solenoid lines leave them (bk_l4: `2C` for the command `0C`) while the board reads the
   low five bits. Each row `xx` now has seven more rows `0x20|xx` ... `0xE0|xx` with the same
-  file (210 rows on bk_l4), as is done for Whitestar and System 11. Not yet played in
-  VPinball itself.
+  file (210 rows on bk_l4), as is done for Whitestar and System 11. Played in VPinball
+  10.8.1-6577 on Black Knight and Contact.
 - **A small audio tagger names and types the sounds nobody named.** CED (the "tiny" model,
   Apache-2.0, trained on AudioSet, 6 MB in the program, pure Rust with tract, so the same
   file gets the same tags on every machine) gives each sound its most probable classes.
