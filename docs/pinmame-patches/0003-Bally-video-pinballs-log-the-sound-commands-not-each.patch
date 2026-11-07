@@ -1,0 +1,77 @@
+From f8f875027bc932488048eb26e381c0c2f066e3aa Mon Sep 17 00:00:00 2001
+From: Le-Syl21 <sylvain.gargasson@gmail.com>
+Date: Fri, 6 Nov 2026 22:20:38 +0000
+Subject: [PATCH 3/5] Bally video pinballs: log the sound commands, not each
+ nibble
+
+The Baby Pac-Man and Granny and the Gators video CPU sends a Cheap
+Squeak command as two nibbles on PIA2:B, framed by the sound strobe
+(PIA2:CB2): the low nibble when the strobe rises, the high one when it
+falls again (the boot sends 08 then 01: command 18). sndbrd_data_w()
+logged every nibble, so the sound command log, AltSound and libPinMAME's
+sound command callback got four bits per message, and AltSound looked up
+ids like 0008 and 0001 instead of the pack's 0018.
+
+pia2cb2_w() now logs the assembled byte when the strobe falls, and the
+data write log is off for the board (sndbrd_logData()), as by35.c and
+by6803.c do. The emulated audio is unchanged.
+
+Checked in VPinball (headless) on babypac: AltSound now looks up
+0010..0015 (hits) and 0018, 00F0, 00FF, 0000 where it looked up 0000,
+0001, 0008, 000F before.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01ENsGGxgZ7pU5Z87YfBS2iY
+---
+ src/wpc/byvidpin.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/src/wpc/byvidpin.c b/src/wpc/byvidpin.c
+index 3501fd91..3cb2e510 100644
+--- a/src/wpc/byvidpin.c
++++ b/src/wpc/byvidpin.c
+@@ -109,6 +109,7 @@ static WRITE_HANDLER(byVP_CMOS_w) { byVP_CMOS[offset] = data | 0x0f; }
+ 
+ static struct {
+   int p0_a, p1_a, p1_b, p0_cb2, p1_cb2, p2_a, p2_b;// , p2_cb2;
++  int sndStb, sndLo; // sound strobe (PIA2:CB2) and the low nibble sent with its rise
+   int lampadr1;
+   UINT32 solenoids;
+   UINT8 diagnosticLed;
+@@ -233,8 +234,17 @@ static READ_HANDLER(pia2b_r) {
+   return 0;
+ }
+ 
++/* The video CPU sends a Cheap Squeak command as two nibbles on PIA2:B, framed by the sound strobe
++   (CB2): the low nibble goes out when the strobe rises, the high one when it falls again (the
++   game's boot sends 08, then 01: command 18). Log the assembled byte when the strobe falls (sound
++   command log, AltSound), not each nibble. */
+ static WRITE_HANDLER(pia2cb2_w) {
+   locals.diagnosticLedV |= data;
++  if (data && !locals.sndStb)
++    locals.sndLo = locals.p2_b;
++  else if (!data && locals.sndStb)
++    snd_cmd_log(0, (locals.p2_b << 4) | locals.sndLo);
++  locals.sndStb = data ? 1 : 0;
+   sndbrd_0_data_w(0, locals.p2_b);
+   sndbrd_0_ctrl_w(0, data);
+ }
+@@ -394,6 +404,7 @@ static void byVP_zeroCross(int data) {
+ static MACHINE_INIT(byVP) {
+   memset(&locals, 0, sizeof(locals));
+   sndbrd_0_init(core_gameData->hw.soundBoard,BYVP_SCPUNO,NULL,NULL,NULL);
++  sndbrd_logData(0, 0); // pia2cb2_w logs the sound commands
+   install_mem_write_handler(0,0x0200, 0x02ff, byVP_CMOS_w);
+   /* init PIAs */
+   pia_config(BYVP_PIA0, PIA_STANDARD_ORDERING, &piaIntf[0]);
+@@ -407,6 +418,7 @@ static MACHINE_RESET(byVP)
+   soundlatch_w(0, 0);
+   soundlatch2_w(0, 0);
+   sndbrd_0_init(core_gameData->hw.soundBoard,BYVP_SCPUNO,NULL,NULL,NULL);
++  sndbrd_logData(0, 0); // pia2cb2_w logs the sound commands
+   by45_p21_w(1);
+ //	pia_reset();
+ //	by_vdp_interrupt(0);
+-- 
+2.43.0
+

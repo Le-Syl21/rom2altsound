@@ -1,0 +1,92 @@
+From 53cb72655149a41755bda54285cc9162a161a125 Mon Sep 17 00:00:00 2001
+From: Le-Syl21 <sylvain.gargasson@gmail.com>
+Date: Fri, 6 Nov 2026 22:40:31 +0000
+Subject: [PATCH 5/5] Playmatic Sound-3 (Cerberus): log the sound command, not
+ every lamp port write
+
+The Sound-3 board takes its command from three lines of the game's lamp
+port, and the sound CPU reads them on port 2 as follows: wait for the
+lines to be idle (0), take the next non-zero value, wait for idle again,
+take a second one. The two values, high first, are the command (the
+pair play3s_man_w builds from a byte, and what AltSound packs are keyed
+on).
+
+Until now every write of the lamp port went through sndbrd_data_w and
+was logged as a command, i.e. a stream of 3-bit values (the lamp scan,
+about 350000 in 4 minutes) in which no two form a sound command, so
+AltSound never found a sample. Log the pair instead, once, from the
+main board (sndbrd_logData, as by35 does). The emulated board still
+gets every write, so the audio is unchanged. Spain 82 (separate path,
+already one byte per command) is not touched.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01ENsGGxgZ7pU5Z87YfBS2iY
+---
+ src/wpc/play.c | 26 ++++++++++++++++++++++++++
+ 1 file changed, 26 insertions(+)
+
+diff --git a/src/wpc/play.c b/src/wpc/play.c
+index 2aa92ab7..00c9bbd7 100644
+--- a/src/wpc/play.c
++++ b/src/wpc/play.c
+@@ -55,6 +55,7 @@ The IOS board common to all games provides sound effects through the CDP1863.
+ #include "core.h"
+ #include "play.h"
+ #include "sndbrd.h"
++#include "snd_cmd.h"
+ #include "cpu/cdp1802/cdp1802.h"
+ 
+ //#define VERBOSE_OUTPUT
+@@ -79,10 +80,31 @@ static struct {
+   int    panelSel;
+   int    cpuType;
+   int    resetDone;
++  int    sndLevel;    // sound board command lines (3 bits) as last written, see play3_sndCmd
++  int    sndCmdFirst; // first value of the command in progress, or -1 if none
+ 
+   UINT8  n2data;
+ } locals;
+ 
++/* Sound-3 board command, as the sound CPU reads it (port 2, three bits): it waits for the lines
++   to go idle (0), takes the next non-zero value, waits for idle again and takes a second one, then
++   plays the sound for that pair of values. The pair, high value first, is the command byte that
++   the manual command (play3s_man_w) and the AltSound packs are keyed on. The game sends it with
++   the lamp port, as a value held while the lamp column is scanned, then a short pulse
++   (0, value, 0) at the end of the cycle. Writing 0 is "idle", it is not a command by itself. */
++static void play3_sndCmd(int data) {
++  const int rising = data && !locals.sndLevel;
++  locals.sndLevel = data;
++  if (!rising)
++    return;
++  if (locals.sndCmdFirst < 0) {
++    locals.sndCmdFirst = data;
++  } else {
++    snd_cmd_log(0, (locals.sndCmdFirst << 4) | data);
++    locals.sndCmdFirst = -1;
++  }
++}
++
+ static INTERRUPT_GEN(PLAYMATIC_irq1) {
+   locals.vblankCount = (locals.vblankCount + 1) % 8;
+   cpu_set_irq_line(PLAYMATIC_CPU, CDP1802_INPUT_LINE_INT, !locals.vblankCount ? ASSERT_LINE : CLEAR_LINE);
+@@ -283,6 +305,7 @@ static WRITE_HANDLER(out2_n) {
+         sndbrd_0_ctrl_w(0, data & 0x70);
+       } else if (core_gameData->hw.soundBoard == SNDBRD_PLAY3) {
+         if (locals.cpuType < 2) {
++          play3_sndCmd((data & 0x70) >> 4);
+           sndbrd_0_data_w(0, (data & 0x70) >> 4);
+           sndbrd_0_ctrl_w(0, !locals.enX);
+         } else { // ENSN is never triggered on spain82, only why not? m8020_w used to fix sound for now
+@@ -355,6 +378,9 @@ static void init_common(int cpuType) {
+   memset(&locals, 0, sizeof locals);
+   sndbrd_0_init(core_gameData->hw.soundBoard, 1, memory_region(REGION_CPU2), NULL, NULL);
+   locals.cpuType = cpuType;
++  locals.sndCmdFirst = -1;
++  if (core_gameData->hw.soundBoard == SNDBRD_PLAY3 && cpuType < 2)
++    sndbrd_logData(0, 0); // play3_sndCmd logs the sound commands
+   if (cpuType) locals.ef[3] = 1; else locals.resetDone = 1;
+ }
+ 
+-- 
+2.43.0
+

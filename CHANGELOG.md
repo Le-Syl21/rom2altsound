@@ -2,6 +2,14 @@
 
 ## 0.5.0 (2026-11-06)
 
+- **PinMAME changes for the "raw" families, written and measured (not upstream).** Five small
+  patches (`docs/pinmame-patches/`) make PinMAME log one command per command for Hankin, Baby
+  Pac-Man/Granny (BY45BP), Game Plan MSU-3, Playmatic Cerberus and Tabart L'Hexagone. With them
+  and a table script driving the game in VPinball 10.8.1-6577, the lookups hit the packs'
+  ids. These families still do not play in VPinball builds that lack the patches, so
+  `docs/vpx_playback.json` is unchanged. Tabart L'Hexagone also gets alias rows, one per
+  switch of a sound routine (`Aliases::SwitchRoutines`), as the patched PinMAME logs the
+  switch that closed.
 - **Hankin in VPinball master: measured, not fixable in the pack.** Played `empsback` in
   10.8.1-6577: every command AltSound looks up is a nibble `00`..`0F`, but PinMAME's `by35.c`
   logs every write of the shared solenoid/sound lines (the HNK board has no `sndCmdMode`), so

@@ -303,6 +303,8 @@ Hunter (`spyhuntr`), Kings of Steel (`kosteel`), Black Pyramid (`blakpyra`)
 
 ## <a name="sndbrd_by45bp"></a>SNDBRD_BY45BP
 
+> **PinMAME change available, not upstream:** a patch assembles the two nibbles into one byte; measured on Baby Pac-Man and Granny. See `docs/pinmame-patches/README.md`; until a VPinball build carries it the pack does not play.
+
 Cheap Squeak behind the Baby Pac-Man video board · interface `BY45`, sub-type 1
 (`src/wpc/by35snd.c`, `src/wpc/byvidpin.c`) · ✅ · 4 sets, 2 games, 2 sound ROM ids,
 1982-2006, Bally · Baby Pac-Man (`babypac`), Granny and the Gators (`granny`)

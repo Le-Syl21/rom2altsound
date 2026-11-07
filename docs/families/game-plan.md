@@ -185,6 +185,8 @@ Global Warfare (`gwarfare`), Attila The Hun (`attila`), Captain Hook (`cpthook`)
 
 ## <a name="sndbrd_gpmsu3"></a>SNDBRD_GPMSU3
 
+> **PinMAME change available, not upstream:** a patch assembles the nibbles into one byte; measured on Andromeda. See `docs/pinmame-patches/README.md`; until a VPinball build carries it the pack does not play.
+
 Game Plan MSU-3 (6802 and DAC) · PinMAME interface `GPSM3` (`src/wpc/gpsnd.c`) · ✅ ·
 6 sets, 3 games, 2 sound ROM ids, 1985, Game Plan · e.g. Andromeda (`andromed`), Lady
 Sharpshooter (`ladyshot`), Cyclopes (`cyclopes`)

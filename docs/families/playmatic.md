@@ -86,6 +86,8 @@ Playmatic, Sonic (Spain) · e.g. Antar (`antar`), Storm (`storm`), Evil Fight
 
 ## <a name="sndbrd_play3"></a>SNDBRD_PLAY3
 
+> **PinMAME change available, not upstream:** a patch logs the pair of 3-bit values the board reads as one byte; Cerberus measured, 74 of 74 non-idle lookups found. See `docs/pinmame-patches/README.md`; until a VPinball build carries it the pack does not play.
+
 E.F.O. Sound-3 (CDP1802 + TMS5200 speech) · PinMAME interface `PLAY3`
 (`src/wpc/playsnd.c`) · status ✅ · 2 sets, 2 games, 2 sound ROM ids, 1982, Playmatic ·
 e.g. Cerberus (`cerberus`), Spain 82 (`spain82`)

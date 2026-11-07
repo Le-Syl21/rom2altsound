@@ -1,0 +1,84 @@
+From 62962ed87bea9a85b64a211d33ad71ee543f80ae Mon Sep 17 00:00:00 2001
+From: Le-Syl21 <sylvain.gargasson@gmail.com>
+Date: Fri, 6 Nov 2026 22:15:28 +0000
+Subject: [PATCH 2/5] by35: log Hankin sound commands on the CA2 strobe
+
+The Hankin sound board takes the nibble on PB0-PB3 when the CPU board's
+sound strobe (PIA1 CA2, BY35HW_SCTRL) rises. PB0-PB3 are shared with the
+solenoids, and the board was not in the sndCmdMode switch, so every write
+of the lines was logged as a sound command: solenoid pulses and the idle
+value 0F reached the sound command log (and AltSound) as if they were
+commands.
+
+Log the nibble once per rising strobe instead, like the other boards that
+already take their commands from by35_sndCmd. Emulated audio is unchanged,
+only the sound command log differs.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01ENsGGxgZ7pU5Z87YfBS2iY
+---
+ src/wpc/by35.c | 20 +++++++++++++++-----
+ 1 file changed, 15 insertions(+), 5 deletions(-)
+
+diff --git a/src/wpc/by35.c b/src/wpc/by35.c
+index 21f3fc53..e2061ed0 100644
+--- a/src/wpc/by35.c
++++ b/src/wpc/by35.c
+@@ -64,6 +64,12 @@ static WRITE_HANDLER(snd300_wex) {
+   sndbrd_0_ctrl_w(0,data);
+ }
+ 
++// how the sound commands on the solenoid lines are taken, see by35_sndCmd
++#define BY35_SNDCMD_ONE    1
++#define BY35_SNDCMD_LOHI   2
++#define BY35_SNDCMD_HILO   3
++#define BY35_SNDCMD_STROBE 4
++
+ static struct {
+   int a0, a1, b0, b1, /*ca10,*/ ca11, ca20, ca21, cb10, /*cb11,*/ cb20, cb21;
+   //int swData;
+@@ -282,6 +288,8 @@ static WRITE_HANDLER(pia1ca2_w) {
+   {
+     sndbrd_0_ctrl_w(0, data);
+     //Note: HNK only, not for LISY at the moment
++    if (locals.sndCmdMode == BY35_SNDCMD_STROBE && data && !locals.ca21) // sound strobe rises
++      snd_cmd_log(0, locals.b1 & 0x0f);
+   }
+ //  ok
+   if ((sb == SNDBRD_ST300V) && (data)) {
+@@ -307,10 +315,9 @@ static WRITE_HANDLER(pia0ca2_w) {
+      (CB2), with Sound E as bit 4
+    - BY35_SNDCMD_LOHI: the -56, the Squawk & Talk, the Cheap Squeak and Nuova Bell's -51N and
+      -61N read the two writes after the rise as nibbles, the low one first
+-   - BY35_SNDCMD_HILO: Nuova Bell's own board reads them high nibble first (see nuova_man_w) */
+-#define BY35_SNDCMD_ONE  1
+-#define BY35_SNDCMD_LOHI 2
+-#define BY35_SNDCMD_HILO 3
++   - BY35_SNDCMD_HILO: Nuova Bell's own board reads them high nibble first (see nuova_man_w)
++   - BY35_SNDCMD_STROBE: the Hankin board takes the nibble when its own strobe (CA2) rises, see
++     pia1ca2_w */
+ static void by35_sndCmd(int data) {
+   if (!locals.sndCmdWait)
+     return;
+@@ -367,7 +374,8 @@ static READ_HANDLER(pia1ca1_r) {
+ /* PIA1:CB2-W Solenoid/Sound select */
+ static WRITE_HANDLER(pia1cb2_w) {
+   int sb = core_gameData->hw.soundBoard;		// ok
+-  if (data && !locals.cb21) locals.sndCmdWait = (locals.sndCmdMode == BY35_SNDCMD_ONE) ? 1 : 2;
++  if (data && !locals.cb21 && locals.sndCmdMode != BY35_SNDCMD_STROBE)
++    locals.sndCmdWait = (locals.sndCmdMode == BY35_SNDCMD_ONE) ? 1 : 2;
+   locals.cb21 = data;
+   if (((locals.hw & BY35HW_SCTRL) == 0) && ((sb & 0xff00) != SNDBRD_ST300) && (sb != SNDBRD_ASTRO) && (sb & 0xff00) != SNDBRD_ST100)
+    	// ok
+@@ -617,6 +625,8 @@ static MACHINE_INIT(by35) {
+       locals.sndCmdMode = BY35_SNDCMD_LOHI; break;
+     case SNDBRD_NUOVA:
+       locals.sndCmdMode = BY35_SNDCMD_HILO; break;
++    case SNDBRD_HANKIN:
++      locals.sndCmdMode = BY35_SNDCMD_STROBE; break;
+   }
+   if (locals.sndCmdMode) sndbrd_logData(0, 0);
+ 
+-- 
+2.43.0
+

@@ -302,6 +302,8 @@ Van Ham (Royal) · e.g. Formula 1 (`formula1`)
 
 ## <a name="sndbrd_tabart"></a>SNDBRD_TABART
 
+> **PinMAME change available, not upstream:** a patch logs the switch the sound program sees close (and the chime lines), and the pack carries one alias row per switch of a routine; 27 of 27 scripted switches found in VPinball, chimes not yet played. See `docs/pinmame-patches/README.md`; until a VPinball build carries it the pack does not play.
+
 Christian Tabart L'Hexagone board (Z80 + YM2203 + YM3526) · PinMAME interface `TABART`
 (`src/wpc/tabart.c`) · status ✅ (switch-driven) · 1 set, 1 game, 1 sound ROM id, 1986,
 Christian Tabart (France) · e.g. L'Hexagone (`hexagone`)
@@ -422,6 +424,8 @@ Christian Tabart (France) · e.g. Le Grand 8 (`grand8`)
   in VPinball itself.
 
 ## <a name="sndbrd_hankin"></a>SNDBRD_HANKIN
+
+> **PinMAME change available, not upstream:** a patch logs the sound nibble on the CA2 strobe; measured on four Hankin games. See `docs/pinmame-patches/README.md`; until a VPinball build carries it the pack does not play.
 
 Hankin sound board (6802 + wavetable) · PinMAME interface `HNK` (`src/wpc/hnks.c`) ·
 status ✅ · 5 sets, 5 games, 5 sound ROM ids, 1978-1981, Hankin · e.g. FJ Holden
