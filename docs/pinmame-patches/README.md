@@ -23,12 +23,16 @@ All seven apply together (`git am`, no conflict) and the result builds as `libpi
 - **Playmatic Cerberus**: 349 000 lookups and none found, then 74 of 74 non-idle lookups found.
 - **Game Plan MSU-3** (Andromeda): `0C`, `07`, `08`, `09`, `01`, `06` found; `04` is a silent row.
 - **Hankin**: `empsback`, `fjholden`, `shark`, `howzat` play and look up clean nibbles (9 to 11
-  pack ids each); Orbit 1 has no table.
+  pack ids each); Orbit 1 (`orbit1`) is in its own entry below.
+- **Orbit 1** (`orbit1`, Hankin patch 0002, shell of the FJ Holden table, switches 1 to 64 closed one at a time, twice, 330 s):
+  52 lookups found, ids `0001` `0002` `0003` `0004` `0005` `0009` `000A` `000C` `000F`; 5 lookups of `0000` failed (no row by design); `0006` `0007` `0008` `000B` not reached.
+- **Winter Sports** (`wsports`, `wsportsf`, patch 0006, shell of the House of Diamonds table, same sweep, 330 s): 328 and 432 lookups, all found, none failed, ids `0000` `0001` `0002` `0004` `0008`.
+
 - **Baby Pac-Man** 15 of 46 ids and **Granny** 30 of 48 reached by a random walk; whole bytes.
 - **Tabart L'Hexagone**: 27 of 27 scripted switches found, with the alias rows of
   `Aliases::SwitchRoutines`; the game never raises a chime line, so the chime rows are never looked up.
 
-- **Zaccaria 1311** (`futurwld`, `hod`; Winter Sports has no table here): before the patch, 0
+- **Zaccaria 1311** (`futurwld`, `hod`; Winter Sports in its own entry below): before the patch, 0
   lookups in 150 s of play (coin, start, plunger, flippers); after it, with the generated packs, 228
   lookups for Future World and 212 for House of Diamonds, all found, none failed, ids `0000` `0001` `0002` `0004` `0008` only (one
   line at a time). The pack's rows `0001`..`000F` are the tones and `0000` a silent row on the

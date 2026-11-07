@@ -50,7 +50,12 @@ Sports (`wsports`)
   up `0000`, `0001`, `0002`, `0004` and `0008` (the games play one line at a time), all rows of
   the pack: with the generated packs, `futurwld` 228 lookups and `hod` 212, all found, none
   failed (200 s of coin, start, plunger and flippers, Docker bench, VPinball 10.8.1-6577; a
-  `0000` after each note cuts it). Winter Sports (`wsports`) has no table here: not measured.
+  `0000` after each note cuts it). Winter Sports (`wsports`, `wsportsf`; pack of 15 tone rows plus the silent `0000`, the
+  same rows for both sets) measured the same way on a shell of the House of Diamonds table with
+  `cGameName` changed: `wsports` 328 lookups, all found, none failed (`0000` 164, `0001` 21,
+  `0002` 57, `0004` 57, `0008` 29; 330 s, one pass of switches 1 to 64 then 14 more, Docker bench).
+  `wsportsf` 432 lookups, all found, none failed (`0000` 216, `0001` 27, `0002` 75, `0004` 75, `0008` 39).
+  Same ids as the other 1311 games, one line at a time; the audio itself was not listened to.
   The patch is not upstream.
 
 ## <a name="sndbrd_zac1125"></a>SNDBRD_ZAC1125

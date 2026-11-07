@@ -482,6 +482,12 @@ status ✅ · 5 sets, 5 games, 5 sound ROM ids, 1978-1981, Hankin · e.g. FJ Hol
   `by35_sndCmd` does for the other boards, is a change in PinMAME, not in the pack (not
   proposed upstream, not tested). Until then the pack plays the wrong sounds at the wrong times
   in VPinball, which is why the family stays `partial`.
+  **Orbit 1 (`orbit1`) with the patch**, on a shell of the FJ Holden table with `cGameName`
+  changed (VPinball 10.8.1-6577, Docker bench, script closing switches 1 to 64 one at a time,
+  twice over 330 s): 52 lookups found, ids `0001` 10, `0002` 17, `0003` 5, `0004` 5, `0005` 1,
+  `0009` 4, `000A` 4, `000C` 3, `000F` 3; the only lookup that failed is `0000` (5 times, the
+  nibble 0 has no row by design). Rows never reached: `0006` `0007` `0008` `000B` (`000D` and
+  `000E` have no row). No idle-`0F` flood any more (3 `0F` in 330 s). Not listened to.
 
 ## <a name="sndbrd_grand"></a>SNDBRD_GRAND
 
