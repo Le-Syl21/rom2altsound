@@ -73,7 +73,7 @@
     "PLAY2": "one_byte",
     "PLAY3": "raw",
     "PLAY4": "one_byte",
-    "PLAYZ": "unlogged",
+    "PLAYZ": "raw",
     "ROMSTAR": "gamedriven",
     "ROWAMET": "one_byte",
     "S3DFS": "raw",
