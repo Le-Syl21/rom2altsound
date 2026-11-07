@@ -401,7 +401,7 @@ Christian Tabart (France) · e.g. Sahara Love (`sahalove`)
   31, all from silence, 17 levels (before: 40 of 40, 39 not from silence, all at -17.0
   LUFS).
 - **Limits and what is missing**: no stop command known (the board reset is enough).
-- **In VPinball**: **the pack plays from VPinball master 3abe805 on, with the rows for the sound DIPs (below)**. What PinMAME logs is the byte gts1.c `snd_w` writes through `sndbrd_0_data_w`: the game-over line (`0x40`), the tilt (`0x08`), the three chime lines (bits 0-2) and, in bits 4 and 7, the two sound DIPs of DIP bank 3 (`core_getDip(3) & 0x90`). `tabart_data_w` reads the DIPs again from the bank itself, so the pack's ids (`01`..`0F`, `40`..`4F`, the lines without the DIPs) are what is logged only with both DIPs off. The pack now also carries the rows `0x10|xx`, `0x80|xx` and `0x90|xx` for every row `xx` (same file; `sound_dip_aliases`, 84 rows on `sahalove`), so a line state logged with any DIP bits finds its sound. Up to 10.8.1-5436 libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In VPinball](common.md#in-vpinball)). Not played in VPinball itself: no Sahara Love table exists in the collection, and `sahalove` sent no sound command in 45 s of attract mode with a coin and start; the aliases come from the code (the boot's `48`, then `00`, is the pack's `0x48` row).
+- **In VPinball**: **the pack plays from VPinball master 3abe805 on, with the rows for the sound DIPs (below)**. What PinMAME logs is the byte gts1.c `snd_w` writes through `sndbrd_0_data_w`: the game-over line (`0x40`), the tilt (`0x08`), the three chime lines (bits 0-2) and, in bits 4 and 7, the two sound DIPs of DIP bank 3 (`core_getDip(3) & 0x90`). `tabart_data_w` reads the DIPs again from the bank itself, so the pack's ids (`01`..`0F`, `40`..`4F`, the lines without the DIPs) are what is logged only with both DIPs off. The pack now also carries the rows `0x10|xx`, `0x80|xx` and `0x90|xx` for every row `xx` (same file; `sound_dip_aliases`, 84 rows on `sahalove`), so a line state logged with any DIP bits finds its sound. Up to 10.8.1-5436 libaltsound has no case for generation 0 (none) and joins the bytes two by two ([In VPinball](common.md#in-vpinball)). Not played in VPinball itself: no Sahara Love table exists in the collection, and `sahalove` sent no sound command in 45 s of attract mode with a coin and start; the aliases come from the code (the boot's `48`, then `00`, is the pack's `0x48` row). **Played in VPinball** (Docker bench, VPX 10.8.1-6577, the Hexagone table shell with `cGameName = "sahalove"`, stock PinMAME, `sahalove` and `gts1` ROM sets, coin and start, 56 switches `10`..`77` closed from the table script, plunger and flippers, 6 minutes): the game started and ran. AltSound looked up `0040` (game on, no chime, no tilt) 1393 times and `0000` (game over) 41 times, both without a row (the idle line states: only a warning), and `0048` (game on and tilt), `0044`, `0042` and `0041` (a run of chime lines about a second after switch 62 closed) once each, all four found with the pack's `0x4x` files. The DIP bits did not appear: with the sound DIPs left at their default the lines carry none, and setting `Controller.Dip(3)` from the script (`10`, `80`, `90`) did not change the logged ids (still `0040`), so the `0x10|xx`, `0x80|xx` and `0x90|xx` rows were not exercised.
 
 ## <a name="sndbrd_tabart3"></a>SNDBRD_TABART3
 
@@ -421,7 +421,15 @@ Christian Tabart (France) · e.g. Le Grand 8 (`grand8`)
   every other byte as an id (grand8: `05 05 05 04 07` among 2350 `00`, looked up as such)
   ([In VPinball](common.md#in-vpinball)); these are the game's raw line writes, not the
   converted command, and whether they equal the pack's ids was not determined. Not played
-  in VPinball itself.
+  in VPinball itself. **Played in VPinball** (same bench as Sahara Love, `cGameName = "grand8"`,
+  `sys80.vbs`, `grand8` and `gts80` ROM sets, coin 17 and start 47 from the script, then the
+  switches `10`..`77` without the coin, start and tilt ones, plunger and flippers, 4.5 minutes,
+  player 1 reached 55 700 points): AltSound got 13 422 commands, all `00` (filtered by
+  libaltsound, not looked up) and, in an earlier run without a started game, a single `0F`
+  (found, `0x0F-grand8.wav`). The game never sent another sound line, so no lookup of a
+  row-less id and no check of the `0x4x` rows (the game's Q line is bit 4 of the byte, the
+  pack's `0x4x` ids set bit 6) was possible; which events make Le Grand 8 strobe a sound is
+  not known.
 
 ## <a name="sndbrd_hankin"></a>SNDBRD_HANKIN
 
