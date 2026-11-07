@@ -215,7 +215,7 @@ mod tests {
         assert!(!sam.newer);
         assert!(m["BYTCS"].newer && m["ZAC1370"].newer && m["TECNOPLAY"].newer);
         assert!(!m["S3WCS"].newer && !m["HANKIN"].newer);
-        assert!(!m["TABART2"].newer && !m["TABART"].newer);
+        assert!(m["TABART2"].newer && !m["TABART"].newer);
         assert!(!m.contains_key("S67S") && m["TAITO_SINTETIZADOR"].newer);
         // Game-driven boards play in VPinball with the pending PinMAME change.
         assert!(m["ST300"].newer && m["ROMSTAR"].newer);
