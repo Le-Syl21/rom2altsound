@@ -372,6 +372,8 @@ Christian Tabart (France) · e.g. L'Hexagone (`hexagone`)
   upstream change (PinMAME logging the switch returns the sound program reads, or VPinball
   sending them) could, not rows.
 
+- **Played in VPinball with the patched PinMAME** (the fork's `altsound-tabart` branch: it logs, as a sound command, the number of each switch the sound program finds newly closed with the outhole open, and `C4`/`C2`/`C1` for a chime line raised with the outhole closed). The switch that closes is not always the sweep's: several switches play one routine, so the pack carries alias rows with the same file (`switch_routine_aliases`: `33` as `50`; `21`, `23`, `24` as `20`; `64` as `73`; `11`, `13`, `14` as `10`; `44` as `51`; `71`, `74` as `70`; `31`, `60`, `61` as `30`; `C2`, `C1` as `C4`: the program calls the same routine `04B6` for the three chime lines). Measured in the Docker bench (VPX 10.8.1-6577, the table's script extended with a timer that closes and opens each switch, `tools/vbs/switch_sequencer.vbs`): the 27 switches `41 10 54 02 03 73 50 20 30 40 51 70 43 33 21 23 24 64 11 13 14 44 71 74 31 60 61` each gave one `Found 1 sample(s)` with the right file (without the aliases the 14 alias switches gave `FAILED No sample(s)`); with the outhole closed no switch gives a lookup. The chime rows are not played: no scripted switch makes the game raise a chime line with the outhole closed. The coin and start keys also made the game close switches of its own: `0001` has no row.
+
 ## <a name="sndbrd_tabart2"></a>SNDBRD_TABART2
 
 Christian Tabart Sahara Love board (Z80 + AY-3-8912) · PinMAME interface `TABART`
