@@ -90,8 +90,8 @@ After the flag, the next command plays the sound of the lowest low bit (a priori
 decoder, table at `7FE7`): a two-byte sequence the sweep does not send. World Cup's and
 Disco Fever's programs are read below (their sections); both use the bit their board
 takes from the control port (`s67s_ctrl_w`, which `sndbrd_manCmd` never calls), and both
-read bit 6, the board's Sound Dip 2 (s4.h, DIP bank 0 `02`, on in PinMAME by default:
-bit 6 low), to choose between two paths. **The tool turns Sound Dip 2 off on these two
+read bit 6, the board's Sound Dip 2 (s4.h, DIP bank 0 `02`, on in PinMAME's own default:
+bit 6 low; VPinball's controller loads it off, measured below), to choose between two paths. **The tool turns Sound Dip 2 off on these two
 boards** (`PinmameSetDIP`, after the boot): with it on, one path is never taken (World
 Cup's four direct routines, Disco Fever's 15 numbered sounds); with it off, both are. The
 packs hold the sounds the board can play under either setting.
@@ -171,15 +171,37 @@ Disco Fever's System 3 sound board · interface `WMSS67` (sub-type 16|4|2) · �
   line of 2.0 to 4.8 s). Before: 40 of 40 but few distinct (the sweep `00`..`27` repeats
   the priority decoder: `00`, `02`, `04`... alike), 1 of 40 before the idle framing.
 - **Limits**: no stop (a board reset after each sound). The numbered sounds need Sound
-  Dip 2 off, the tool's setting (PinMAME's default has it on).
-- **In VPinball**: **the pack does not play as written, in any VPinball so far**: `s4.c`
-  logs the inverted solenoid byte, whose bits 5 and 7 follow other lines (it matches the
-  pack's ids only while they are clear), the control line is not logged at all
-  (`sndbrd_ctrl_w`), and up to 10.8.1-5436 libaltsound has no case for `GEN_S3` and joins
-  the bytes two by two ([In VPinball](common.md#in-vpinball)). Measured on `disco_l1`: the
-  game sent `5F 5F 7F 5F 7F`, AltSound looked up `5F5F 7F5F 7F5F`; with one byte per
-  command ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in
-  VPinball master from 3abe805) it looks up `005F 005F 007F`.
+  Dip 2 off, the tool's setting (PinMAME's own default has it on, VPinball loads it off).
+- **In VPinball**: **the pack does not play in any VPinball build so far; with the PinMAME
+  patch [0007](../pinmame-patches/README.md) (not upstream) it plays**. `s4.c` logs the inverted
+  solenoid byte (bits 5 and 7 follow other lines, bit 4 is unused by the board), the control
+  line is not logged at all (`sndbrd_ctrl_w`), and up to 10.8.1-5436 libaltsound has no case
+  for `GEN_S3` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)); from
+  master 3abe805 it takes one byte, which is still not the pack's id. Measured on `disco_l1`
+  before the patch: the game sent `5F 5F 7F 5F 7F`, AltSound looked up `5F5F 7F5F 7F5F`.
+  What the game writes: the data byte `7F` (idle) most of the time, `7E 7D 7B 77` for its
+  sounds (nibble, data bit 6 high), and solenoid 5 (`EF` on the control line) pulsed *before*
+  some of them: the flag, then the command, as the pack's `800E`..`8007` rows.
+  The patch (shared with World Cup, one function in `wmssnd.c`) follows the program: at each
+  rising edge of CB1, from either port, it logs the id of the sound the program plays. The
+  control line alone sets the flag and logs nothing; then `0x40 | nibble` for a numbered sound
+  (data bit 6 high, Sound Dip 2 off, no flag), else the priority decoder's `0E 0D 0B 07` or
+  `0F`, plus `0x8000` after the control line (nothing for `0F` with it: the table entry is the
+  word `0000`). **The ids follow the DIP**: with Sound Dip 2 on, the numbered sounds do not
+  exist and the same bytes log the priority rows. They are exactly the pack's ids, no alias
+  rows. (`Aliases::SolenoidLines` used to add 31 rows for `0x2E`, `0x6E`... to this pack by
+  mistake, see the CHANGELOG; they are gone.)
+  Played in VPinball 10.8.1-6577 with the patched libpinmame (Docker bench, a table script
+  closing each of the switches 1 to 40 once, 0.5 s each, 3 s apart; the DIP read with
+  `Controller.Dip(0)` is 0 as VPinball loads it, Sound Dip 2 off, then set to 2, on):
+  57 lookups, 57 found, none missed (Sound Dip 2 off: `004B`, `000F`, `800E` x2; on: `000B` x24,
+  `000D` x20, `000E` x5, `000F`, `800E` x3). A first run, with the patch tracking the flag
+  itself instead of reading it from the program's RAM, gave 67 of 67 and also `004D` x10,
+  `004E` x2. A switch that sounds
+  `000B` repeats it 5 to 8 times, 0.1 to 0.25 s apart: the game's own rhythm (one CB1 edge
+  each), logged as it is. Not reached by the game session:
+  the other numbered ids (`0x40`..`0x4A` but `4B`, `4D`, `4E`), `0007`, `800D`, `800B`, `8007`
+  (seen once in an earlier, unpatched-pack session); the audio itself is not listened to.
 
 ## <a name="sndbrd_s3wcs"></a>SNDBRD_S3WCS
 
@@ -206,15 +228,35 @@ World Cup's System 3 sound board · interface `WMSS67` (sub-type 8|4|2) · ✅ �
   sweep stopped at `27` and never reached `50`..`5E`); 0 of 40 before the idle framing.
 - **Limits**: no stop (a board reset after each sound). The four direct routines need
   Sound Dip 2 off, the tool's setting (with it on, `5E` plays as `40 5E`).
-- **In VPinball**: **the pack does not play as written, in any VPinball so far**: `s4.c`
-  logs the inverted solenoid byte, whose bits 5 and 7 follow other lines (it matches the
-  pack's ids only while they are clear), the prefix and the command come as two commands,
-  the control line is not logged (`sndbrd_ctrl_w`), and up to 10.8.1-5436 libaltsound has
-  no case for `GEN_S3` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
-  Measured on `wldcp_l1`: the game sent `5F 5F 7F 5F 7F`, AltSound looked up `5F5F 7F5F
-  7F5F`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball
-  master from 3abe805) it looks up `005F 005F 007F`.
+- **In VPinball**: **the pack does not play in any VPinball build so far; with the PinMAME
+  patch [0007](../pinmame-patches/README.md) (not upstream) it plays**. Unpatched, `s4.c`
+  logs the inverted solenoid byte (bits 5 and 7 follow other lines) and the control line,
+  `sndbrd_ctrl_w`, not at all (the game raises solenoid 7 with no data write: switches 28
+  and 35 of the table); and up to 10.8.1-5436 libaltsound has no case for `GEN_S3` and joins
+  the bytes two by two ([In VPinball](common.md#in-vpinball)). Measured on `wldcp_l1`
+  before the patch: the game wrote `7F`, `FF` and `5F` (idle for the board) on the data
+  lines and its sounds as `5E 5D 5B`; AltSound looked up `007F`, `00FF`, `005F`, never a row.
+  The patch logs, at each rising edge of CB1 from either port, the id of the sound the
+  program plays (the program's prefix flag is followed too): a prefix (data bit 4 low) logs
+  nothing and toggles the flag; data bit 6 low `10`; the control line `80`; with the flag set
+  or Sound Dip 2 on, a pitch `0x405x` (the nibbles sharing an entry of the pitch table, `8 9 A
+  C`, `1 5` and `2 4`, as one row: `C`, `5`, `4`); else the routine `5E 5D 5B 57` (`8 9 A C`
+  play `5E`'s; the nibbles `0`..`6` jump into nothing and log nothing). These are the pack's own ids, no alias
+  rows. **The ids follow the DIP**, which answers what plays for the game's `5E 5D 5B`: with
+  Sound Dip 2 off (as VPinball loads it, `Controller.Dip(0)` = 0, also with no saved configuration) the four direct routines,
+  the pack's `5E 5D 5B` rows; with it on (PinMAME's own default in `s4.h`, `Controller.Dip(0)
+  = 2`) the program turns the same bytes into pitches, the rows `405E`, `405D`, `405B`. The pack
+  holds both sets and the log picks the right one, so neither needs to be copied over the other.
+  Played in VPinball 10.8.1-6577 with the patched libpinmame (Docker bench, a table script
+  closing each of the switches 1 to 40 once, 0.5 s each, 3 s apart, with Sound Dip 2 off and
+  then on): 160 lookups, 160 found, none missed. Off: `005E` x16, `005D` x37, `005B` x2, `0080`
+  x10 (+1 at boot), and the game's tune `405E` x8, `405D`, `405B`, `4057` (the game sets the
+  program's prefix flag itself); on: `405E` x28, `405D` x15, `405B` x4, `4057` x3, `0010` x3,
+  `0080` x10. A first run, with the patch tracking the flag itself, gave 182 of 182. The control line comes as 4 pulses 0.1 s apart (switches 28, 35: the
+  game's own rhythm, one CB1 edge each; the program restarts its sound on every edge, and in
+  AltSound's log each new play finds channel 0 free again), so each is logged: a dedup by id
+  would also merge the tune's eight equal notes. Not reached by the game session: `57`, the pitches
+  `405C`, `4056`..`4050`; the audio itself is not listened to.
 
 ## <a name="sndbrd_s7s_nd"></a>SNDBRD_S7S_ND
 

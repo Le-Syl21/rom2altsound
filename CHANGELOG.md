@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **World Cup and Disco Fever (System 3): one PinMAME patch for both, measured in VPinball.**
+  Both boards start their sound program on a rising edge of CB1, from the data lines or from
+  the control line (solenoid 7 on World Cup raises it with no data write at all), and decide
+  from the byte, Sound Dip 2 and a flag in their RAM what to play. PinMAME logged the raw
+  data writes, never the control line, so no pack row was ever looked up. Patch 0007
+  (`wmssnd.c`, not upstream) logs, at each edge, the id of the sound the program plays: exactly
+  the pack's ids, so there are no alias rows and no pack change, and the ids follow the DIP
+  (World Cup's `5E` `5D` `5B` are the direct routines with the dip off, the pitches `405E`
+  `405D` `405B` with it on; Disco Fever's numbered sounds exist only with it off). Measured in
+  VPinball 10.8.1-6577, DIP off then on: World Cup 160 of 160 lookups found, Disco Fever 57 of
+  57; the tool's sweep logs each of the 16 and 24 sounds' own id. `docs/vpx_playback.json`: both `raw` (they play only with the patch). Also fixed:
+  `pack_aliases` asked the sound board for its sub-type after the board was gone, so the
+  solenoid-line rows (`0x2E`, `0x6E`...) were written for every System 3-7 board, World Cup,
+  Disco Fever and Thunderball included; it now uses the sub-type read while the board lives.
 - **Zaccaria 1311 (Future World, House of Diamonds, Winter Sports): a pack is generated.**
   The board has no command, so board 0 stands for the four tone lines the game raises as
   solenoids 21 to 24 (`gamesound::zac1311`, `Request::Tones`): the 15 combinations of lines are
