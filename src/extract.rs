@@ -1901,7 +1901,7 @@ impl Extractor {
             crate::altsound::Aliases::System11Board1
         } else if self.mask == 1
             && self.families[0] == "WMSS67"
-            && matches!(unsafe { ffi::shim_board_type(0) } & 0xFF, 0 | 2)
+            && wms67_logs_solenoid_lines(self.board0_sub)
         {
             crate::altsound::Aliases::SolenoidLines
         } else if self.mask == 1 && self.families[0] == "TABART" && self.board0_sub == 0 {
@@ -6678,6 +6678,15 @@ fn sweep(mask: u8) -> (Vec<Cmd>, Vec<String>, Vec<SweepRange>) {
     (v, notes, ranges)
 }
 
+/// The Williams System 3-7 sub-types whose games log the byte the board reads with the solenoid
+/// lines in bits 5-7 (`SNDBRD_S67S` 0, `SNDBRD_S3S` 2). The others log something else: World
+/// Cup and Disco Fever (8|4|2, 16|4|2) the sound the patched PinMAME sees the program play,
+/// Thunderball (1) seven command bits. `board0_sub` is read while the board is alive: asking
+/// the board afterwards, as `pack_aliases` once did, gave every System 3-7 board the rows.
+fn wms67_logs_solenoid_lines(sub: c_int) -> bool {
+    matches!(sub, 0 | 2)
+}
+
 /// World Cup's sound program (`481_s0_world_cup.716`, interrupt handler `7F15`), read with
 /// a 6800 disassembler. The byte it reads (`s67s_cmd_w`, sub-type 8|4|2) carries the low
 /// data nibble in bits 0-3, data bit 6 in bit 4, the control line (`s67s_ctrl_w`) in bit 5,
@@ -7220,6 +7229,16 @@ mod tests {
         // Attila's program, without the merge, takes nibbles.
         r[0xFD75] = 0x01;
         assert_eq!(gpsm_byte_table_in(&r), None);
+    }
+
+    #[test]
+    fn solenoid_line_rows_are_for_the_two_sub_types_that_log_them() {
+        // SNDBRD_S67S, SNDBRD_S3S
+        assert!(wms67_logs_solenoid_lines(0) && wms67_logs_solenoid_lines(2));
+        // SNDBRD_S7S_ND, SNDBRD_S3WCS, SNDBRD_S3DFS (and the prototype, 4|2, not a family)
+        for sub in [1, 8 | 4 | 2, 16 | 4 | 2] {
+            assert!(!wms67_logs_solenoid_lines(sub));
+        }
     }
 
     #[test]
