@@ -308,6 +308,9 @@ pub enum Aliases {
     /// `0x10`, `0x80` and `0x90 | xx` for each row of Tabart's Sahara Love board
     /// (`sound_dip_aliases`).
     SoundDips,
+    /// The switches that play the same routine as one of the tool's rows, and the chimes'
+    /// other lines, for Tabart's L'Hexagone (`switch_routine_aliases`).
+    SwitchRoutines,
 }
 
 impl Aliases {
@@ -318,6 +321,7 @@ impl Aliases {
             Aliases::System11Board1 => Some("system 11 board 1 as 0x00xx"),
             Aliases::SolenoidLines => Some("solenoid lines in bits 5-7"),
             Aliases::SoundDips => Some("sound DIPs in bits 4 and 7"),
+            Aliases::SwitchRoutines => Some("switches of the same routine"),
         }
     }
 }
@@ -380,6 +384,42 @@ pub fn sound_dip_aliases(rows: &mut Vec<Row>) -> usize {
     for r in rows.iter().filter(|r| r.id < 0x50) {
         for dips in [0x10, 0x80, 0x90] {
             let id = r.id | dips;
+            if !ids.contains(&id) {
+                aliases.push(Row { id, ..r.clone() });
+            }
+        }
+    }
+    let n = aliases.len();
+    rows.extend(aliases);
+    n
+}
+
+/// Tabart's L'Hexagone (`SNDBRD_TABART`, sub-type 0): the sound program plays a routine for
+/// each newly closed switch, and the patched PinMAME logs the number of the switch that
+/// closed (and the chimes' line), while the sweep records the first switch of each routine. Several switches
+/// share a routine (the routine's table at `1083` points them at the same code): each of
+/// the switches here gets a row with the file of the switch it shares with, unless the pack
+/// already has it. Returns how many rows were added.
+pub fn switch_routine_aliases(rows: &mut Vec<Row>) -> usize {
+    /// (the switch the sweep records, the switches that play the same routine)
+    const SAME: [(u32, &[u32]); 8] = [
+        (0x50, &[0x33]),
+        (0x20, &[0x21, 0x23, 0x24]),
+        (0x73, &[0x64]),
+        (0x10, &[0x11, 0x13, 0x14]),
+        (0x51, &[0x44]),
+        (0x70, &[0x71, 0x74]),
+        (0x30, &[0x31, 0x60, 0x61]),
+        // the chimes: the program calls one routine (04B6) for each of the three lines
+        (0xC4, &[0xC2, 0xC1]),
+    ];
+    let ids: std::collections::BTreeSet<u32> = rows.iter().map(|r| r.id).collect();
+    let mut aliases = Vec::new();
+    for (base, more) in SAME {
+        let Some(r) = rows.iter().find(|r| r.id == base) else {
+            continue;
+        };
+        for &id in more {
             if !ids.contains(&id) {
                 aliases.push(Row { id, ..r.clone() });
             }
@@ -1286,6 +1326,7 @@ pub fn write_pack(
         Aliases::System11Board1 => system11_board1_aliases(&mut rows),
         Aliases::SolenoidLines => solenoid_line_aliases(&mut rows),
         Aliases::SoundDips => sound_dip_aliases(&mut rows),
+        Aliases::SwitchRoutines => switch_routine_aliases(&mut rows),
     };
     report.aliases_kind = aliases.kind();
 
@@ -1654,6 +1695,29 @@ mod tests {
             assert!(ids.contains(&id), "{id:X}");
         }
         assert_eq!(rows.iter().filter(|r| r.id == 0x91).count(), 1);
+    }
+
+    #[test]
+    fn switch_routine_aliases_copy_the_base_switch() {
+        let row = |id: u32| {
+            Row::plain(
+                id,
+                Kind::Sfx,
+                false,
+                false,
+                format!("s{id:X}"),
+                format!("{id:X}.wav"),
+            )
+        };
+        let mut rows = vec![row(0x50), row(0x10), row(0x11), row(0x41), row(0xC4)];
+        assert_eq!(switch_routine_aliases(&mut rows), 5);
+        let of = |id: u32| rows.iter().find(|r| r.id == id).map(|r| r.fname.clone());
+        assert_eq!(of(0x33).as_deref(), Some("50.wav"));
+        assert_eq!(of(0x13).as_deref(), Some("10.wav"));
+        assert_eq!(of(0xC1).as_deref(), Some("C4.wav"));
+        assert_eq!(of(0x11).as_deref(), Some("11.wav"));
+        assert_eq!(rows.iter().filter(|r| r.id == 0x11).count(), 1);
+        assert!(of(0x44).is_none());
     }
 
     #[test]
