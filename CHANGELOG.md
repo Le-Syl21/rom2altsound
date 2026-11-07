@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Orbit 1 and Winter Sports measured in VPinball (no code change).** Scripted bench, shell
+  tables, 10.8.1-6577 with the patched PinMAME: Orbit 1 (Hankin, patch 0002) 52 lookups found,
+  only the row-less nibble `0000` failed, 9 of its 12 rows reached; Winter Sports and its
+  free-play set (ZAC1311, patch 0006) 328 and 432 lookups, all found, none failed. Documented in
+  the Hankin and Zaccaria family sections and `docs/pinmame-patches/README.md`.
+
 - **World Cup and Disco Fever (System 3): one PinMAME patch for both, measured in VPinball.**
   Both boards start their sound program on a rising edge of CB1, from the data lines or from
   the control line (solenoid 7 on World Cup raises it with no data write at all), and decide
