@@ -159,6 +159,8 @@ unsafe extern "C" {
     pub fn shim_spinb_own(board: c_int) -> c_int;
     pub fn shim_spinb_latch_cpus() -> c_int;
     pub fn shim_inder_cpu_sound() -> c_int;
+    pub fn shim_zac1311() -> c_int;
+    pub fn shim_zac1311_lines(mask: c_int);
     pub fn shim_inder_idle_hook(idle: c_int, keep: u64) -> c_int;
     pub fn shim_by45_p21(on: c_int);
     pub fn shim_mancmd_pairs(board: c_int, a: c_int, b: c_int, n: c_int, slices: c_int);

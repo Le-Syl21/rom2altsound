@@ -36,8 +36,7 @@ Entry:
 - `sounds`: what the ROMs tell without running them (`dcs-tracks`, `sam-calls`);
 - `names`: distinct commands sounds.dat names;
 - `not_applicable`: why the entry has nothing to extract: no sound board (`NONE
-  (other)`: chimes, or sound made by the CPU board; `ZAC1311`: solenoids into a discrete
-  circuit), or every set not applicable;
+  (other)`: chimes, or sound made by the CPU board), or every set not applicable;
 - `loudness` and `coverage`: read from the runs (`--manifests`), below.
 
 ## Loudness
@@ -125,9 +124,7 @@ approximate pack), every set whose sound ROMs PinMAME lists all as `NO_DUMP`
 `myststar`), every set whose machine has a sound CPU but whose definition lists no sound
 ROM at all (PinMAME crashes at the CPU's reset; `rctycnl`, whose segames.c entry leaves
 out `RCT_SND`, the only one in October 2026: its sounds are rctycn's), every `NONE (other)` entry (no sound
-board), and the Zaccaria 1311 entries (`futurwld`, `hod`, `wsports` and their Free Play
-sets: the game fires solenoids into a discrete circuit, no sound command exists), and
-`galaxyps` (a Galaxy mod whose patched ROM fails the program's own checksum at boot: the
+board), and `galaxyps` (a Galaxy mod whose patched ROM fails the program's own checksum at boot: the
 game stops there in PinMAME, and its sounds are Galaxy's).
 `rom2altsound <set>` writes a manifest with `not_applicable` for them and exits 0.
 

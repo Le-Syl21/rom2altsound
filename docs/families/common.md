@@ -282,11 +282,12 @@ nibble), and now logs the byte on the sound strobe only. On Whirlwind (System 11
 commands. This holds for the families where a command reaches AltSound at all:
 not on the game-driven boards (below), SAM, Pinball 2000, Capcom, Mr. Game, Playmatic's
 last board, Romstar, Spinball and Inder (the game writes the latch itself, `spinb.c`
-`soundbd_w`, `inder.c` `snd_w`, `snd2_w`) and Zaccaria 1311, whose packs stay unplayable. Nor where
+`soundbd_w`, `inder.c` `snd_w`, `snd2_w`). Nor where
 what the game makes PinMAME log is not the byte the pack is keyed by: Baby Pac-Man and Game Plan's
 MSU-3 (nibbles), Playmatic's third board (Cerberus: the 3-bit values of every lamp write, strobe not logged, measured in 10.8.1-6577), Tabart's L'Hexagone (line and chime state, measured in VPinball 10.8.1-6577: it looks up `0050`, `0010` and `0058`, never a switch id), Stern SB-300 with its
 Vocalizer (the speech goes through the unlogged `sndbrd_ctrl_w`) and Hankin (every write of the solenoid lines is
-logged, measured on empsback in 10.8.1-6577); in part only on
+logged, measured on empsback in 10.8.1-6577) and Zaccaria 1311 (the game raises four tone lines
+as solenoids and PinMAME logs no command at all, measured on futurwld and hod in 10.8.1-6577); in part only on
 System 3's Disco Fever and World Cup boards.
 Tabart's second board (Sahara Love) plays on its plain rows (its lines are logged without the sound DIPs, measured in a script-driven table in 10.8.1-6577). Taito's Sintetizador (a command logged with and without bit 7) and
 Tecnoplay's Scramble (each command logged twice) play: both rows exist, the second one

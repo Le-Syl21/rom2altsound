@@ -134,7 +134,6 @@ pub fn not_applicable(set: &str) -> Option<&'static str> {
             "a custom game on WPC Fliptronics hardware with no sound board (GAME_NO_SOUND, no sound ROM in wpcgames.c): no board to drive"
         }
         s if s.starts_with("sam1_flashb_") => "a Stern SAM boot flash: no game and no sound data",
-        "futurwld" | "futurwldf" | "hod" | "hodf" | "wsports" | "wsportsf" => ZAC1311,
         "galaxyps" => {
             "the program fails its own ROM checksum at boot and stops there (1BC9: the Planet Skillshot patch of U6 left the sum of 1000-1FFF and 5000-5FFF at 10, not 00), so the game never runs in PinMAME; its sound scripts are Galaxy's (docs/families/stern-early.md#sndbrd_st300)"
         }
@@ -163,19 +162,12 @@ pub fn driver_not_applicable(d: &Driver) -> Option<&'static str> {
     })
 }
 
-/// Zaccaria's 1311 board (Future World, House of Diamonds, Winter Sports, and their Free
-/// Play sets): its interface is empty (`zac1311Intf = {0}`, no manual command handler), the
-/// game fires solenoids 21 to 24 straight into the discrete circuit and never writes a sound
-/// command, so AltSound receives nothing.
-const ZAC1311: &str = "the sounds are solenoid lines wired to a discrete circuit (Zaccaria 1311): no sound command to send, and none reaches AltSound (docs/families/zaccaria.md#sndbrd_zac1311)";
-
 /// A family with nothing to extract: no sound board to drive.
 pub fn family_not_applicable(label: &str) -> Option<&'static str> {
     match label {
         "NONE (other)" => Some(
             "no sound board to drive: chimes, or sounds made by the CPU board (docs/families/no-sound-board.md)",
         ),
-        "ZAC1311" => Some(ZAC1311),
         _ => None,
     }
 }
@@ -1861,8 +1853,8 @@ mod tests {
         assert!(not_applicable("sam1_flashb_0310").is_some());
         assert!(not_applicable("afm_113b").is_none());
         assert!(family_not_applicable("NONE (other)").is_some());
-        assert_eq!(family_not_applicable("ZAC1311"), not_applicable("futurwld"));
-        assert!(not_applicable("hodf").is_some());
+        assert!(family_not_applicable("ZAC1311").is_none());
+        assert!(not_applicable("hodf").is_none());
         assert!(not_applicable("galaxyps").is_some());
         assert!(not_applicable("galaxy").is_none());
         let undumped = |name: &str| RomFile {

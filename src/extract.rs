@@ -545,6 +545,8 @@ enum Send {
     Call(gamesound::Call),
     /// A playfield switch (PinMAME's number) closed (`true`) or opened (`PinmameSetSwitch`).
     Switch(c_int, bool),
+    /// Zaccaria 1311: the four tone lines set to the bits of the mask (`shim_zac1311_lines`).
+    Tones(u8),
     /// Game-driven sound: the bits `mask` of the game's RAM byte set (`true`) or cleared.
     RamBits(u32, u8, bool),
     /// Game-driven sound: waits while the script pointer at the first address is on one of
@@ -575,6 +577,7 @@ fn requests(r: &Request) -> Vec<Send> {
             .collect(),
         Request::Reset => vec![Send::Reset],
         Request::Lines(v) => vec![Send::Data(0, c_int::from(*v))],
+        Request::Tones(m) => vec![Send::Tones(*m)],
         Request::SwitchState(sw, on) => vec![Send::Switch(c_int::from(*sw), *on)],
         Request::Seq(v) => v.iter().flat_map(requests).collect(),
         Request::RamBits { addr, mask, on } => vec![Send::RamBits(*addr, *mask, *on)],
@@ -1903,6 +1906,8 @@ impl Extractor {
             crate::altsound::Aliases::SolenoidLines
         } else if self.mask == 1 && self.families[0] == "TABART" && self.board0_sub == 0 {
             crate::altsound::Aliases::SwitchRoutines
+        } else if self.mask == 1 && self.families[0] == "ZAC1311" {
+            crate::altsound::Aliases::ToneLines
         } else {
             crate::altsound::Aliases::None
         }
@@ -2362,6 +2367,10 @@ impl Extractor {
                     unsafe { ffi::shim_cpu_read(cpu, addr, 1, b.as_mut_ptr()) };
                     let v = b[0] & !mask;
                     unsafe { ffi::shim_game_pokes(cpu, &addr, &v, 1) };
+                    Some(0)
+                }
+                Send::Tones(mask) => {
+                    unsafe { ffi::shim_zac1311_lines(c_int::from(mask)) };
                     Some(0)
                 }
                 Send::RamBits(addr, mask, on) => {
@@ -3310,6 +3319,14 @@ impl Extractor {
                 self.boards = vec![t.into()];
             }
         }
+        // Zaccaria's 1311 starts no board either (`zac1311Intf = {0}`): its four tone lines
+        // are the game's solenoids 21 to 24, and board 0 stands for them.
+        // (PinMAME starts the board, so the mask is set, but no type string names it.)
+        if self.families[0].is_empty() && unsafe { ffi::shim_zac1311() } != 0 {
+            self.mask = 1;
+            self.families[0] = "ZAC1311".into();
+            self.boards = vec!["ZAC1311".into()];
+        }
         self.data_east = ffi::is_data_east();
         self.bsmt = ffi::has_bsmt2000().then(|| self.opts.bsmt.report());
         if let Some(b) = &self.bsmt {
@@ -3353,7 +3370,7 @@ impl Extractor {
         {
             eprintln!("cannot dump the sound region to {}: {e}", path.display());
         }
-        let inder_cpu = matches!(self.families[0].as_str(), "INDER0" | "INDER1");
+        let inder_cpu = matches!(self.families[0].as_str(), "INDER0" | "INDER1" | "ZAC1311");
         let game_driven = self.mask == 1
             && (inder_cpu
                 || gamesound::game_driven(
@@ -3395,7 +3412,13 @@ impl Extractor {
                     for r in &layer.setup {
                         self.sender.extend(requests(r));
                     }
-                    eprintln!("  game CPU left running (its attract mode)");
+                    if typestr == "ZAC1311" {
+                        // The game's own writes to the four lines would mix with ours.
+                        let halted = unsafe { ffi::shim_halt_game_cpus(1) };
+                        eprintln!("  halted {halted} game CPU(s): the tone lines are driven here");
+                    } else {
+                        eprintln!("  game CPU left running (its attract mode)");
+                    }
                     self.game = Some(layer);
                 }
                 Err(e) => {
@@ -5596,6 +5619,7 @@ impl Extractor {
                 Send::Switch(sw, on) => {
                     format!("switch {sw} {}", if *on { "closed" } else { "opened" })
                 }
+                Send::Tones(m) => format!("tones({m:X})"),
                 Send::RamBits(addr, mask, on) => format!(
                     "game RAM {addr:04X} bits {mask:02X} {}",
                     if *on { "set" } else { "cleared" }

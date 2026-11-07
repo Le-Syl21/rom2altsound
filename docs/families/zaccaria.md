@@ -19,26 +19,39 @@ known for any of them (`volume::decode`): the files are at the board's own level
 ## <a name="sndbrd_zac1311"></a>SNDBRD_ZAC1311
 
 Zaccaria 1311 sound board (discrete) · no PinMAME sound board interface
-(`src/wpc/zacsnd.c`, `zac1311Intf = {0}`) · — · 6 sets, 3 games, no sound ROM,
+(`src/wpc/zacsnd.c`, `zac1311Intf = {0}`) · ✅ · 6 sets, 3 games, no sound ROM,
 1978, Zaccaria · e.g. Future World (`futurwld`), House of Diamonds (`hod`), Winter
 Sports (`wsports`)
 
 - **Hardware**: no sound CPU; a discrete sound circuit (`MACHINE_DRIVER_START(zac1311)`,
-  `zac1311_discInt`).
-- **Commands**: the game plays its sounds by firing solenoids 21 to 24: `src/wpc/zac.c`
-  writes them straight to the discrete circuit (`discrete_sound_w`, in the solenoid
-  write path) and never calls `sndbrd_data_w`.
-- **What rom2altsound does**: the board interface exists but is empty, so it has no
-  manual command handler. The six sets are not applicable (`catalog::not_applicable`, and
-  the `ZAC1311` entries of the catalog): `rom2altsound futurwld` writes a manifest with
-  `not_applicable` and exits 0. Before, the run ended with "sound board 0 () has no manual
-  command handler in PinMAME: nothing can be driven" (`futurwld` and `futurwldf` failed
-  so in the catalog run of October 2026). No pack.
-- **What would be needed**: driving the four solenoid lines of the discrete circuit,
-  which is not a sound command; nothing in rom2altsound does that.
-- **In VPinball**: **the pack cannot play**: AltSound receives nothing from these games
-  (no `sndbrd_data_w`; futurwld: no command in 45 s of attract mode with a coin and
-  start).
+  `zac1311_discInt`): four sawtooth tone generators, F 349 Hz, A 440 Hz, C' 523 Hz and F'
+  698 Hz, each on or off, mixed.
+- **Commands**: none. The game plays a note by raising one of the solenoids 21 to 24
+  (`src/wpc/zac.c`, `ram1_w`, which writes them straight to the discrete circuit with
+  `discrete_sound_w`) and ends it by dropping it; it never calls `sndbrd_data_w`.
+- **What rom2altsound does**: the board is a game-driven one (`gamesound::zac1311`,
+  `Request::Tones`, `shim_zac1311_lines`): PinMAME starts the board (the interface is empty,
+  no type string), so board 0 stands for the four lines, as it does for Inder's first
+  machines. The game CPU is halted and each of the 15 combinations of lines (`0001`..`000F`,
+  bit 0 = solenoid 21) is set the way the game writes them and recorded; the stop is all
+  lines off. The id is the set of lines on. A single tone loops (`0001`, `0002`, `0004`,
+  `0008`, whole file looped); a mix of two or more lines mostly beats without an exact period
+  and is cut at 120 s (`0003`, `0006`, `000A`, `000B`), some loop (`0005`, `0007`, `0009`,
+  `000C`..`000F`). The pack has one more row, `0000`, a 0.1 s silent file (`Aliases::ToneLines`),
+  and every row is on channel 0, so that a new note cuts the one playing and `0000` cuts the
+  last note. The mixes clip (`000B`, `000F`...): that is PinMAME's own mix, whose level the
+  source marks "unverified" (`zacsnd.c`). Measured on `futurwld` and `hod`; no
+  names (no sounds.dat section).
+- **In VPinball**: **the pack does not play in any VPinball build today**: PinMAME logs no
+  command for these games (measured: 0 lookups in 150 s of play on `futurwld` with a coin,
+  start, plunger and flippers). With the PinMAME change of
+  `docs/pinmame-patches/0006-...` (`zac.c` logs the set of lines that are on, one byte, each
+  time it changes, `00` when all are off; the emulated audio is untouched) AltSound looks
+  up `0000`, `0001`, `0002`, `0004` and `0008` (the games play one line at a time), all rows of
+  the pack: with the generated packs, `futurwld` 228 lookups and `hod` 212, all found, none
+  failed (200 s of coin, start, plunger and flippers, Docker bench, VPinball 10.8.1-6577; a
+  `0000` after each note cuts it). Winter Sports (`wsports`) has no table here: not measured.
+  The patch is not upstream.
 
 ## <a name="sndbrd_zac1125"></a>SNDBRD_ZAC1125
 
