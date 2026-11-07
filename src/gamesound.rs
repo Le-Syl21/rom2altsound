@@ -68,6 +68,9 @@ pub enum Request {
     Reset,
     /// The sound lines as the game writes them (`sndbrd_data_w`, board 0).
     Lines(u8),
+    /// Zaccaria 1311: the four tone lines (solenoids 21 to 24, bit 0 first) set to these
+    /// bits, as the game writes them (`shim_zac1311_lines`).
+    Tones(u8),
     /// A playfield switch closed (`true`) or opened, and left so.
     SwitchState(u16, bool),
     /// These, one after the other.
@@ -137,6 +140,7 @@ pub fn game_driven(typestr: &str, subtype: i32) -> bool {
         "ASTRO" | "ATARI1" | "ATARI2" => true,
         "TMS320AV120" => subtype == 1,
         "TABART" => subtype == 0,
+        "ZAC1311" => true,
         _ => false,
     }
 }
@@ -162,6 +166,7 @@ pub fn find(typestr: &str, subtype: i32, image: &[u8], speech: &[u8]) -> Result<
         "INDER0" => inder::sn76489(image),
         "INDER1" => inder::ay8910(image),
         "TABART" => tabart::find(image),
+        "ZAC1311" => Ok(zac1311()),
         _ => Err(format!("no reader for the {typestr} game's sound layer")),
     }
 }
@@ -185,6 +190,38 @@ fn pat(s: &str) -> Vec<Option<u8>> {
 
 fn be16(m: &[u8], a: usize) -> u16 {
     u16::from_be_bytes([m[a], m[a + 1]])
+}
+
+/// Zaccaria's 1311 board (`ZAC1311`, 1978): no sound CPU and no command. The game raises the
+/// solenoids 21 to 24 (zac.c `ram1_w`), which switch four tone generators on (zacsnd.c
+/// `zac1311_discInt`: F 349 Hz, A 440 Hz, C' 523 Hz, F' 698 Hz). The ids are the set of lines
+/// that are on, one bit per line (bit 0 = solenoid 21), the byte PinMAME logs as the sound
+/// command for these machines; `00`, all off, plays nothing and is the stop.
+fn zac1311() -> Layer {
+    Layer {
+        what: "the four tone lines of the discrete circuit (solenoids 21 to 24), every combination of lines".into(),
+        id_is: "the set of tone lines on (bit 0 = solenoid 21, the F note; bit 3 = solenoid 24, F'), the byte PinMAME logs".into(),
+        id_digits: 4,
+        sounds: (1u8..16)
+            .map(|m| GameSound {
+                id: u32::from(m),
+                refs: format!("solenoids {}", tone_lines(m)),
+                start: Request::Tones(m),
+            })
+            .collect(),
+        stop: Request::Tones(0),
+        dips: Vec::new(),
+        setup: Vec::new(),
+    }
+}
+
+/// "21+23" for the lines of a mask.
+fn tone_lines(mask: u8) -> String {
+    (0..4)
+        .filter(|b| mask & (1 << b) != 0)
+        .map(|b| (21 + b).to_string())
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 /// Stern MPU-200 (`ST300`, 1979-1982): sound scripts run by the game's interrupt.
@@ -2304,6 +2341,19 @@ mod tests {
         assert_eq!((at(0x4010), at(0x4011)), (Some(0xC3), Some(0x17)));
         assert_eq!((at(0x400A), at(0x400B)), (Some(0x00), Some(0x01)));
         assert_eq!((at(0x4003), at(0x4008)), (Some(1), Some(0)));
+    }
+
+    /// Zaccaria 1311: one sound per combination of the four tone lines, the stop all off.
+    #[test]
+    fn zac1311_layer_is_every_line_combination() {
+        let l = find("ZAC1311", 0, &[], &[]).unwrap();
+        assert!(game_driven("ZAC1311", 0));
+        assert_eq!(l.id_digits, 4);
+        let ids: Vec<u32> = l.sounds.iter().map(|s| s.id).collect();
+        assert_eq!(ids, (1..16).collect::<Vec<u32>>());
+        assert_eq!(l.sounds[4].start, Request::Tones(5));
+        assert_eq!(l.sounds[4].refs, "solenoids 21+23");
+        assert_eq!(l.stop, Request::Tones(0));
     }
 
     /// Canasta '86: the effect routine at 16FB, the music routine at 173A, one call of each.

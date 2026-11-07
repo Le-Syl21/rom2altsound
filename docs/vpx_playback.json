@@ -96,7 +96,7 @@
     "ZAC11178": "one_byte",
     "ZAC11178_13181": "one_byte",
     "ZAC1125": "one_byte",
-    "ZAC1311": "unlogged",
+    "ZAC1311": "raw",
     "ZAC13136": "one_byte",
     "ZAC13181x3": "one_byte",
     "ZAC1346": "one_byte",

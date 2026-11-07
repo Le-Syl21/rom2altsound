@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Zaccaria 1311 (Future World, House of Diamonds, Winter Sports): a pack is generated.**
+  The board has no command, so board 0 stands for the four tone lines the game raises as
+  solenoids 21 to 24 (`gamesound::zac1311`, `Request::Tones`): the 15 combinations of lines are
+  recorded with the game CPU halted, ids `0001`..`000F` (the set of lines on), plus a silent row
+  `0000` (`Aliases::ToneLines`), all on channel 0. They were "not applicable" before. In
+  VPinball the pack plays only with a PinMAME change (`docs/pinmame-patches/0006`, not upstream)
+  that logs the set of lines on: measured in 10.8.1-6577, 0 lookups before, 228 (`futurwld`)
+  and 212 (`hod`) found, none failed, after.
+
 - **Sahara Love: the sound DIP alias rows are gone.** Measured in a script-driven table:
   the byte PinMAME logs carries no DIP bits (`core_getDip(3) & 0x90` is always 0 on this
   game, whose sound DIPs are bank 3 bits 0-3), so the `0x10|xx`, `0x80|xx` and `0x90|xx` rows

@@ -1,0 +1,66 @@
+From ce7efd263f1530f8f42ab6352e04f871bb9c7cf1 Mon Sep 17 00:00:00 2001
+From: Le-Syl21 <sylvain.gargasson@gmail.com>
+Date: Sat, 7 Nov 2026 18:26:14 +0000
+Subject: [PATCH 6/6] Zaccaria 1311: log the tone lines the game raises as the
+ sound command
+
+The Zaccaria 1311 board has no sound CPU and no command: the game plays by
+raising the solenoids 21 to 24, which zac.c writes straight to the discrete
+circuit (four tone generators) with discrete_sound_w. sndbrd_data_w is never
+called, so snd_cmd_log (AltSound, libpinmame callback) got nothing from
+Future World, House of Diamonds and Winter Sports.
+
+Log, one byte per change, the set of tone lines that are on (bit 0 = solenoid
+21, the F note, up to bit 3 = solenoid 24, the F' note; 00 = all off). No
+change to the emulated audio.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01ENsGGxgZ7pU5Z87YfBS2iY
+---
+ src/wpc/zac.c | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/src/wpc/zac.c b/src/wpc/zac.c
+index a80a8a75..60a7475a 100644
+--- a/src/wpc/zac.c
++++ b/src/wpc/zac.c
+@@ -10,6 +10,7 @@
+ #include "sound/discrete.h"
+ #include "core.h"
+ #include "sndbrd.h"
++#include "snd_cmd.h"
+ #include "zac.h"
+ #include "zacsnd.h"
+ #include "wmssnd.h"
+@@ -36,6 +37,7 @@ static struct {
+   UINT32 solenoids;
+   UINT32 solsmooth[ZAC_SOLSMOOTH];
+   UINT16 sols2;
++  UINT8 discLines; // lines of the 1311 tone circuit (solenoids 21-24) currently on, bit 0 = 21
+   int actsnd[3], actspk;
+   int refresh;
+   int gen;
+@@ -417,8 +419,18 @@ static WRITE_HANDLER(ram1_w) {
+ 		else
+ 			coreGlobals.pulsedSolState &= ~sol;
+ 		core_write_pwm_output(CORE_MODOUT_SOL0 + offset, 1, data & 0x01);
+-		if (core_gameData->hw.soundBoard == SNDBRD_ZAC1311 && offset > 19 && offset < 24)
+-			discrete_sound_w(1 << (offset-20), data);
++		if (core_gameData->hw.soundBoard == SNDBRD_ZAC1311 && offset > 19 && offset < 24) {
++			const UINT8 line = 1 << (offset-20);
++			const UINT8 lines = data ? (locals.discLines | line) : (locals.discLines & ~line);
++			discrete_sound_w(line, data);
++			// The 1311 has no sound command: the game plays by switching the four tone lines
++			// (F, A, C', F'). Log the set of lines that are on, one byte, each time it changes
++			// (00 = all off), so AltSound is told what sounds. The discrete circuit is untouched.
++			if (lines != locals.discLines) {
++				locals.discLines = lines;
++				snd_cmd_log(0, lines);
++			}
++		}
+ 	} else if (offset > 0x7f && offset < 0xc0) {
+ 		offset -= 0x80;
+ 		if (data & 0x01)
+-- 
+2.43.0
+

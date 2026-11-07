@@ -308,6 +308,8 @@ pub enum Aliases {
     /// The switches that play the same routine as one of the tool's rows, and the chimes'
     /// other lines, for Tabart's L'Hexagone (`switch_routine_aliases`).
     SwitchRoutines,
+    /// The silence row `0x0000` for Zaccaria's 1311 (`tone_lines_off`).
+    ToneLines,
 }
 
 impl Aliases {
@@ -318,6 +320,7 @@ impl Aliases {
             Aliases::System11Board1 => Some("system 11 board 1 as 0x00xx"),
             Aliases::SolenoidLines => Some("solenoid lines in bits 5-7"),
             Aliases::SwitchRoutines => Some("switches of the same routine"),
+            Aliases::ToneLines => Some("all tone lines off as a silent row"),
         }
     }
 }
@@ -366,6 +369,47 @@ pub fn solenoid_line_aliases(rows: &mut Vec<Row>) -> usize {
     let n = aliases.len();
     rows.extend(aliases);
     n
+}
+
+/// Zaccaria's 1311 (`SNDBRD_ZAC1311`): the game plays a note by raising one or more of four
+/// tone lines and ends it by dropping them, and the patched PinMAME logs the set of lines
+/// that are on after each change: `00` when all are off. The rows `01`..`0F` are the tones
+/// (looped music rows on channel 0, so that a new note cuts the one playing); `00` is a
+/// short silent file on the same channel, which cuts the last note. Returns 1 when the row
+/// was added (not if the pack has an id 0 already, or no rows).
+pub fn tone_lines_off(out_dir: &Path, rows: &mut Vec<Row>) -> io::Result<usize> {
+    if rows.is_empty() || rows.iter().any(|r| r.id == 0) {
+        return Ok(0);
+    }
+    let rate = rows
+        .iter()
+        .find_map(|r| hound::WavReader::open(out_dir.join(&r.fname)).ok())
+        .map_or(44100, |r| r.spec().sample_rate);
+    let fname = "0x0000-silence.wav".to_string();
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut w = hound::WavWriter::create(out_dir.join(&fname), spec)
+        .map_err(|e| io::Error::other(e.to_string()))?;
+    for _ in 0..rate / 10 {
+        w.write_sample(0i16)
+            .map_err(|e| io::Error::other(e.to_string()))?;
+    }
+    w.finalize().map_err(|e| io::Error::other(e.to_string()))?;
+    let mut row = Row::plain(
+        0,
+        Kind::Music,
+        false,
+        false,
+        "All tone lines off".into(),
+        fname,
+    );
+    row.gtype = GType::Music;
+    rows.push(row);
+    Ok(1)
 }
 
 /// Tabart's L'Hexagone (`SNDBRD_TABART`, sub-type 0): the sound program plays a routine for
@@ -1300,6 +1344,7 @@ pub fn write_pack(
         Aliases::System11Board1 => system11_board1_aliases(&mut rows),
         Aliases::SolenoidLines => solenoid_line_aliases(&mut rows),
         Aliases::SwitchRoutines => switch_routine_aliases(&mut rows),
+        Aliases::ToneLines => tone_lines_off(out_dir, &mut rows).map_err(|e| err(out_dir, e))?,
     };
     report.aliases_kind = aliases.kind();
 
@@ -1604,6 +1649,30 @@ pub fn parse_id(id: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tone_lines_off_adds_a_silent_row_on_the_music_channel() {
+        let dir = std::env::temp_dir().join(format!("r2a-tones-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let mut rows = vec![Row::plain(
+            1,
+            Kind::Music,
+            true,
+            false,
+            "tone".into(),
+            "0x0001.wav".into(),
+        )];
+        assert_eq!(tone_lines_off(&dir, &mut rows).unwrap(), 1);
+        let off = rows.last().unwrap();
+        assert_eq!((off.id, off.channel, off.looped), (0, 0, false));
+        let r = hound::WavReader::open(dir.join(&off.fname)).unwrap();
+        assert_eq!(r.duration(), 4410);
+        // Already there (or nothing to cut): left alone.
+        assert_eq!(tone_lines_off(&dir, &mut rows).unwrap(), 0);
+        assert_eq!(tone_lines_off(&dir, &mut Vec::new()).unwrap(), 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn classify_names() {

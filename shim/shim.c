@@ -17,6 +17,7 @@
 #include "sound/fmopl.h"
 #include "sound/votrax.h"
 #include "sound/adpcm.h"
+#include "sound/discrete.h"
 
 // Rebuild the board interface table exactly as src/wpc/sndbrd.c does (same X-macro list,
 // index = board type >> 8), so that we can look at a board's manual-command handler.
@@ -1127,6 +1128,20 @@ int shim_inder_cpu_sound(void) {
       return 2;
   }
   return 0;
+}
+
+// Zaccaria's 1311 board (zacsnd.c `zac1311Intf = {0}`): no sound CPU and no command. The game
+// plays by raising the solenoids 21 to 24 (zac.c `ram1_w`), which `discrete_sound_w` feeds to
+// four tone generators (F, A, C', F'; bit 0 = solenoid 21). Returns 1 for such a machine.
+int shim_zac1311(void) {
+  return core_gameData && core_gameData->hw.soundBoard == SNDBRD_ZAC1311;
+}
+
+// The four tone lines set to the bits of `mask`, as the game does (one write per line).
+void shim_zac1311_lines(int mask) {
+  int line;
+  for (line = 0; line < 4; line++)
+    discrete_sound_w(1 << line, (mask >> line) & 1);
 }
 
 // Inder's sound CPUs that poll the command latch (inder.c `sndcmd_r`, a read handler on the
