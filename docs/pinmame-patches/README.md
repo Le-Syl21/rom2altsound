@@ -24,6 +24,6 @@ All five apply together (`git am`, no conflict) and the result builds as `libpin
   pack ids each); Orbit 1 has no table.
 - **Baby Pac-Man** 15 of 46 ids and **Granny** 30 of 48 reached by a random walk; whole bytes.
 - **Tabart L'Hexagone**: 27 of 27 scripted switches found, with the alias rows of
-  `Aliases::SwitchRoutines`; the chime rows are not yet played.
+  `Aliases::SwitchRoutines`; the game never raises a chime line, so the chime rows are never looked up.
 
 Not checked: the audio itself (the bench has no listening path), the ids no game session reached.
