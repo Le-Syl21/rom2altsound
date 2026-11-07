@@ -288,7 +288,7 @@ MSU-3 (nibbles), Playmatic's third board (Cerberus: the 3-bit values of every la
 Vocalizer (the speech goes through the unlogged `sndbrd_ctrl_w`) and Hankin (every write of the solenoid lines is
 logged, measured on empsback in 10.8.1-6577); in part only on
 System 3's Disco Fever and World Cup boards.
-Tabart's second board (Sahara Love) has rows for the sound DIPs logged with its lines (read in the code, not played: no table). Taito's Sintetizador (a command logged with and without bit 7) and
+Tabart's second board (Sahara Love) plays on its plain rows (its lines are logged without the sound DIPs, measured in a script-driven table in 10.8.1-6577). Taito's Sintetizador (a command logged with and without bit 7) and
 Tecnoplay's Scramble (each command logged twice) play: both rows exist, the second one
 restarts the sound (played on `shock` and `scram_tp` in 10.8.1-6577). Each family's section says which.
 `docs/vpx_playback.json` holds the result (`"state": "newer"` for the families that play

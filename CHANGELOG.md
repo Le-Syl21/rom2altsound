@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Sahara Love: the sound DIP alias rows are gone.** Measured in a script-driven table:
+  the byte PinMAME logs carries no DIP bits (`core_getDip(3) & 0x90` is always 0 on this
+  game, whose sound DIPs are bank 3 bits 0-3), so the `0x10|xx`, `0x80|xx` and `0x90|xx` rows
+  never matched. **L'Hexagone** gets alias rows for the switches that share a routine and
+  the chime lines (`switch_routine_aliases`).
+
 ## 0.5.0 (2026-11-06)
 
 - **PinMAME changes for the "raw" families, written and measured (not upstream).** Five small
