@@ -1901,8 +1901,6 @@ impl Extractor {
             && matches!(unsafe { ffi::shim_board_type(0) } & 0xFF, 0 | 2)
         {
             crate::altsound::Aliases::SolenoidLines
-        } else if self.mask == 1 && self.families[0] == "TABART" && self.board0_sub == 1 {
-            crate::altsound::Aliases::SoundDips
         } else if self.mask == 1 && self.families[0] == "TABART" && self.board0_sub == 0 {
             crate::altsound::Aliases::SwitchRoutines
         } else {
