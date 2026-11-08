@@ -337,18 +337,23 @@ pub struct Call {
     pub raw: [u8; 20],
 }
 
-/// The sample list of the call record at `rec`, if its `+8` word points (CPU address
-/// 0x04xxxxxx, the fixed first 8 MB) to a 0-terminated list of ids below `nsamples`.
+/// The sample list of the call record at `rec`, if its `+8` word points to a 0-terminated
+/// list of ids below `nsamples`. The word is a CPU address of the fixed first 8 MB
+/// (0x04xxxxxx), or, on the firmware of the Simpsons Kooky Carnival, an address of the
+/// first MB as the program copies it to address 0 (0x000xxxxx, the same offset in the image).
 fn call_list(rom: &[u8], rec: usize, nsamples: usize, allow_empty: bool) -> Option<Vec<u16>> {
     let lim = rom.len().min(BANK);
     if rec + 20 > lim {
         return None;
     }
     let p = u32_at(rom, rec + 8) as usize;
-    if !(0x0400_0000..0x0400_0000 + lim).contains(&p) {
+    let o = if (0x0400_0000..0x0400_0000 + lim).contains(&p) {
+        p - 0x0400_0000
+    } else if (0x100..0x10_0000).contains(&p) && p < lim {
+        p
+    } else {
         return None;
-    }
-    let o = p - 0x0400_0000;
+    };
     let mut lst = Vec::new();
     for j in 0..64 {
         if o + 2 * j + 2 > lim {
@@ -1140,6 +1145,38 @@ pub mod tests {
 
     fn ptr(o: usize) -> u32 {
         (((o / BANK) as u32) << 24) | (o % BANK) as u32
+    }
+
+    /// The Simpsons Kooky Carnival firmware keeps its call table pointers as addresses of
+    /// the first MB copied to address 0 (0x000xxxxx), not as 0x04xxxxxx: the same table is
+    /// found either way, with the same lists.
+    #[test]
+    fn call_table_pointers_into_the_boot_copy_are_found() {
+        let (table, lists) = (0x2000usize, 0x3000usize);
+        let calls = 12usize;
+        let build = |base: u32| {
+            let mut rom = vec![0u8; 0x8000];
+            let mut at = lists;
+            for k in 0..calls {
+                let rec = table + 20 * k;
+                // the record's state pointer, then (+4) a second word, then the list pointer
+                rom[rec..rec + 4].copy_from_slice(&(0x0211_0814u32 + 4 * k as u32).to_le_bytes());
+                rom[rec + 8..rec + 12].copy_from_slice(&(base + at as u32).to_le_bytes());
+                // sample k+1, then the terminator, padded to 4 bytes
+                rom[at..at + 2].copy_from_slice(&(k as u16 + 1).to_le_bytes());
+                at += 4;
+            }
+            rom
+        };
+        let high = find_call_table(&build(0x0400_0000), 40).expect("0x04xxxxxx table");
+        let low = find_call_table(&build(0), 40).expect("boot copy table");
+        assert_eq!(high.len(), calls);
+        assert_eq!(low.len(), calls);
+        assert_eq!(low[0].off, table);
+        for k in 0..calls {
+            assert_eq!(low[k].samples, vec![k as u16 + 1]);
+            assert_eq!(low[k].samples, high[k].samples);
+        }
     }
 
     /// A synthetic SAM-like image (in the spirit of sam_study.py's selftest): a directory

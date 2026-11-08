@@ -16,9 +16,15 @@
   which is the id of the pack's rows. Measured on real tables in the VPinball bench (coin, start,
   flippers): AC/DC 137 lookups, CSI 91, Big Buck Hunter 82, Family Guy 67, Pirates 83, World Poker
   Tour 29, Wheel of Fortune 222, Shrek 29, Indiana Jones 148, NBA 78, every one found; the four
-  firmware generations are covered. The Simpsons Kooky Carnival is a redemption machine with no
-  game to start. `docs/pinmame-patches`: 0014; the notes of the SAM packs no longer say they
-  cannot play.
+  firmware generations are covered, and the Simpsons Kooky Carnival (`scarn200`, a ticket
+  redemption machine whose left flipper key is the coin) 234 lookups, every one found. `docs/pinmame-patches`:
+  0014; the notes of the SAM packs no longer say they cannot play.
+- **Simpsons Kooky Carnival (scarn103, scarn105, scarn200, scarn9nj): the call table is found.**
+  The sound call table of this firmware points to its sample lists with addresses of the first MB as
+  the program copies it to address 0 (`0x000xxxxx`), not `0x04xxxxxx`: `find_call_table` did not
+  recognise it, so these four sets had streams but no call, and an empty AltSound pack (the only
+  four of the 393 SAM sets in that case). It accepts both now: `scarn200` goes from 0 to 79 calls
+  (78 with a row, 148 rows); in the VPinball bench the table looks up calls `0D` and `14`, 234 lookups, all found.
 - **Brave Team and Canasta '86 need no patch**: PinMAME master (#813) logs the pointer their
   sound routines store. Measured in the bench with the real tables: 97 and 76 lookups, all found.
 - **Mr. Game (dakar, motrshow, macattck, wcup90): the games start and the pack is looked up in
