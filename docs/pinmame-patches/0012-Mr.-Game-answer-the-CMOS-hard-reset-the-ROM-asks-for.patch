@@ -1,0 +1,62 @@
+From caa881cfeb911dabaa90f23f6dc163a141afe939 Mon Sep 17 00:00:00 2001
+From: Le-Syl21 <sylvain.gargasson@gmail.com>
+Date: Sun, 8 Nov 2026 07:18:30 +0000
+Subject: [PATCH] Mr. Game: answer the CMOS hard reset the ROM asks for on a
+ first start
+
+With no nvram file the CMOS is zero, and FIX_CMOSINIT makes its checksum byte
+0xFF so the ROM sees a bad CMOS at power up. The ROM (0x4AA..0x4CA in dakar,
+motrshow, macattck, wcup90) then raises an error flag and reads the operator
+switch CPU SW1-1: only if it reads "off" (hard reset) does it reload the
+factory defaults from its own table. The switch is never off, so the ROM
+loops forever in its error state (display code 0x1E) waiting for the Start
+button, and a restart ends in the same loop. dakar and motrshow showed no lamp
+and no solenoid, with PinMAME 3.6 as with master.
+
+Remember that the nvram file was missing and answer "off" to the first read of
+the switch, as an operator doing a hard reset would. The following reads are
+the real DIP, so the game then runs in normal mode. Only the CPU reset
+request changes; the emulated sound board is untouched.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01ENsGGxgZ7pU5Z87YfBS2iY
+---
+ src/wpc/mrgame.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/wpc/mrgame.c b/src/wpc/mrgame.c
+index 2ae1045a..8839ff25 100644
+--- a/src/wpc/mrgame.c
++++ b/src/wpc/mrgame.c
+@@ -226,6 +226,12 @@ static MACHINE_STOP(mrgame)
+   sndbrd_0_exit();	
+ }
+ 
++// Set when there is no nvram file yet. The ROM then finds a bad CMOS checksum at
++// power up and only reloads its factory defaults if the operator switch CPU SW1-1
++// is read as "off" (hard reset) on that first read; the first read of the switch
++// answers it, as the operator would do on a real machine.
++static int mrgame_hardReset;
++
+ //Reads current switch column (really row) - Inverted
+ static READ16_HANDLER(col_r) {
+ 	UINT8 switches;
+@@ -246,6 +252,7 @@ Bits 6-7 Opto flipper switches
+ */
+ static READ16_HANDLER(rsw_ack_r) {
+ 	int data = core_getDip(0) ^ 0x0f;
++	if (mrgame_hardReset) { data |= 1; mrgame_hardReset = 0; }
+ 	data |= (locals.acksnd << 4);
+ 	data |= (locals.ackspk << 5);
+ 	data |= (coreGlobals.swMatrix[9] << 6);
+@@ -389,6 +396,7 @@ static WRITE16_HANDLER(row_w) {
+ //NVRAM
+ static UINT16 *NVRAM;
+ static NVRAM_HANDLER(mrgame_nvram) {
++  if (!read_or_write) { mrgame_hardReset = (file == NULL);}
+   core_nvram(file, read_or_write, NVRAM, 0x4000, 0x00);
+ #if FIX_CMOSINIT
+   if (*NVRAM==0) *NVRAM=0xFFFF;
+-- 
+2.43.0
+

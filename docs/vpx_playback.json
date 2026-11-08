@@ -20,10 +20,6 @@
       "en": "The game itself plays with its sound in every VPinball. Its AltSound pack plays in VPinball builds from master commit 3abe805 (10 October 2026) on, the next release after 10.8.1-5436: their PinMAME logs one byte per sound command on the 6803 games (vpinball/pinmame#722) and their libaltsound takes it alone (vpinball/libaltsound#20). 10.8.1-5436 and older get every write of the game's port 1 (the command, then its high nibble) and join them two by two.",
       "fr": "Le jeu lui-même a bien son son dans tous les VPinball. Son pack AltSound est joué par les versions de VPinball à partir du commit 3abe805 de master (10 octobre 2026), la prochaine version publiée après 10.8.1-5436 : leur PinMAME transmet un octet par commande son sur les jeux 6803 (vpinball/pinmame#722) et leur libaltsound le prend seul (vpinball/libaltsound#20). La 10.8.1-5436 et les précédentes reçoivent chaque écriture du port 1 du jeu (la commande, puis son quartet haut) et les assemblent deux par deux."
     },
-    "unlogged": {
-      "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used, because AltSound does not receive this board's sound commands: the game reaches the board without going through PinMAME's sound command log.",
-      "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé, car AltSound ne reçoit pas les commandes son de cette carte : le jeu s'adresse à la carte sans passer par le journal des commandes son de PinMAME."
-    },
     "spinb": {
       "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used as written, because AltSound does not receive this board's sound commands: the Spinball and Inder machines write the board's latch directly (spinb.c soundbd_w, inder.c snd_w and snd2_w), without going through PinMAME's sound command log. Their pack plays in a PinMAME that includes the change that logs the byte written to the latch (docs/pinmame-patches, not upstream), which logs the pack's ids. Brave Team and Canasta '86 still do not: they make their sounds in the game's own code (their pack ids are the game's internal sound ids).",
       "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé tel quel, car AltSound ne reçoit pas les commandes son de cette carte : les machines Spinball et Inder écrivent directement le verrou de la carte (spinb.c soundbd_w, inder.c snd_w et snd2_w), sans passer par le journal des commandes son de PinMAME. Leur pack est joué par un PinMAME qui inclut le changement qui journalise l'octet écrit dans le verrou (docs/pinmame-patches, pas en amont), lequel transmet les identifiants du pack. Brave Team et Canasta '86 ne jouent toujours pas : ils font leurs sons dans le code du jeu lui-même (les identifiants de leur pack sont les identifiants internes des sons du jeu)."
@@ -36,6 +32,10 @@
       "state": "newer",
       "en": "The game itself plays with its sound in every VPinball. Its AltSound pack plays in VPinball builds that include PinMAME's change to log the sound the game starts (vpinball/pinmame#813, open at the time of writing), together with the pack's new_sound_commands = 1 key (vpinball/pinmame#810 and #811, vpinball/libaltsound#30, vpinball/vpinball#4348): the game makes its sounds itself and sends no sound command, so PinMAME now logs the id the game stores for its sound routine, which is the pack's id.",
       "fr": "Le jeu lui-même a bien son son dans tous les VPinball. Son pack AltSound est joué par les versions de VPinball qui incluent le changement de PinMAME qui journalise le son que le jeu lance (vpinball/pinmame#813, ouverte au moment de l'écriture), avec la clé new_sound_commands = 1 du pack (vpinball/pinmame#810 et #811, vpinball/libaltsound#30, vpinball/vpinball#4348) : le jeu fait ses sons lui-même sans envoyer de commande son, PinMAME journalise donc l'identifiant que le jeu range pour sa routine de son, qui est l'identifiant du pack."
+    },
+    "mrgame": {
+      "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used as written, because AltSound does not receive this board's sound commands: the 68000 writes the sound latch itself (mrgame.c sound_w), without going through PinMAME's sound command log, and on a fresh nvram the ROM does not even start without the hard reset answer. Their pack plays in a PinMAME that includes the two changes (docs/pinmame-patches 0012 and 0013, not upstream), which log the pack's ids.",
+      "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé tel quel, car AltSound ne reçoit pas les commandes son de cette carte : le 68000 écrit lui-même le verrou du son (mrgame.c sound_w), sans passer par le journal des commandes son de PinMAME, et sur une NVRAM vierge la ROM ne démarre même pas sans la réponse à la remise à zéro matérielle. Leur pack est joué par un PinMAME qui inclut les deux changements (docs/pinmame-patches 0012 et 0013, pas en amont), lesquels transmettent les identifiants du pack."
     }
   },
   "families": {
@@ -63,7 +63,7 @@
     "JOCTRONIC": "one_byte",
     "JVH": "one_byte",
     "JVH2": "one_byte",
-    "MRGAME": "unlogged",
+    "MRGAME": "mrgame",
     "NONE (Stern SAM)": "sam",
     "PLAY1": "one_byte",
     "PLAY2": "one_byte",

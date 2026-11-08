@@ -1,8 +1,9 @@
 # PinMAME changes for AltSound on the "raw" families
 
-Eleven small patches against PinMAME (`445b3cda`, the `rom2altsound-0.5` submodule head). Each one
+Thirteen small patches against PinMAME (`445b3cda`, the `rom2altsound-0.5` submodule head). Each one
 changes only what PinMAME logs as a sound command (`snd_cmd_log`, the bytes VPinball hands to
-AltSound), never what the sound board receives, so the emulated audio is unchanged. They are
+AltSound), never what the sound board receives, so the emulated audio is unchanged (patch 0012 is
+the one exception: it changes what the Mr. Game ROM is told at its first power up, see below). They are
 **not upstream**: no pull request has been opened. VPinball builds that include them are needed
 before these families play (see `docs/vpx_playback.json`, which describes the builds that exist).
 
@@ -19,11 +20,19 @@ before these families play (see `docs/vpx_playback.json`, which describes the bu
 | 0009 `play.c` | Playmatic Zira (PLAYZ) | the command lines (bits 4-6 of the lamp port) each time they take a non-idle value, as `10` `20` .. `70` (the game's `sndbrd_ctrl_w` was never logged) |
 | 0010 `spinb.c`, `inder.c` | Spinball (bushido, mach2, jolypark, vrnwrld, gunshot) and Inder (lapbylap to metalman) | the byte the game writes to the sound latch, once, when the latch changes to a value with bit 7 set (`00` releases it); Lap By Lap's NMI board: each write |
 | 0011 `zac.c` | Tecnoplay Scramble (TECHNO) | each command once, as the first byte of the pair of writes the game sends (`28 A8` -> `28`, `FE BE` -> `FE`), and nothing for the idle pair `3F BF` |
+| 0012 `mrgame.c` | Mr. Game (dakar, motrshow, macattck, wcup90), first start | not a log change: with no nvram file the ROM finds a bad CMOS checksum and loops in an error state unless the operator switch CPU SW1-1 is read "off" (hard reset) on its first read; the first read now answers "off", as an operator would, so the game starts instead of showing no lamp and no solenoid |
+| 0013 `mrgame.c` | Mr. Game (MRGAME) | the 7 low bits the game writes to the sound latch while bit 7 is cleared, once per command, on the edge that fires the sound CPUs' NMI (`sndbrd_data_w` is never called on this board) |
 
-All eleven apply together (`git am`, no conflict) and the result builds as `libpinmame`.
+All thirteen apply together (`git am`, no conflict) and the result builds as `libpinmame`.
 
 ## Measured in VPinball 10.8.1-6577 (Docker bench, table script driving the game)
 
+- **Mr. Game** (`motrshow`, patches 0012 and 0013; real table "JP's Motor Show", Docker bench, coin, start and flippers
+  by keystrokes, the table's own script otherwise): without patch 0012 no game of the family leaves its error loop on a
+  fresh nvram (`dakar` and `motrshow` show no lamp and no solenoid, in PinMAME 3.6 as in master; with it the lamps and
+  solenoids run). With both patches AltSound made 57 lookups in one game, 56 found (11 distinct ids: `15`, `55`,
+  `14`, `71`, `56`, `48`, `0F`, `0E`, `72`, `16`, `08`, `03`) and one miss, `6F`, an id the pack has no sound for.
+  Command ids seen in the PinMAME harness: `dakar` `72` `12` `08` `73`, `macattck` `6F` `13`.
 - **Playmatic Cerberus**: 349 000 lookups and none found, then 74 of 74 non-idle lookups found.
 - **Game Plan MSU-3** (Andromeda): `0C`, `07`, `08`, `09`, `01`, `06` found; `04` is a silent row.
 - **Hankin**: `empsback`, `fjholden`, `shark`, `howzat` play and look up clean nibbles (9 to 11

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Mr. Game (dakar, motrshow, macattck, wcup90): the games start and the pack is looked up in
+  VPinball, with two PinMAME patches.** Patch 0012 (`mrgame.c`, not upstream): with no nvram file
+  the ROM finds a bad CMOS checksum and loops in an error state (display code `1E`, waiting for
+  Start) unless the operator switch CPU SW1-1 is read "off" on its first read, the hard reset; the
+  first read now answers it, so `dakar` and `motrshow`, which showed no lamp and no solenoid in
+  PinMAME 3.6 and in master alike, start from a fresh nvram. Patch 0013 logs the command the 68000
+  writes to the sound latch (7 low bits, once, on the edge that fires the NMI). Measured on the
+  real "JP's Motor Show" table in the VPinball bench: 56 lookups found in one game, one miss
+  (`6F`, no sound in the pack). `docs/vpx_playback.json`: MRGAME has its own reason, the unused
+  `unlogged` one is gone.
+
 - **Orbit 1 and Winter Sports measured in VPinball (no code change).** Scripted bench, shell
   tables, 10.8.1-6577 with the patched PinMAME: Orbit 1 (Hankin, patch 0002) 52 lookups found,
   only the row-less nibble `0000` failed, 9 of its 12 rows reached; Winter Sports and its

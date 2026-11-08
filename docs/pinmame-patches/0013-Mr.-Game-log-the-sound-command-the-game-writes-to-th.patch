@@ -1,0 +1,51 @@
+From 4f0b2a198752b32afc5c46b2d9cc0797a70b7da7 Mon Sep 17 00:00:00 2001
+From: Le-Syl21 <sylvain.gargasson@gmail.com>
+Date: Sun, 8 Nov 2026 07:30:13 +0000
+Subject: [PATCH] Mr. Game: log the sound command the game writes to the latch
+
+The 68000 writes the sound latch itself (sound_w, a 16-bit handler in its
+memory map), three writes per command with bit 7 set, cleared, set; the
+interface has no data handler, so sndbrd_data_w and snd_cmd_log were never
+called and AltSound received nothing for dakar, motrshow, macattck or wcup90.
+
+Log the command, the 7 low bits written while bit 7 was cleared, once, on the
+cleared-to-set edge that also fires the sound CPUs' NMI. Only what snd_cmd_log
+gets changes: the latch and the NMI are as before, so the emulated audio is
+unchanged.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01ENsGGxgZ7pU5Z87YfBS2iY
+---
+ src/wpc/mrgame.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/wpc/mrgame.c b/src/wpc/mrgame.c
+index 8839ff25..f49d2a7b 100644
+--- a/src/wpc/mrgame.c
++++ b/src/wpc/mrgame.c
+@@ -50,6 +50,7 @@
+ #include "core.h"
+ #include "sim.h"
+ #include "sndbrd.h"
++#include "snd_cmd.h"
+ #include "mrgame.h"
+ 
+ //use this to comment out video and sound cpu for quicker debugging of main cpu
+@@ -292,8 +293,13 @@ static WRITE16_HANDLER(sound_w) {
+ 
+ 	//Main CPU sends 3 commands, Bit 7 set->cleared->set
+ 	//We'll trigger the NMI on the cleared->set transition
+-	if(!locals.sndstb && GET_BIT7)
++	if(!locals.sndstb && GET_BIT7) {
++		// The game writes the latch itself (sndbrd_data_w is never called), so tell AltSound:
++		// the command is the 7 low bits held while bit 7 was cleared. Logged on the strobe edge,
++		// once per command. The sound CPUs are untouched.
++		snd_cmd_log(0, locals.sndcmd & 0x7f);
+ 		snd_nmi(0);
++	}
+ 	locals.sndstb = GET_BIT7;
+ }
+ 
+-- 
+2.43.0
+

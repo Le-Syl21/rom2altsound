@@ -276,12 +276,17 @@ Cup '90 (`wcup90`)
 - **Sound list**: raw sweep `01`..`FF`: `80`..`FF` are the same commands as `00`..`7F`
   (bit 7 is the strobe): the twin test pairs them.
 - **Loops**: audio, sequencer state (Z80 RAM).
-- **Measured**: `dakar`, 26 of 40 ([board support](../board-support.md)).
-- **Limits**: only the quick survey; the sweep could stop at `7F`.
-- **In VPinball**: **the pack cannot play**: the game's writes go to `sound_w`, never
-  through `sndbrd_data_w`, so AltSound receives nothing, and `GEN_MRGAME` has no
-  libaltsound case. dakar sent no command to `sound_w` either in 100 s of attract mode
-  with coins and start, so a logging change could not be checked.
+- **Measured**: `dakar`, 26 of 40 ([board support](../board-support.md)); `motrshow` 77 sounds, 7 loops,
+  `macattck` 72 sounds, 5 loops, 2 twins (full extractions, about 16 to 18 minutes each).
+- **Limits**: the sweep could stop at `7F`. A pack file is named after the 7 low bits.
+- **First start**: with no nvram file the game does not leave its error loop (no lamp, no solenoid, in PinMAME 3.6
+  as in master) unless the operator switch CPU SW1-1 is read "off" on its first read, to hard-reset the CMOS;
+  [patch 0012](../pinmame-patches/README.md) answers it. `dakar`, `motrshow`, `macattck` and `wcup90` then start
+  from a fresh nvram.
+- **In VPinball**: **the pack plays with patch 0013** (and 0012 on a fresh nvram), not in a PinMAME without them: the game's writes go to `sound_w`, never through
+  `sndbrd_data_w`, so AltSound received nothing; the patch logs the command (7 low bits, once, on the edge
+  that fires the NMI). Measured on `motrshow` in the VPinball bench (real table, 10.8.1-6577): 56 lookups found,
+  1 miss (`6F`, no sound in the pack); the ids are looked up as one byte per command (`0015`, `0055`...).
 
 ## <a name="sndbrd_jvh"></a>SNDBRD_JVH
 
