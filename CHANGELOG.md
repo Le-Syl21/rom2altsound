@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Capcom (CAPCOMS): the pack is looked up in VPinball, with a PinMAME patch.** The game's 68306
+  sends its sound messages over a serial line straight to the board (`send_data_to_8752`), so the
+  sound command log never saw them. Patch XXXX (`capcoms.c`, not upstream) logs the sample number of
+  each `DA 04 07 vv nnnn` (`06` loops), which is the pack's id. Measured in VPinball 10.8.1-6577
+  with scripted switches: Pinball Magic 64 lookups (33 ids), Big Bang Bar 95 (56), Breakshot 194
+  (41), Flipper Football 109 (33), Airborne 98 (46), all found, none failed; Kingpin plays too little
+  from switches alone. `docs/vpx_playback.json`: `CAPCOMS` is `raw` (plays only with the patch).
+  Not verified: the audio itself. The family notes also record that a table script's coin and
+  start are switches `1` and `7`, not `91`/`97`.
 - **World Cup and Disco Fever (System 3): one PinMAME patch for both, measured in VPinball.**
   Both boards start their sound program on a rising edge of CB1, from the data lines or from
   the control line (solenoid 7 on World Cup raises it with no data write at all), and decide
