@@ -36,10 +36,6 @@
       "state": "newer",
       "en": "The game itself plays with its sound in every VPinball. Its AltSound pack plays in VPinball builds that include PinMAME's change to log the sound the game starts (vpinball/pinmame#813, open at the time of writing), together with the pack's new_sound_commands = 1 key (vpinball/pinmame#810 and #811, vpinball/libaltsound#30, vpinball/vpinball#4348): the game makes its sounds itself and sends no sound command, so PinMAME now logs the id the game stores for its sound routine, which is the pack's id.",
       "fr": "Le jeu lui-même a bien son son dans tous les VPinball. Son pack AltSound est joué par les versions de VPinball qui incluent le changement de PinMAME qui journalise le son que le jeu lance (vpinball/pinmame#813, ouverte au moment de l'écriture), avec la clé new_sound_commands = 1 du pack (vpinball/pinmame#810 et #811, vpinball/libaltsound#30, vpinball/vpinball#4348) : le jeu fait ses sons lui-même sans envoyer de commande son, PinMAME journalise donc l'identifiant que le jeu range pour sa routine de son, qui est l'identifiant du pack."
-    },
-    "partial": {
-      "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used as written: VPinball builds from master commit 3abe805 on take this board's bytes one at a time, but what the game makes PinMAME log matches the pack's ids only in part (extra writes, or a command logged in two forms; see the family's notes). 10.8.1-5436 and older pair the bytes.",
-      "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé tel quel : les versions de VPinball à partir du commit 3abe805 de master prennent les octets de cette carte un à un, mais ce que le jeu fait transmettre par PinMAME ne correspond qu'en partie aux identifiants du pack (écritures en plus, ou une commande transmise sous deux formes ; voir les notes de la famille). La 10.8.1-5436 et les précédentes assemblent les octets deux par deux."
     }
   },
   "families": {
@@ -91,7 +87,7 @@
     "TAITO_SINTETIZADORPP": "one_byte",
     "TAITO_SINTEVOX": "one_byte",
     "TAITO_SINTEVOXPP": "one_byte",
-    "TECHNO": "partial",
+    "TECHNO": "raw",
     "TECNOPLAY": "one_byte",
     "ZAC11178": "one_byte",
     "ZAC11178_13181": "one_byte",

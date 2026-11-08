@@ -577,13 +577,22 @@ Tecnoplay Scramble board (two 6502 + TMS7000, System 80B-like) · PinMAME interf
   sweep as above.
 - **Limits**: only the quick survey; a byte and the same byte with bit 7 changed may be
   the same command.
-- **In VPinball**: **the pack does not play as written, in any VPinball so far**: `zac.c` `data_port_w` logs each command twice, with and without the strobe bit (`28`, `A8`), both pack rows; and up to 10.8.1-5436 libaltsound has no case for
-  `GEN_ZAC2` and joins the bytes two by two ([In VPinball](common.md#in-vpinball)).
-  Measured on `scram_tp`: the game sent `3F BF 28 A8 28 A8`, AltSound looked up `3FBF 28A8
-  28A8`; with one byte per command
-  ([vpinball/libaltsound#20](https://github.com/vpinball/libaltsound/pull/20), in VPinball master from 3abe805) it
-  looks up `003F 00BF 0028 00A8`. The game writes each command twice, with and
-  without the strobe bit.
+- **In VPinball**: **the pack plays with PinMAME patch `XXXX`** ([PinMAME changes](../pinmame-patches/README.md),
+  not upstream); without it, as written, no VPinball plays it. The game (`zac.c` `data_port_w`)
+  writes every command as a pair of bytes about 0.1 ms apart with the same low five bits, `28 A8`,
+  or `FE BE` for a TMS7000 sample, and `3F BF` between commands as an idle frame; the board takes
+  both writes (both 6502s read the latch at each, the TMS7000 reads it once, after the first, which
+  alone raises its INT1). PinMAME logged every write, so AltSound looked up each command in two
+  forms and the idle ids `003F` `00BF` (no row). Measured on `scram_tp` in 10.8.1-6577 (table
+  script closing the switches 9 to 64, coin, start, plunger, flippers): 43 lookups, 34 found, 9
+  missed (`003F` `00BF`); and, as before, up to 10.8.1-5436 libaltsound has no case for `GEN_ZAC2`
+  and joins the bytes two by two ([In VPinball](common.md#in-vpinball)). The patch logs a pair
+  once, as its first byte, and nothing for the idle pair: 20 lookups, 20 found, none missed, ids
+  `0028` `002D` `00FE` `0027` `001D` `0036` `0038` `0031` `002C` `0029` (a command the game
+  sends twice, as `28 A8 28 A8` at boot, is two lookups: the board takes it twice). The pack needs
+  no alias row: it has a row for each byte the tool swept (237), and the first byte of a pair has
+  the row of what the board plays (`00FE` is the TMS7000 sample with the 6502 sound, `00BE` alone
+  would miss the sample). Not checked: the audio itself.
 
 ## <a name="sndbrd_tecnoplay"></a>SNDBRD_TECNOPLAY
 

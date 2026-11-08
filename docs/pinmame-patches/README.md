@@ -1,6 +1,6 @@
 # PinMAME changes for AltSound on the "raw" families
 
-Seven small patches against PinMAME (`445b3cda`, the `rom2altsound-0.5` submodule head). Each one
+Eight small patches against PinMAME (`445b3cda`, the `rom2altsound-0.5` submodule head). Each one
 changes only what PinMAME logs as a sound command (`snd_cmd_log`, the bytes VPinball hands to
 AltSound), never what the sound board receives, so the emulated audio is unchanged. They are
 **not upstream**: no pull request has been opened. VPinball builds that include them are needed
@@ -15,8 +15,9 @@ before these families play (see `docs/vpx_playback.json`, which describes the bu
 | 0005 `play.c` | Playmatic Cerberus (PLAY3) | the pair of 3-bit values the board reads, as one byte |
 | 0006 `zac.c` | Zaccaria 1311 (ZAC1311) | the set of the four tone lines (solenoids 21-24) that are on, as one byte, `00` = all off |
 | 0007 `wmssnd.c` | Williams System 3 World Cup (S3WCS) and Disco Fever (S3DFS) | the id of the sound the board's program starts at each CB1 edge, from the data lines or the control line, following its flag and Sound Dip 2 (`0x10` `0x4050`..`0x405E` `0x50`..`0x5E` `0x80`; `0x0E`.. `0x40`..`0x4E` `0x800E`..) |
+| XXXX `zac.c` | Tecnoplay Scramble (TECHNO) | each command once, as the first byte of the pair of writes the game sends (`28 A8` -> `28`, `FE BE` -> `FE`), and nothing for the idle pair `3F BF` |
 
-All seven apply together (`git am`, no conflict) and the result builds as `libpinmame`.
+All eight apply together (`git am`, no conflict) and the result builds as `libpinmame`.
 
 ## Measured in VPinball 10.8.1-6577 (Docker bench, table script driving the game)
 
@@ -42,5 +43,14 @@ All seven apply together (`git am`, no conflict) and the result builds as `libpi
   missed in either; before, no row ever matched. Beyond the game sessions, the tool's sweep with the
   patched PinMAME logs, for each of the 16 and 24 sounds it records (DIP off), exactly that sound's
   pack id.
+
+- **Tecnoplay Scramble** (`scram_tp`, patch XXXX; table script closing the switches 9 to 64 once, plus
+  coin, start, plunger and flippers): before, every command was looked up as its two writes in two
+  forms (`0028` `00A8` `0028` `00A8` for a command the game sends twice, `00FE` `00BE`) plus the idle
+  pair `003F` `00BF`: 43 lookups, 34 found, 9 missed (the idle ids, which have no row). After: 20
+  lookups, 20 found, none missed, ids `0028` `002D` `00FE` `0027` `001D` `0036` `0038` `0031` `002C`
+  `0029` (a command the game sends twice is two lookups, as the board takes it twice). The pack
+  needed no change: it already has a row for each byte, and the first byte of a pair has the row of
+  the sound the board plays (`FE` is the TMS7000 sample).
 
 Not checked: the audio itself (the bench has no listening path), the ids no game session reached.
