@@ -1,4 +1,4 @@
 [submodule "vendor/pinmame"]
 	path = vendor/pinmame
 	url = https://github.com/Le-Syl21/pinmame.git
-	branch = rom2altsound-0.5
+	branch = rom2altsound-0.6

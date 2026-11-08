@@ -7,6 +7,8 @@ the one exception: it changes what the Mr. Game ROM is told at its first power u
 **not upstream**: no pull request has been opened. VPinball builds that include them are needed
 before these families play (see `docs/vpx_playback.json`, which describes the builds that exist).
 
+The submodule `vendor/pinmame` (branch `rom2altsound-0.6` of Le-Syl21/pinmame) now has these 13 patches applied on `445b3cda`, until they are merged upstream; the extraction is unchanged (same base). A second branch, `rom2altsound-master-patched`, has the same patches on PinMAME master for a later bump.
+
 | Patch | Family | What PinMAME logs after it |
 |---|---|---|
 | 0001 `gp.c` | Game Plan MSU-3 | one byte per command, assembled from the nibbles the board shifts in |
