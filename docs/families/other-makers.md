@@ -220,16 +220,23 @@ an NMI), `"INDER0"` and `"INDER1"` (no board: the game's SN76489 or AY8910)
 - **Measured** (survey settings): brvteam 16 of 16 (15 files, 1 blip; `1C8C` is a sound
   whose notes are volume-off bytes), canasta 15 of 16 (`1D30` is the game's silencing
   script: volumes 0), all from silence; the free play clones the same.
-- **In VPinball**: no command reaches AltSound (none exists); the packs are a recording
-  of the game's sounds, keyed by their internal ids. **No PinMAME change was written for
-  them**: the id is the ROM address of the descriptor (Brave Team, `LD HL,desc` before
-  `CALL 1617`) or of the script (Canasta '86, the operand of `LD HL` before `CALL 16FB` or
-  `CALL 173A`), the game's own code starts the sound and nothing in the driver sees the
-  address; a patch would have to watch the game CPU's program counter at those routines
-  and read a register, per game and per set: reverse engineering of each program rather
-  than a change to how the driver handles a sound board. The writes that do reach the driver are the sound chip's registers (SN76489 at
-  `4B00`, AY8910 at `4B00`/`4B02`), a stream of notes, not a command. Treated as
-  infeasible for now.
+- **In VPinball**: **the pack plays with PinMAME master** (vpinball/pinmame#813, merged
+  2026-11-05; no patch needed). No command exists on these machines, so `inder.c`
+  (`inder_findSounds`) finds the sound routines in the program by their code (Brave Team:
+  `PUSH HL; PUSH BC; CALL silence; ... LD (voice pointer),DE` at `1617`; Canasta '86: the
+  effect routine at `16FB` and the music routine at `173A`, each ending with the store of
+  `HL`) and puts a write handler on the pointer they store. A write made by code inside one
+  of those routines is a command and is logged as the pack's id (Brave Team: the descriptor
+  address, the pointer plus 11; Canasta: the script address); the timer interrupt advancing
+  the same pointer is not. **Measured** (Docker bench, VPinball 10.8.1-6577 with libpinmame
+  built from PinMAME master 1e0703dd, the real tables with the pack made by rom2altsound,
+  coins, Start and a ball played): `canasta` 76 lookups, 76 found, 0 failed, on 11 ids
+  (`1E8D` 22 times, `1EA6` 16, `1C02` 10, `1BD8` 8, `1B10` 5, `1C2C` 4, `1B67` 4, `1B3D` 3,
+  `1BB5` 2, `1EB3`, `1D3D`); `brvteam` 97 lookups, 97 found, 0 failed, on 10 ids (`17B8` 25,
+  `1FB6` 22, `18E4` 22, `1F0A` 13, `1E5E` 7, `198C` 3, `1938` 2, `1DDA`, `1B6C`, `1A34`). The
+  audio itself was not listened to. The detection is by code pattern, so a set whose routines
+  differ from these (only the sets in the driver were tried: `brvteam`, `canasta`) is not
+  found and logs nothing.
 
 ## <a name="sndbrd_nuova"></a>SNDBRD_NUOVA
 

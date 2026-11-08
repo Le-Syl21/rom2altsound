@@ -283,8 +283,8 @@ commands. This holds for the families where a command reaches AltSound at all:
 not on the game-driven boards (below), SAM, Pinball 2000, Capcom, Mr. Game, Playmatic's
 last board and Romstar, and for Spinball and Inder without PinMAME patch 0010 (the game writes
 the latch itself, `spinb.c` `soundbd_w`, `inder.c` `snd_w`, `snd2_w`; with the patch the byte
-written is logged and is the pack's id, measured in 10.8.1-6577, except Brave Team and
-Canasta '86, whose game code makes the sounds). Nor where
+written is logged and is the pack's id, measured in 10.8.1-6577; Brave Team and Canasta '86,
+whose game code makes the sounds, play in PinMAME master since #813). Nor where
 what the game makes PinMAME log is not the byte the pack is keyed by: Baby Pac-Man and Game Plan's
 MSU-3 (nibbles), Playmatic's third board (Cerberus: the 3-bit values of every lamp write, strobe not logged, measured in 10.8.1-6577), Tabart's L'Hexagone (line and chime state, measured in VPinball 10.8.1-6577: it looks up `0050`, `0010` and `0058`, never a switch id), Stern SB-300 with its
 Vocalizer (the speech goes through the unlogged `sndbrd_ctrl_w`) and Hankin (every write of the solenoid lines is
