@@ -469,8 +469,9 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
    looped where the game loops it. The files are at the factory volume, read in the
    DAC, where the game writes the operator's volume setting (AC/DC: `E8`, played by
    PinMAME at -1.8 dB; -11.5 dB by the DAC's datasheet) (verified: the coin door's volume buttons move it 1 dB per press, and the game
-   writes the new value at its next power-up). **The pack does not play in VPinball
-   today**: SAM sends no sound command, so PinMAME has nothing to hand to AltSound.
+   writes the new value at its next power-up). **The pack plays in VPinball
+   with the PinMAME change [0014](docs/pinmame-patches/README.md)** (not upstream): SAM sends no sound command,
+   so PinMAME logs the number the game passes to its sound-call routine, which is the pack's id.
 8. Recorded at `79 0C F3`, level 12, the game's own factory volume (the master volume runs
    from `00` to `1F`, the board ignores `20` and above), the loudest level at which no
    file of The Addams Family or Twilight Zone clips. The board's DAC is AC-coupled, as on

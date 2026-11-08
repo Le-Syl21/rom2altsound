@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Stern SAM: the packs play in VPinball, with one PinMAME patch (0014, not upstream).** SAM
+  games play their sounds in their own code, so nothing reached AltSound. Patch 0014 finds, at
+  machine init, the routine that plays a sound call (the indexing of the call table, under a
+  prologue saving six registers or more: one routine in each of the 393 SAM images of the
+  collection), has the AT91 core call back at its first instruction, and logs R0, the call id,
+  which is the id of the pack's rows. Measured on real tables in the VPinball bench (coin, start,
+  flippers): AC/DC 137 lookups, CSI 91, Big Buck Hunter 82, Family Guy 67, Pirates 83, World Poker
+  Tour 29, Wheel of Fortune 222, Shrek 29, Indiana Jones 148, NBA 78, every one found; the four
+  firmware generations are covered. The Simpsons Kooky Carnival is a redemption machine with no
+  game to start. `docs/pinmame-patches`: 0014; the notes of the SAM packs no longer say they
+  cannot play.
+- **Brave Team and Canasta '86 need no patch**: PinMAME master (#813) logs the pointer their
+  sound routines store. Measured in the bench with the real tables: 97 and 76 lookups, all found.
 - **Mr. Game (dakar, motrshow, macattck, wcup90): the games start and the pack is looked up in
   VPinball, with two PinMAME patches.** Patch 0012 (`mrgame.c`, not upstream): with no nvram file
   the ROM finds a bad CMOS checksum and loops in an error state (display code `1E`, waiting for

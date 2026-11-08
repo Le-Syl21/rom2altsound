@@ -62,7 +62,8 @@ Supported boards: Williams/Bally DCS, Pinball 2000 (DCS2), WPC (WPC89/WPCS), Sys
 (BSMT), Sega/Stern Whitestar, Bally Cheap Squeak / Turbo Cheap Squeak and the
 early Bally boards (Sounds Plus -51/-56, Squawk & Talk -61). Stern SAM has no sound board: its sounds are read from the ROM image (every sound, every
 song as one file, at full scale); its AltSound files, keyed by the game's sound
-calls, do not play in PinMAME today (SAM sends no sound command). The boards that
+calls, play in a PinMAME with the change that logs the game's sound call (SAM sends no sound
+command; docs/pinmame-patches 0014, not upstream). The boards that
 take no sound command (Stern SB-300, Atari, Romstar's Goofy Hoops) are game-driven:
 the game, left running, is asked for each of its sounds as its own code does; their
 files are keyed by the game's internal sound ids and do not play in VPinball.

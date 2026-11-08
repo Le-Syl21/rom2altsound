@@ -1,0 +1,153 @@
+From 773cde6cb9ba09f1f1ed0c14d2cffb8b39d0f03d Mon Sep 17 00:00:00 2001
+From: Le-Syl21 <sylvain.gargasson@gmail.com>
+Date: Sun, 8 Nov 2026 16:08:37 +0000
+Subject: [PATCH] Stern SAM: log the sound call the game plays
+
+The SAM programs mix every voice themselves and nothing goes through the sound
+command log, so AltSound never got anything from a SAM machine. The game plays
+a sound by calling one routine with the number of the sound call in R0, and
+that number is the record of the sound call table, which AltSound packs for SAM
+are keyed on.
+
+Find that routine in the program by its code at machine init (the indexing of
+the call table, under a prologue that saves six registers or more; an older
+routine with the same shape only counts the samples of a call), and ask the
+AT91 core to call back when the CPU is about to run its first instruction.
+The callback logs R0. The JIT leaves that address to the interpreter.
+
+Found in the 393 SAM sets of a full collection (one routine each, always in the
+first 1 MB). Only what snd_cmd_log gets changes, the emulated audio is the same.
+---
+ src/cpu/at91/at91.c | 18 +++++++++++++++--
+ src/cpu/at91/at91.h |  1 +
+ src/wpc/sam.c       | 48 +++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 65 insertions(+), 2 deletions(-)
+
+diff --git a/src/cpu/at91/at91.c b/src/cpu/at91/at91.c
+index bc390039..8dc0b611 100644
+--- a/src/cpu/at91/at91.c
++++ b/src/cpu/at91/at91.c
+@@ -140,11 +140,16 @@ static void timer_trigger_event(int timer_num);
+ #define CAPTURE_NUM_CYCLES	at91.prev_cycles = cycles - ARM7_ICOUNT - at91.tot_prev_cycles;\
+ 							at91.tot_prev_cycles += at91.prev_cycles;
+ 
++// One address the driver wants to know about (see at91_set_pc_hook)
++static UINT32 at91_hook_pc;
++static void (*at91_hook_callback)(unsigned int r0);
++#define AT91_PC_HOOK	if (ARMREG(15) == at91_hook_pc && at91_hook_pc) at91_hook_callback(ARMREG(0));
++
+ #if !USE_MAME_TIMERS
+-	#define BEFORE_OPCODE_EXEC_HOOK	BeforeOpCodeHook();
++	#define BEFORE_OPCODE_EXEC_HOOK	AT91_PC_HOOK BeforeOpCodeHook();
+ 	#define AFTER_OPCODE_EXEC_HOOK
+ #else
+-	#define BEFORE_OPCODE_EXEC_HOOK
++	#define BEFORE_OPCODE_EXEC_HOOK	AT91_PC_HOOK
+ 	#define AFTER_OPCODE_EXEC_HOOK
+ #endif
+ 
+@@ -304,6 +309,15 @@ void at91_init_jit(int min_addr, int max_addr)
+ #endif
+ }
+ 
++// Call `callback` with R0 each time the CPU is about to run the instruction at `pc`, before it
++// runs. With the JIT on, the driver has to exclude that address from translation
++// (at91_add_jit_exclude) so the interpreter sees it.
++void at91_set_pc_hook(unsigned int pc, void (*callback)(unsigned int r0))
++{
++	at91_hook_pc = pc;
++	at91_hook_callback = callback;
++}
++
+ // DEBUG: asmjit JIT exclusion list -- interpret the added [lo, hi) regions even
+ // inside the JIT range. Debug aid to JIT everything EXCEPT one or more suspect regions
+ void at91_clear_jit_exclude(void)
+diff --git a/src/cpu/at91/at91.h b/src/cpu/at91/at91.h
+index 5716a9d2..c3a3ad6b 100644
+--- a/src/cpu/at91/at91.h
++++ b/src/cpu/at91/at91.h
+@@ -86,6 +86,7 @@ extern void at91_set_ram_pointers(data32_t *reset_ram_ptr, data32_t *page0_ram_p
+ extern void at91_init_jit(int min_addr, int max_addr);
+ extern void at91_clear_jit_exclude(void);          /* debug: clear the JIT exclusion list */
+ extern void at91_add_jit_exclude(int lo, int hi);  /* debug: interpret [lo,hi) even inside the JIT range */
++extern void at91_set_pc_hook(unsigned int pc, void (*callback)(unsigned int r0)); /* call back when the CPU is about to run the instruction at pc (0: off), with R0 */
+ extern void at91_cs_callback_r(offs_t start, offs_t end, READ32_HANDLER((*callback)));
+ extern void at91_cs_callback_w(offs_t start, offs_t end, WRITE32_HANDLER((*callback)));
+ extern void at91_ready_irq_callback_w(WRITE32_HANDLER((*callback)));
+diff --git a/src/wpc/sam.c b/src/wpc/sam.c
+index 5369b1d5..3f057430 100644
+--- a/src/wpc/sam.c
++++ b/src/wpc/sam.c
+@@ -33,6 +33,7 @@
+ #include <stdlib.h> // strtoul()
+ #include "driver.h"
+ #include "core.h"
++#include "snd_cmd.h"
+ #include "sim.h"
+ #include "vpintf.h"
+ #include "video.h"
+@@ -1330,7 +1331,52 @@ static PORT_WRITE32_START(sam_writeport)
+ 	{ 0x00,0xFF, sam_port_w },
+ PORT_END
+ 
++/* The game plays a sound by calling one routine with the number of the sound call in R0; the call
++   table (20 byte records, the number is the record) tells which samples that call picks from.
++   Nothing else in the machine carries that number: the ARM mixes every voice itself and only
++   the finished stereo stream reaches PinMAME. So the routine is found in the program by its
++   code, in the 1 MB that is copied to address 0 and runs from there: it checks R0 against the
++   number of calls, then indexes the table with the sequence
++
++     ADD Rd, R0, R0, LSL #2   ;  ADD Rx, Rbase, Rd, LSL #2   ;  LDR Ry, [Rx, #8]
++
++   (an older routine of the same shape only counts the samples of a call, and saves fewer
++   registers). Of every SAM program tried, the one with this sequence under a prologue that
++   pushes six registers or more is the routine that plays the call. */
++static void sam_soundCall(unsigned int r0) {
++	snd_cmd_log(0, r0 & 0xffff);
++}
++
++static UINT32 sam_findSoundCall(void) {
++	const UINT8 *rom = memory_region(REGION_USER1);
++	UINT32 i, j;
++	if (!rom) return 0;
++	for (i = 0; i + 12 <= 0x100000; i += 4) {
++		UINT32 a = rom[i] | (rom[i+1] << 8) | (rom[i+2] << 16) | ((UINT32)rom[i+3] << 24);
++		UINT32 b, c, rd, rx;
++		if ((a & 0xFFFF0FFF) != 0xE0800100) continue;            /* ADD Rd, R0, R0, LSL #2 */
++		rd = (a >> 12) & 0xF;
++		b = rom[i+4] | (rom[i+5] << 8) | (rom[i+6] << 16) | ((UINT32)rom[i+7] << 24);
++		if ((b & 0xFFF00FF0) != 0xE0800100 || (b & 0xF) != rd) continue; /* ADD Rx, Rbase, Rd, LSL #2 */
++		rx = (b >> 12) & 0xF;
++		c = rom[i+8] | (rom[i+9] << 8) | (rom[i+10] << 16) | ((UINT32)rom[i+11] << 24);
++		if ((c & 0xFFF00FFF) != 0xE5900008 || ((c >> 16) & 0xF) != rx) continue; /* LDR Ry, [Rx, #8] */
++		for (j = i; j > 0 && i - j < 400 * 4; j -= 4) {          /* back to STMFD SP!, {..., LR} */
++			UINT32 w = rom[j] | (rom[j+1] << 8) | (rom[j+2] << 16) | ((UINT32)rom[j+3] << 24);
++			if ((w & 0xFFFF4000) == 0xE92D4000) {
++				int n = 0, k;
++				for (k = 0; k < 13; k++) n += (w >> k) & 1;
++				if (n >= 6) return j;
++				break;
++			}
++		}
++	}
++	return 0;
++}
++
+ static MACHINE_INIT(sam) {
++	UINT32 soundCall = sam_findSoundCall();
++	at91_set_pc_hook(soundCall, sam_soundCall);
+ 	at91_set_ram_pointers(sam_reset_ram, sam_page0_ram);
+ 	at91_set_transmit_serial(sam_nodebus_transmit);
+ #ifdef SAM_USE_JIT
+@@ -1343,6 +1389,8 @@ static MACHINE_INIT(sam) {
+ 		// range, to JIT everything EXCEPT one or more suspect regions. Sources: the single
+ 		// at91jitxlo/xhi pair, plus a hex "lo-hi,lo-hi,..." list in at91jitexcl
+ 		at91_clear_jit_exclude();
++		if (soundCall)
++			at91_add_jit_exclude((int)(soundCall & ~0xf), (int)((soundCall & ~0xf) + 0x20)); // the interpreter has to see its first instruction
+ 		if ((int)options.at91jitxlo != (int)options.at91jitxhi)
+ 			at91_add_jit_exclude((int)options.at91jitxlo, (int)options.at91jitxhi);
+ 		{
+-- 
+2.43.0
+

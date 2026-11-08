@@ -1704,7 +1704,8 @@ Two rounds before:
   AltSound the raw writes of the lines the game shares with its solenoids, see "Per
   family"); only one program per board was tried (vikingb, xenon, eballdlx), and the
   -32/-50 not at all.
-- **Stern SAM**: the AltSound files do not play in PinMAME (no sound command); the scripts'
+- **Stern SAM**: the AltSound files play in a PinMAME with change 0014 (not upstream; SAM sends no
+  sound command, the change logs the call id the game passes to its play routine); the scripts'
   volume ramps and the game's mixing are not reproduced; the factory volume is PinMAME's
   linear reading of the DAC register, about 10 dB louder than the datasheet's at `E8`;
   only acd_168h was checked.

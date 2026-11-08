@@ -16,7 +16,8 @@
 //!   (child process) writes the factory nvram, the warm boot from it logs the DAC writes
 //!   (shim hook).
 //! - AltSound: rows keyed by sound call id, one row per sample the call picks from. PinMAME
-//!   cannot play them today: SAM sends no sound command (no AltSound hook for SAM).
+//!   play in a PinMAME with change 0014 (docs/pinmame-patches, not upstream), which logs the call id
+//!   the game passes to its sound routine: SAM sends no sound command.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::{CString, c_int, c_void};
@@ -1041,7 +1042,7 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
         }
     }
     let referenced: BTreeSet<&String> = rows.iter().map(|r| &r.fname).collect();
-    let altsound_note = "PinMAME cannot play a SAM AltSound pack today: the SAM CPU mixes its sounds itself and sends no sound command, so PinMAME has no AltSound hook for SAM. altsound.csv / g-sound.csv are keyed by the game's sound call ids (sam.call_table) for editing and measurement, one row per sample a call picks from (language 0); they need a PinMAME change that reports the call ids to play.";
+    let altsound_note = "PinMAME plays a SAM AltSound pack only with the change that logs the game's sound call (docs/pinmame-patches 0014, not upstream): the SAM CPU mixes its sounds itself and sends no sound command. altsound.csv / g-sound.csv are keyed by the game's sound call ids (sam.call_table), one row per sample a call picks from (language 0).";
     let call_table = cat.calls.first().map(|c| {
         json!({
             "offset": format!("0x{:x}", c.off),
@@ -1248,7 +1249,7 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
     println!("    without loops:     {}", fmt(&once));
     if !cli.no_altsound {
         println!(
-            "  altsound: {} row(s) for {} call(s), {} file(s) referenced (not playable by PinMAME today: SAM sends no sound command)",
+            "  altsound: {} row(s) for {} call(s), {} file(s) referenced (played by a PinMAME with change 0014, not upstream: SAM sends no sound command)",
             rows.len(),
             cat.calls.iter().filter(|c| !c.samples.is_empty()).count(),
             referenced.len()
@@ -1260,8 +1261,8 @@ pub fn run(cli: &Cli, job: &Job, vpm: &Path) -> Result<(), String> {
 /// The plain altsound.ini, with a SAM note on top.
 fn sam_ini() -> String {
     format!(
-        "; Stern SAM: PinMAME cannot play this pack today (SAM sends no sound command).\n\
-         ; The IDs are the game's sound call ids, for editing and measurement.\n{}",
+        "; Stern SAM: this pack plays in a PinMAME with change 0014 (not upstream), which logs the game's sound call.\n\
+         ; The IDs are the game's sound call ids.\n{}",
         altsound::altsound_ini()
     )
 }

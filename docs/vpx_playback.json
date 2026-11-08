@@ -3,8 +3,8 @@
   "newer_than": "10.8.1-5436",
   "reasons": {
     "sam": {
-      "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used, because AltSound does not receive this board's sound commands today: SAM games play their calls in their own code.",
-      "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé, car AltSound ne reçoit pas aujourd'hui les commandes son de cette carte : les jeux SAM jouent leurs appels dans leur propre code."
+      "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used as written, because AltSound does not receive this board's sound commands: SAM games play their calls in their own code. Their pack plays in a PinMAME that includes the change that logs the call id the game passes to its sound routine (docs/pinmame-patches 0014, not upstream), which is the pack's id.",
+      "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé tel quel, car AltSound ne reçoit pas les commandes son de cette carte : les jeux SAM jouent leurs appels dans leur propre code. Leur pack est joué par un PinMAME qui inclut le changement qui journalise l'identifiant d'appel que le jeu passe à sa routine de son (docs/pinmame-patches 0014, pas en amont), lequel est l'identifiant du pack."
     },
     "p2k": {
       "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used, because AltSound does not receive this board's sound commands today: Pinball 2000's requests go from the PC to the board outside PinMAME's sound command path.",

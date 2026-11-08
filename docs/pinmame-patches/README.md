@@ -1,6 +1,6 @@
 # PinMAME changes for AltSound on the "raw" families
 
-Thirteen small patches against PinMAME (`445b3cda`, the `rom2altsound-0.5` submodule head). Each one
+Fourteen small patches against PinMAME (`445b3cda`, the `rom2altsound-0.5` submodule head). Each one
 changes only what PinMAME logs as a sound command (`snd_cmd_log`, the bytes VPinball hands to
 AltSound), never what the sound board receives, so the emulated audio is unchanged (patch 0012 is
 the one exception: it changes what the Mr. Game ROM is told at its first power up, see below). They are
@@ -24,8 +24,9 @@ The submodule `vendor/pinmame` (branch `rom2altsound-0.6` of Le-Syl21/pinmame) n
 | 0011 `zac.c` | Tecnoplay Scramble (TECHNO) | each command once, as the first byte of the pair of writes the game sends (`28 A8` -> `28`, `FE BE` -> `FE`), and nothing for the idle pair `3F BF` |
 | 0012 `mrgame.c` | Mr. Game (dakar, motrshow, macattck, wcup90), first start | not a log change: with no nvram file the ROM finds a bad CMOS checksum and loops in an error state unless the operator switch CPU SW1-1 is read "off" (hard reset) on its first read; the first read now answers "off", as an operator would, so the game starts instead of showing no lamp and no solenoid |
 | 0013 `mrgame.c` | Mr. Game (MRGAME) | the 7 low bits the game writes to the sound latch while bit 7 is cleared, once per command, on the edge that fires the sound CPUs' NMI (`sndbrd_data_w` is never called on this board) |
+| 0014 `sam.c`, `at91.c` | Stern SAM (every SAM game) | the sound call the game plays: the routine that plays a call is found in the program by its code (the indexing of the sound call table, under a prologue that saves six registers or more; one routine in each of the 393 images tried), the AT91 core calls back when it is about to run its first instruction, and R0 (the call id, the record of the table, which is the pack's id) is logged. The emulated audio is untouched |
 
-All thirteen apply together (`git am`, no conflict) and the result builds as `libpinmame`.
+All fourteen apply together (`git am`, no conflict) and the result builds as `libpinmame`.
 
 ## Measured in VPinball 10.8.1-6577 (Docker bench, table script driving the game)
 
@@ -35,6 +36,7 @@ All thirteen apply together (`git am`, no conflict) and the result builds as `li
   solenoids run). With both patches AltSound made 57 lookups in one game, 56 found (11 distinct ids: `15`, `55`,
   `14`, `71`, `56`, `48`, `0F`, `0E`, `72`, `16`, `08`, `03`) and one miss, `6F`, an id the pack has no sound for.
   Command ids seen in the PinMAME harness: `dakar` `72` `12` `08` `73`, `macattck` `6F` `13`.
+- **Stern SAM** (patch 0014; real tables, Docker bench, coin, start and flippers by keystrokes, packs of the catalog run with their rows): AltSound looked up and found, with no miss: `acd_170h` (AC/DC) 137, `csi_240` 91, `bbh_170` 82, `fg_1200af` 67, `potc_600as` 83, `wpt_140a` 29, `wof_500` 222, `shr_141` 29, `ij4_210` 148, `nba_802` 78, which covers the four firmware generations (17, 15, 14 handlers and the early 14). The Simpsons Kooky Carnival (`scarn200`) is a redemption machine with no game to start: 0. Every logged id of `acd_170h` but the call table's dummy record 1 has a row in the pack. The audio itself was not listened to.
 - **Playmatic Cerberus**: 349 000 lookups and none found, then 74 of 74 non-idle lookups found.
 - **Game Plan MSU-3** (Andromeda): `0C`, `07`, `08`, `09`, `01`, `06` found; `04` is a silent row.
 - **Hankin**: `empsback`, `fjholden`, `shark`, `howzat` play and look up clean nibbles (9 to 11
