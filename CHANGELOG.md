@@ -24,6 +24,19 @@
   pack's ids; the board still gets every write. Measured in 10.8.1-6577 with `zira`: 0 lookups
   before, 301 found (`30` `40` `60`) after, the 343 misses being `10` `20` `50`, which the pack
   has no row for. `docs/vpx_playback.json`: `PLAYZ` is now `raw`.
+- **Spinball and Inder: one PinMAME patch (0010) so AltSound receives the sound commands,
+  measured in VPinball.** These machines write the sound board's command latch from the game
+  program (`spinb.c` `soundbd_w`, `inder.c` `snd_w` and `snd2_w`), never through PinMAME's sound
+  command log, so no lookup was ever made. The patch (not upstream) logs the byte the game
+  writes to the latch, once, when it changes to a value with bit 7 set (the game rewrites the
+  latch every pass and `00` only releases it; Lap By Lap's NMI board logs each write): the pack's
+  ids, so no pack change. Measured in VPinball 10.8.1-6577 (scripted table shells, a test pack
+  with every id): 0 lookups before; after, `jolypark` 132 of 132 found, `bushidoa`, `metalman`
+  3 of 3, `ind250cc` 7 of 7, `lapbylap` 5 of 5. No game ever started (Start did not take), so
+  only the coin, attract mode, volume steps and stops were seen; the audio was not listened to.
+  Brave Team and Canasta '86 (the game's own code makes the sounds, ids are ROM addresses of
+  its routines) have no patch: judged infeasible for now, documented in the family notes.
+  `docs/vpx_playback.json`: `SPINB` keeps its own reason, rewritten to say what plays.
 - **World Cup and Disco Fever (System 3): one PinMAME patch for both, measured in VPinball.**
   Both boards start their sound program on a rising edge of CB1, from the data lines or from
   the control line (solenoid 7 on World Cup raises it with no data write at all), and decide

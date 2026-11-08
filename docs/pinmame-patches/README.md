@@ -17,6 +17,7 @@ before these families play (see `docs/vpx_playback.json`, which describes the bu
 | 0007 `wmssnd.c` | Williams System 3 World Cup (S3WCS) and Disco Fever (S3DFS) | the id of the sound the board's program starts at each CB1 edge, from the data lines or the control line, following its flag and Sound Dip 2 (`0x10` `0x4050`..`0x405E` `0x50`..`0x5E` `0x80`; `0x0E`.. `0x40`..`0x4E` `0x800E`..) |
 | 0008 `capcoms.c` | Capcom (CAPCOMS: Airborne, Big Bang Bar, Breakshot, Flipper Football, Kingpin, Pinball Magic) | the sample number of each sound, taken from the game's serial message `DA 04 07 vv nnnn` (`06` loops), one value per sound |
 | 0009 `play.c` | Playmatic Zira (PLAYZ) | the command lines (bits 4-6 of the lamp port) each time they take a non-idle value, as `10` `20` .. `70` (the game's `sndbrd_ctrl_w` was never logged) |
+| 0010 `spinb.c`, `inder.c` | Spinball (bushido, mach2, jolypark, vrnwrld, gunshot) and Inder (lapbylap to metalman) | the byte the game writes to the sound latch, once, when the latch changes to a value with bit 7 set (`00` releases it); Lap By Lap's NMI board: each write |
 
 All eight apply together (`git am`, no conflict) and the result builds as `libpinmame`.
 
@@ -60,5 +61,14 @@ All eight apply together (`git am`, no conflict) and the result builds as `libpi
   0 lookups in 150 s (coin, start, flippers); after, 644 lookups, 301 found (`0030` 3, `0040` 291,
   `0060` 7) and 343 missed, all of them ids the pack has no row for (`0010` 23, `0020` 315, `0050` 5:
   the three values the generated pack leaves out as silent); `0070` was not reached.
+- **Spinball and Inder** (patch 0010; table shells with `cGameName` set, a test pack with a row
+  for every id `0000`..`01FF`, trough, three coins, Start, then the other switches; the
+  emulation runs about ten times slower than real time in the container, so each press is
+  held for seconds): before, 0 lookups in 200 s with coins pressed (`jolypark`, `metalman`,
+  `lapbylap`). After: `jolypark` 132 of 132 found (`85` coin x3, `8C` attract music, `DE`,
+  127 `C4` volume steps), `bushidoa` 3 of 3 (`85`), `metalman` 3 of 3 (`85`), `ind250cc` 7 of 7
+  (`85` x3, `8F` x4), `lapbylap` 5 of 5 (`09`, `0A`, `0C` x3). No game started (Start never took,
+  natively or in VPinball), so a game in play was not seen. Brave Team and Canasta '86 are not
+  covered (the game's own code makes their sounds; see `docs/families/other-makers.md`).
 
 Not checked: the audio itself (the bench has no listening path), the ids no game session reached.

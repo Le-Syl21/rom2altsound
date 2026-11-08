@@ -1,0 +1,84 @@
+From 1dce81fd0964a1a7202089387db258f0136a47fd Mon Sep 17 00:00:00 2001
+From: Le-Syl21 <sylvain.gargasson@gmail.com>
+Date: Sat, 7 Nov 2026 23:50:07 +0000
+Subject: [PATCH] Spinball and Inder: log the sound command the game writes to
+ the latch
+
+These machines write the sound board's command latch themselves (spinb.c
+soundbd_w at 6C20/CC20, inder.c snd_w at 6C20 and snd2_w at 4A00), never
+through sndbrd_data_w, so snd_cmd_log (AltSound, libpinmame callback) got
+nothing from any Spinball or Inder machine.
+
+The sound CPUs poll the latch and only take a byte while its bit 7 is set;
+the game rewrites the latch on every pass (00 most of the time, 8F as the
+idle value on some Inder games). Log a command once, when the latch changes
+to a value with bit 7 set, which is the byte AltSound packs are keyed by.
+Lap By Lap's NMI board (snd2_w) reads each write once, so each write is
+logged. No change to the emulated audio.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01ENsGGxgZ7pU5Z87YfBS2iY
+---
+ src/wpc/inder.c | 7 +++++++
+ src/wpc/spinb.c | 6 ++++++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/src/wpc/inder.c b/src/wpc/inder.c
+index d99c1d99..e418c575 100644
+--- a/src/wpc/inder.c
++++ b/src/wpc/inder.c
+@@ -30,6 +30,7 @@
+ #include "sound/ay8910.h"
+ #include "sound/msm5205.h"
+ #include "sndbrd.h"
++#include "snd_cmd.h"
+ #include "machine/8255ppi.h"
+ 
+ static READ_HANDLER(snd_porta_r);
+@@ -112,6 +113,7 @@ static WRITE_HANDLER(disp2_w) {
+ // external sound
+ static WRITE_HANDLER(snd2_w) {
+   locals.sndCmd = data;
++  snd_cmd_log(0, data); // each write is one command (the NMI makes the sound CPU read it once)
+   cpu_set_nmi_line(INDER_SND_CPU, PULSE_LINE);
+ }
+ 
+@@ -266,6 +268,11 @@ static WRITE_HANDLER(disp16_w) {
+ 
+ // sound
+ static WRITE_HANDLER(snd_w) {
++  // The sound CPUs poll this latch and only take a byte while its bit 7 is set. The game rewrites
++  // the latch every pass, so log a command once, when the latch changes to a value with bit 7 set
++  // (00 releases the latch).
++  if ((data & 0x80) && data != locals.sndCmd)
++    snd_cmd_log(0, data);
+   locals.sndCmd = data;
+ }
+ // unknown, 0x21 on game start, 0x20 on game over
+diff --git a/src/wpc/spinb.c b/src/wpc/spinb.c
+index 23f64885..52225f8f 100644
+--- a/src/wpc/spinb.c
++++ b/src/wpc/spinb.c
+@@ -163,6 +163,7 @@ SND CPU #2 8255 PPI
+ #include "sound/msm5205.h"
+ #include "core.h"
+ #include "sndbrd.h"
++#include "snd_cmd.h"
+ #include "spinb.h"
+ 
+ //#define VERBOSE
+@@ -810,6 +811,11 @@ WRITE_HANDLER(snd2_portc_w)
+ static WRITE_HANDLER(soundbd_w)
+ {
+ 	LOG(("SOUND WRITE = %x\n",data));
++	// The sound CPUs poll this latch and only take a byte while its bit 7 is set. The game rewrites
++	// the latch every pass, so log a command once, when the latch changes to a value with bit 7 set
++	// (what the game writes is the sound command AltSound packs are keyed by). 00 releases the latch.
++	if ((data & 0x80) && data != SPINBlocals.SoundCmd)
++		snd_cmd_log(0, data);
+ 	SPINBlocals.SoundCmd = data;
+ }
+ 
+-- 
+2.43.0
+

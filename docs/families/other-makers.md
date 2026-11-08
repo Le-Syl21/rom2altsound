@@ -101,9 +101,25 @@ an NMI), `"INDER0"` and `"INDER1"` (no board: the game's SN76489 or AY8910)
   `008C`..`011F`; `0C` and `0F` are no effect) and its music program only `0C` and `0F`
   (`d-musica.bin` `00B7`), so `81`..`A0` are its 31 sounds and `A1`..`A9` play nothing;
   Gun Shot's program takes `01`..`0A` (`m-177_gun_shot_rom_1`, dispatch `006C`), its 10.
-- **In VPinball**: **the pack cannot play**: the game writes its latch directly, never
-  through `sndbrd_data_w`, so AltSound receives nothing (bushido: no command in 45 s of
-  attract mode with a coin and start); its generation (0) has no libaltsound case either.
+- **In VPinball**: **the pack cannot play with PinMAME as it is**: the game writes its
+  latch directly, never through `sndbrd_data_w`, so AltSound receives nothing (bushido: no
+  command in 45 s of attract mode with a coin and start). **It plays with the PinMAME
+  change [0010](../pinmame-patches/README.md)** (not upstream): `spinb.c` `soundbd_w`
+  logs the byte the game writes, once, when the latch changes to a value with bit 7 set
+  (the game rewrites the latch every pass, `00` most of the time, and `00` is only the
+  release), so the logged id is the pack's id (`81`..`FF`). The volume steps `C3`, `C4`,
+  `DE`, `DF` are logged too and have no row (a lookup that finds nothing, jolypark: 127
+  `C4` while the game's boot steps the volume down). **Measured** (Docker bench, VPinball
+  10.8.1-6577, a table shell with `cGameName` set, a test pack with a row for every id
+  `0000`..`01FF`, trough switches, three coins, Start, then the other switches closed one
+  at a time; the emulation ran about ten times slower than real time, so each press was
+  held for seconds): `jolypark` 132 lookups, 132 found (`85` the coin three times, `8C`
+  the attract music, `DE` and 127 `C4`), `bushidoa` (the alternate set: with `bushido`
+  the game keeps asking for the ball, its trough switches are not the ones of the other
+  sets) 3 of 3 (`85`). Before the change, no lookup at all (stock PinMAME, `jolypark`, 200 s, coins pressed). **Not reached**:
+  no game ever started (Start did not take on the machines tried, natively or in
+  VPinball), so what a game in play sends (the effects) was not seen; only the coin, the
+  attract mode, the volume steps and the stops. The audio itself was not listened to.
 
 ### Inder's sound boards (`"INDER"`, `"INDER2"`)
 
@@ -165,9 +181,19 @@ an NMI), `"INDER0"` and `"INDER1"` (no board: the game's SN76489 or AY8910)
   Man's `9F` is an effect one sample byte long). lapbylap 20 of 31 (`09` and `0A` play a
   script that sets the volumes to 0, `16`..`1E` nothing), all from silence. The clones
   (`*fp`) give the same.
-- **In VPinball**: **the pack cannot play**: as on Spinball's, the game writes its latch
-  directly (`snd_w`, `snd2_w`), never through PinMAME's sound command log, so AltSound
-  receives nothing (`ind250cc`: no command in 45 s of attract mode with a coin and start).
+- **In VPinball**: **the pack cannot play with PinMAME as it is**: as on Spinball's, the
+  game writes its latch directly (`snd_w`, `snd2_w`), never through PinMAME's sound command
+  log, so AltSound receives nothing (`ind250cc`: no command in 45 s of attract mode with a
+  coin and start). **It plays with the PinMAME change [0010](../pinmame-patches/README.md)**
+  (not upstream): `inder.c` `snd_w` logs the byte, once, when the latch changes to a value
+  with bit 7 set (as Spinball's; some games park the latch on `8F`, the music stop, between
+  sounds, `ind250cc` writes it more than ten thousand times in 70 s), and `snd2_w`
+  (Lap By Lap, one NMI per write) logs each write: `00`..`1E`, the pack's ids. **Measured**
+  (same bench): `metalman` 3 of 3 lookups found (`85`, the coin), `lapbylap` 5 of 5 (`09`,
+  `0A`, `0C` three times: its attract tune), `ind250cc` 7 of 7 (`85` three times, `8F` four
+  times). Before the change, no lookup at all (stock PinMAME, `metalman` and `lapbylap`, 200 s each, coins pressed). **Not reached**: as on Spinball's,
+  no game started (Start did not take), only the coin, the attract mode and the stops;
+  the audio itself was not listened to.
 
 ### Inder's first machines (`"INDER0"`, `"INDER1"`): game-driven
 
@@ -195,7 +221,15 @@ an NMI), `"INDER0"` and `"INDER1"` (no board: the game's SN76489 or AY8910)
   whose notes are volume-off bytes), canasta 15 of 16 (`1D30` is the game's silencing
   script: volumes 0), all from silence; the free play clones the same.
 - **In VPinball**: no command reaches AltSound (none exists); the packs are a recording
-  of the game's sounds, keyed by their internal ids.
+  of the game's sounds, keyed by their internal ids. **No PinMAME change was written for
+  them**: the id is the ROM address of the descriptor (Brave Team, `LD HL,desc` before
+  `CALL 1617`) or of the script (Canasta '86, the operand of `LD HL` before `CALL 16FB` or
+  `CALL 173A`), the game's own code starts the sound and nothing in the driver sees the
+  address; a patch would have to watch the game CPU's program counter at those routines
+  and read a register, per game and per set: reverse engineering of each program rather
+  than a change to how the driver handles a sound board. The writes that do reach the driver are the sound chip's registers (SN76489 at
+  `4B00`, AY8910 at `4B00`/`4B02`), a stream of notes, not a command. Treated as
+  infeasible for now.
 
 ## <a name="sndbrd_nuova"></a>SNDBRD_NUOVA
 
