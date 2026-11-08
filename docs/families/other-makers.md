@@ -276,8 +276,11 @@ Cup '90 (`wcup90`)
 - **Sound list**: raw sweep `01`..`FF`: `80`..`FF` are the same commands as `00`..`7F`
   (bit 7 is the strobe): the twin test pairs them.
 - **Loops**: audio, sequencer state (Z80 RAM).
-- **Measured**: `dakar`, 26 of 40 ([board support](../board-support.md)); `motrshow` 77 sounds, 7 loops,
-  `macattck` 72 sounds, 5 loops, 2 twins (full extractions, about 16 to 18 minutes each).
+- **Measured**: `dakar`, 26 of 40 ([board support](../board-support.md)); full extractions: `dakar` 47 sounds, 4 loops,
+  `wcup90` 42 sounds, 6 loops, `motrshow` 77 sounds, 7 loops, `macattck` 72 sounds, 5 loops, 2 twins (13 to 18 minutes
+  each). Every id the games sent in a played game (`dakar` `72` `12` `08` `73`, `macattck` `13`, `wcup90` `13`, `motrshow`
+  eleven ids) has its file; `6F` (`macattck`, `motrshow`) has none. `wcsoccer` is not a Mr. Game: it is Gottlieb's World
+  Challenge Soccer (GTS3).
 - **Limits**: the sweep could stop at `7F`. A pack file is named after the 7 low bits.
 - **First start**: with no nvram file the game does not leave its error loop (no lamp, no solenoid, in PinMAME 3.6
   as in master) unless the operator switch CPU SW1-1 is read "off" on its first read, to hard-reset the CMOS;
