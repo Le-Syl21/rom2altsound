@@ -1,7 +1,8 @@
-From b5b58e52983ef82be553c592a673e8547530ef34 Mon Sep 17 00:00:00 2001
+From 0af1b6efb843da1c02d19a278eb3bb434e2526a7 Mon Sep 17 00:00:00 2001
 From: Le-Syl21 <sylvain.gargasson@gmail.com>
 Date: Sat, 7 Nov 2026 23:41:53 +0000
-Subject: [PATCH] Tecnoplay Scramble (TECHNO): log each sound command once
+Subject: [PATCH 11/11] Tecnoplay Scramble (TECHNO): log each sound command
+ once
 
 The Tecnoplay program writes every sound command to the sound board as a pair
 of bytes about 0.1 ms apart with the same low five bits (28 A8, or FE BE for
@@ -18,22 +19,14 @@ write, so the emulated audio is unchanged.
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01ENsGGxgZ7pU5Z87YfBS2iY
 ---
- src/wpc/zac.c | 22 ++++++++++++++++++++++
- 1 file changed, 22 insertions(+)
+ src/wpc/zac.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
 
 diff --git a/src/wpc/zac.c b/src/wpc/zac.c
-index a80a8a75..7f257f95 100644
+index 60a7475a..9d79af85 100644
 --- a/src/wpc/zac.c
 +++ b/src/wpc/zac.c
-@@ -10,6 +10,7 @@
- #include "sound/discrete.h"
- #include "core.h"
- #include "sndbrd.h"
-+#include "snd_cmd.h"
- #include "zac.h"
- #include "zacsnd.h"
- #include "wmssnd.h"
-@@ -21,7 +22,10 @@
+@@ -22,7 +22,10 @@
  
  static void ZAC_soundInit(void) {
    if (core_gameData->hw.soundBoard == SNDBRD_TECHNO)
@@ -44,7 +37,7 @@ index a80a8a75..7f257f95 100644
    else
      sndbrd_0_init(core_gameData->hw.soundBoard, ZACSND_CPUA, memory_region(ZACSND_CPUAREGION), NULL, NULL);
  }
-@@ -49,6 +53,11 @@ static struct {
+@@ -51,6 +54,11 @@ static struct {
  
    UINT8 write_bitno;
    UINT8 write_startbit;
@@ -56,7 +49,7 @@ index a80a8a75..7f257f95 100644
  } locals;
  
  static INTERRUPT_GEN(ZAC_vblank_old) {
-@@ -325,6 +334,19 @@ static WRITE_HANDLER(ctrl_port_w)
+@@ -327,6 +335,19 @@ static WRITE_HANDLER(ctrl_port_w)
  /*   DATA PORT : WRITE = Sound Data 0-7 */
  static WRITE_HANDLER(data_port_w)
  {

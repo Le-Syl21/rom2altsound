@@ -1,7 +1,8 @@
-From 71291b932e7d0d0757741be4ba756709648e36ff Mon Sep 17 00:00:00 2001
+From 5b00663f685573a3c025b03e604eba6338a0d92e Mon Sep 17 00:00:00 2001
 From: Le-Syl21 <sylvain.gargasson@gmail.com>
 Date: Sat, 7 Nov 2026 23:12:26 +0000
-Subject: [PATCH] Playmatic Zira (PLAYZ): log the sound command, not nothing
+Subject: [PATCH 09/11] Playmatic Zira (PLAYZ): log the sound command, not
+ nothing
 
 The Zira board has no data write: the game drives its three command
 lines (bits 4-6 of the lamp port) through sndbrd_ctrl_w, which does not
@@ -16,30 +17,22 @@ gets every write, so the audio is unchanged.
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01ENsGGxgZ7pU5Z87YfBS2iY
 ---
- src/wpc/play.c | 9 +++++++++
- 1 file changed, 9 insertions(+)
+ src/wpc/play.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
 
 diff --git a/src/wpc/play.c b/src/wpc/play.c
-index 2aa92ab7..70861d4b 100644
+index 00c9bbd7..ab7febd1 100644
 --- a/src/wpc/play.c
 +++ b/src/wpc/play.c
-@@ -55,6 +55,7 @@ The IOS board common to all games provides sound effects through the CDP1863.
- #include "core.h"
- #include "play.h"
- #include "sndbrd.h"
-+#include "snd_cmd.h"
- #include "cpu/cdp1802/cdp1802.h"
- 
- //#define VERBOSE_OUTPUT
-@@ -79,6 +80,7 @@ static struct {
+@@ -80,6 +80,7 @@ static struct {
    int    panelSel;
    int    cpuType;
    int    resetDone;
 +  int    sndLines;    // Zira board command lines (bits 4-6 of the lamp port) as last written
+   int    sndLevel;    // sound board command lines (3 bits) as last written, see play3_sndCmd
+   int    sndCmdFirst; // first value of the command in progress, or -1 if none
  
-   UINT8  n2data;
- } locals;
-@@ -280,6 +282,13 @@ static WRITE_HANDLER(out2_n) {
+@@ -302,6 +303,13 @@ static WRITE_HANDLER(out2_n) {
          }
        }
        if (core_gameData->hw.soundBoard == SNDBRD_PLAYZ) {

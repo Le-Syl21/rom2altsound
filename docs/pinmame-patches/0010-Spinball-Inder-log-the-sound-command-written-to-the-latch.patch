@@ -1,8 +1,8 @@
-From 1dce81fd0964a1a7202089387db258f0136a47fd Mon Sep 17 00:00:00 2001
+From fdeb29f516d00a051fdadddd17ecdd32c075afea Mon Sep 17 00:00:00 2001
 From: Le-Syl21 <sylvain.gargasson@gmail.com>
 Date: Sat, 7 Nov 2026 23:50:07 +0000
-Subject: [PATCH] Spinball and Inder: log the sound command the game writes to
- the latch
+Subject: [PATCH 10/11] Spinball and Inder: log the sound command the game
+ writes to the latch
 
 These machines write the sound board's command latch themselves (spinb.c
 soundbd_w at 6C20/CC20, inder.c snd_w at 6C20 and snd2_w at 4A00), never

@@ -1,6 +1,6 @@
 # PinMAME changes for AltSound on the "raw" families
 
-Eight small patches against PinMAME (`445b3cda`, the `rom2altsound-0.5` submodule head). Each one
+Eleven small patches against PinMAME (`445b3cda`, the `rom2altsound-0.5` submodule head). Each one
 changes only what PinMAME logs as a sound command (`snd_cmd_log`, the bytes VPinball hands to
 AltSound), never what the sound board receives, so the emulated audio is unchanged. They are
 **not upstream**: no pull request has been opened. VPinball builds that include them are needed
@@ -20,7 +20,7 @@ before these families play (see `docs/vpx_playback.json`, which describes the bu
 | 0010 `spinb.c`, `inder.c` | Spinball (bushido, mach2, jolypark, vrnwrld, gunshot) and Inder (lapbylap to metalman) | the byte the game writes to the sound latch, once, when the latch changes to a value with bit 7 set (`00` releases it); Lap By Lap's NMI board: each write |
 | 0011 `zac.c` | Tecnoplay Scramble (TECHNO) | each command once, as the first byte of the pair of writes the game sends (`28 A8` -> `28`, `FE BE` -> `FE`), and nothing for the idle pair `3F BF` |
 
-All eight apply together (`git am`, no conflict) and the result builds as `libpinmame`.
+All eleven apply together (`git am`, no conflict) and the result builds as `libpinmame`.
 
 ## Measured in VPinball 10.8.1-6577 (Docker bench, table script driving the game)
 
