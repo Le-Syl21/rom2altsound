@@ -59,11 +59,24 @@ ids, 1995-2000, Capcom, Illinois Pinball · e.g. Breakshot (`bsv103`), Pinball M
   stops at `03FF`); `DA 04 06 ...` (the looped play) is not swept, the loops come from the
   audio. The board's volume (the X9241 pot, set by its program from the game's messages)
   stays where the boot left it.
-- **In VPinball**: **the pack cannot play**: the game's bytes go from the 68306's DUART
-  straight to `send_data_to_8752`, never through `sndbrd_data_w`, so `snd_cmd_log` (and
-  AltSound) never sees them; measured: abv105 sent no command in 45 s of attract mode with
-  a coin and start. A command is several bytes (`DA 04 07 vv nnnn`), more than an AltSound
-  id holds.
+- **In VPinball**: the game's bytes go from the 68306's DUART straight to `send_data_to_8752`,
+  never through `sndbrd_data_w`, so `snd_cmd_log` (and AltSound) saw nothing: with stock PinMAME
+  the pack is never looked up. PinMAME patch `docs/pinmame-patches/0008` (not upstream) parses the
+  serial stream in `send_data_to_8752` (`DA`, a length, the bytes) and logs, once per
+  `DA 04 07 vv nnnn` (`06` = looped), the **sample number `nnnn`**, which is exactly the pack's id
+  (`0000`..`03FF`); only the log changes, the board gets the same bytes. Board 0, one value per
+  sound (16 bits). The game also sends `DA 01 0E` (reset), `DA 02 05 08`, `DA 02 16 nn` /
+  `DA 02 18 nn` (version queries of the 5 decoder slots at boot), `DA 02 03 xx` (seen on Kingpin): none
+  is logged. Measured in VPinball 10.8.1-6577 (Docker bench, table script closing
+  coin `1`, start `7`, then every switch 11 to 88; dummy pack with all 1024 ids): `pmv112` 0 lookups with stock PinMAME, 64
+  lookups with the patch, 33 ids, `bbb109` 95 / 56 (up to `027A`), `bsv103` 194 / 41, `ffv104` 109 / 33 (up to
+  `0168`), `abv106` 98 / 46 (up to `0212`), all found, none failed; Kingpin (`kpb105`) plays
+  almost nothing from switches alone (1 lookup in the VPinball run, `0075` twice in a headless
+  run: the parser is right, the game does not get far). The VPX numbers do not include the stop
+  `DA 02 03 01`, which is not logged (a loop ends when the game plays the next sample). **Not
+  verified**: the audio itself, ids the sessions did not reach (most of the 1024).
+- **Cabinet switches in a table script**: coin `1`-`4` and start `7` (`capcom.vbs`); the core's
+  `91`-`98` are overwritten by the keyboard port (`CORE_SETKEYSW`), a script closing them does nothing.
 
 ## <a name="sndbrd_romstar"></a>SNDBRD_ROMSTAR
 

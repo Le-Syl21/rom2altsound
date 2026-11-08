@@ -1,6 +1,6 @@
 # PinMAME changes for AltSound on the "raw" families
 
-Seven small patches against PinMAME (`445b3cda`, the `rom2altsound-0.5` submodule head). Each one
+Eight small patches against PinMAME (`445b3cda`, the `rom2altsound-0.5` submodule head). Each one
 changes only what PinMAME logs as a sound command (`snd_cmd_log`, the bytes VPinball hands to
 AltSound), never what the sound board receives, so the emulated audio is unchanged. They are
 **not upstream**: no pull request has been opened. VPinball builds that include them are needed
@@ -15,8 +15,9 @@ before these families play (see `docs/vpx_playback.json`, which describes the bu
 | 0005 `play.c` | Playmatic Cerberus (PLAY3) | the pair of 3-bit values the board reads, as one byte |
 | 0006 `zac.c` | Zaccaria 1311 (ZAC1311) | the set of the four tone lines (solenoids 21-24) that are on, as one byte, `00` = all off |
 | 0007 `wmssnd.c` | Williams System 3 World Cup (S3WCS) and Disco Fever (S3DFS) | the id of the sound the board's program starts at each CB1 edge, from the data lines or the control line, following its flag and Sound Dip 2 (`0x10` `0x4050`..`0x405E` `0x50`..`0x5E` `0x80`; `0x0E`.. `0x40`..`0x4E` `0x800E`..) |
+| 0008 `capcoms.c` | Capcom (CAPCOMS: Airborne, Big Bang Bar, Breakshot, Flipper Football, Kingpin, Pinball Magic) | the sample number of each sound, taken from the game's serial message `DA 04 07 vv nnnn` (`06` loops), one value per sound |
 
-All seven apply together (`git am`, no conflict) and the result builds as `libpinmame`.
+All eight apply together (`git am`, no conflict) and the result builds as `libpinmame`.
 
 ## Measured in VPinball 10.8.1-6577 (Docker bench, table script driving the game)
 
@@ -46,5 +47,13 @@ All seven apply together (`git am`, no conflict) and the result builds as `libpi
   missed in either; before, no row ever matched. Beyond the game sessions, the tool's sweep with the
   patched PinMAME logs, for each of the 16 and 24 sounds it records (DIP off), exactly that sound's
   pack id.
+
+- **Capcom** (patch 0008; `pmv112`, `bbb109`, `bsv103`, `ffv104`, `abv106`, `kpb105`; table scripts closing
+  coin (`Controller.Switch(1)`) and start (`7`), then every switch 11 to 88 once; a dummy pack with every
+  id `0000`..`03FF`): with stock PinMAME the same `pmv112` run (128 switch closures) gave 0 lookups; with the patch, `pmv112` 64 lookups (33 ids, `0009`..`00E7`), `bbb109` 95 (56 ids, up
+  to `027A`), `bsv103` 194 (41 ids, up to `00B4`), `ffv104` 109 (33 ids, up to `0168`), `abv106` 98 (46
+  ids, up to `0212`), all found, none failed. Kingpin (`kpb105`) got 1 lookup (`0007`) from switches alone; the game does not get far (a headless run showed `DA 04 07 29 00 75`, logged as `0075`). The ids are the sample numbers
+  the pack's rows are keyed on (`0000`..`03FF`). The cabinet switches are `1`-`8` (coin `1`-`4`, start
+  `7`), not the `91`-`98` of the core's numbering, which the keyboard port overwrites.
 
 Not checked: the audio itself (the bench has no listening path), the ids no game session reached.
