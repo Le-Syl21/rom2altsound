@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Pinball 2000: the packs get their tracks, with one PinMAME patch (0015, not upstream).** The game's
+  PC writes its requests straight to the DCS2 host port, outside the sound command log. Patch 0015
+  frames the words (after `ACE1`: track, `FF7F`, channel; the `55xx` commands take one word) and
+  logs the track of each request, the pack's id. Seen in the libpinmame harness on Revenge From
+  Mars 2.60 and Star Wars Episode I 1.30: 4 and 6 distinct tracks, all in the pack but two silent
+  ones. Few requests (attract mode, a few seconds of play), no VPinball table to run AltSound on.
 - **Stern SAM: the packs play in VPinball, with one PinMAME patch (0014, not upstream).** SAM
   games play their sounds in their own code, so nothing reached AltSound. Patch 0014 finds, at
   machine init, the routine that plays a sound call (the indexing of the call table, under a

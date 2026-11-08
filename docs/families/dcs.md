@@ -189,6 +189,15 @@ Star Wars Episode I (`swep1_130`, `swep1_150`)
   `rfmpb.zip` / `swe1pb.zip` ([ROM verification](../how-it-works.md#rom-verification)).
 - **Limits**: no ducking, stop or channel analysis; the game's per-channel choice of
   board channel is not reproduced.
-- **In VPinball**: **the pack does not play**: the game's requests go from the PC to the
-  board without `sndbrd_data_w`, so `snd_cmd_log` never sees them and AltSound receives
-  no command (README, Supported boards, note 16).
+- **In VPinball**: **the pack plays with the PinMAME change [0015](../pinmame-patches/README.md)**
+  (not upstream). The game's requests go from the PC to the board without `sndbrd_data_w`,
+  so `snd_cmd_log` never saw them (README, Supported boards, note 16). The change frames the
+  words the game writes to the host port (`dcs_p2k_data_w`): after `ACE1` a request is the
+  track, `FF7F` and the channel word (`03E7 FF7F 8200`), and the `55xx` control commands (volume,
+  pans, stop) take one parameter word. It logs the track once, as the request starts. **Measured**
+  (libpinmame harness, complete sets from `--fix-names`, coins and Start by keystrokes, the games
+  in attract mode and a few seconds of play, so few requests): `rfm_260` logged tracks `02D7`,
+  `02DB`, `03E7`, `03E8`; `swep1_130` `000C`, `00F9`, `032F`, `03E7`, `03E8`, `07DD`. Each track
+  but `03E7` and `03E8` has a file in the pack; those two are among the silent tracks (19 for
+  `rfm_260`) the pack does not write. No real VPinball table exists for these games, so the
+  lookups in AltSound were not run; the audio was not listened to.

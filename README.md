@@ -545,9 +545,10 @@ STOP 0, music (loops and "Music:" names) on the music channel, the rest polyphon
     the game's boot does not (Revenge From Mars 1.20). Factory volume: level 12 (`55AA
     609F`), recorded at level 20 and scaled by the measured -10.6 dB. No sounds.dat
     section: the files are named by track number. The ducking, stops and channels are
-    not read: the game picks a sound's board channel itself. **The pack does not play in
-    VPinball today**: the game's requests do not go through PinMAME's sound command path,
-    so AltSound receives none. A version's zip holds only its update files:
+    not read: the game picks a sound's board channel itself. **The pack plays in VPinball
+    with the PinMAME change [0015](docs/pinmame-patches/README.md)** (not upstream): the
+    game's requests do not go through PinMAME's sound command path, so the change logs the
+    track of each request, which is the pack's id. A version's zip holds only its update files:
     `rom2altsound roms --fix-names` builds a complete set with MAME's `rfmpb.zip` /
     `swe1pb.zip` (see [ROM verification](docs/how-it-works.md#rom-verification)).
 17. **No sound command: the game's own sounds.** On these boards the game's CPU plays every
@@ -767,12 +768,12 @@ it); the window program offers it as a tick box when it sees both zips. Details:
   (Stern SB-300, Atari, Astro, Romstar) send no command at all. The site's catalog marks
   each family. Whitestar and two-board System 11 packs carry extra rows for the ids
   AltSound looks up. Family by family: [In VPinball](docs/families/common.md#in-vpinball).
-- **Pinball 2000** packs do not play in VPinball yet: the game's sound requests do not go
-  through PinMAME's sound command path (see note 16 under
-  [Supported boards](#supported-boards)).
-- **Stern SAM** packs do not play in VPinball yet (see [Stern SAM](#stern-sam)). Only
-  AC/DC LE 1.68 was checked: other SAM games may differ (a ROM in which no sample
-  directory is found stops with an error).
+- **Pinball 2000** packs play in VPinball with the PinMAME change 0015 (not upstream): the
+  game's sound requests do not go through PinMAME's sound command path, so the change logs
+  the track of each request (see note 16 under [Supported boards](#supported-boards)).
+- **Stern SAM** packs play in VPinball with the PinMAME change 0014 (not upstream), checked on
+  ten real tables (see [Stern SAM](#stern-sam)). A ROM in which no sample directory is found
+  stops with an error.
 
 How it all works, measured ROM by ROM: [docs/how-it-works.md](docs/how-it-works.md).
 
@@ -1614,13 +1615,12 @@ quand il voit les deux zips. Détails :
   Whitestar et System 11 à deux cartes portent des lignes en plus pour les identifiants
   qu'AltSound cherche. Famille par famille :
   [In VPinball](docs/families/common.md#in-vpinball).
-- Les packs **Pinball 2000** ne se jouent pas encore dans VPinball : les requêtes son du
-  jeu ne passent pas par le chemin des commandes son de PinMAME (voir la note 16 sous
+- Les packs **Pinball 2000** se jouent dans VPinball avec le changement 0015 de PinMAME (pas en amont) : les requêtes son du
+  jeu ne passent pas par le chemin des commandes son de PinMAME, le changement journalise la piste de chaque requête (voir la note 16 sous
   [Cartes son prises en charge](#cartes-son-prises-en-charge)).
-- Les packs **Stern SAM** ne se jouent pas encore dans VPinball (voir
-  [Stern SAM](#stern-sam-1)). Seul AC/DC LE 1.68 a été vérifié : les autres jeux SAM
-  peuvent différer (une ROM où aucun répertoire d'échantillons n'est trouvé s'arrête sur
-  une erreur).
+- Les packs **Stern SAM** se jouent dans VPinball avec le changement 0014 de PinMAME (pas en amont), vérifié sur
+  dix vraies tables (voir [Stern SAM](#stern-sam-1)). Une ROM où aucun répertoire d'échantillons n'est trouvé s'arrête sur
+  une erreur.
 
 Le fonctionnement détaillé, mesuré ROM par ROM (en anglais) :
 [docs/how-it-works.md](docs/how-it-works.md).

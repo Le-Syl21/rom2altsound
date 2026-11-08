@@ -7,8 +7,8 @@
       "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé tel quel, car AltSound ne reçoit pas les commandes son de cette carte : les jeux SAM jouent leurs appels dans leur propre code. Leur pack est joué par un PinMAME qui inclut le changement qui journalise l'identifiant d'appel que le jeu passe à sa routine de son (docs/pinmame-patches 0014, pas en amont), lequel est l'identifiant du pack."
     },
     "p2k": {
-      "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used, because AltSound does not receive this board's sound commands today: Pinball 2000's requests go from the PC to the board outside PinMAME's sound command path.",
-      "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé, car AltSound ne reçoit pas aujourd'hui les commandes son de cette carte : les requêtes du Pinball 2000 vont du PC à la carte hors du chemin des commandes son de PinMAME."
+      "en": "The game itself plays with its sound in VPinball; only an AltSound pack is not used as written, because AltSound does not receive this board's sound commands: Pinball 2000's requests go from the PC to the board outside PinMAME's sound command path. Their pack plays in a PinMAME that includes the change that logs the track of each request (docs/pinmame-patches 0015, not upstream), which is the pack's id.",
+      "fr": "Le jeu lui-même a bien son son dans VPinball ; seul un pack AltSound n'est pas utilisé tel quel, car AltSound ne reçoit pas les commandes son de cette carte : les requêtes du Pinball 2000 vont du PC à la carte hors du chemin des commandes son de PinMAME. Leur pack est joué par un PinMAME qui inclut le changement qui journalise la piste de chaque requête (docs/pinmame-patches 0015, pas en amont), laquelle est l'identifiant du pack."
     },
     "one_byte": {
       "state": "newer",
