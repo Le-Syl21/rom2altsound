@@ -1,6 +1,6 @@
 # PinMAME changes for AltSound on the "raw" families
 
-Seven small patches against PinMAME (`445b3cda`, the `rom2altsound-0.5` submodule head). Each one
+Eight small patches against PinMAME (`445b3cda`, the `rom2altsound-0.5` submodule head). Each one
 changes only what PinMAME logs as a sound command (`snd_cmd_log`, the bytes VPinball hands to
 AltSound), never what the sound board receives, so the emulated audio is unchanged. They are
 **not upstream**: no pull request has been opened. VPinball builds that include them are needed
@@ -15,8 +15,9 @@ before these families play (see `docs/vpx_playback.json`, which describes the bu
 | 0005 `play.c` | Playmatic Cerberus (PLAY3) | the pair of 3-bit values the board reads, as one byte |
 | 0006 `zac.c` | Zaccaria 1311 (ZAC1311) | the set of the four tone lines (solenoids 21-24) that are on, as one byte, `00` = all off |
 | 0007 `wmssnd.c` | Williams System 3 World Cup (S3WCS) and Disco Fever (S3DFS) | the id of the sound the board's program starts at each CB1 edge, from the data lines or the control line, following its flag and Sound Dip 2 (`0x10` `0x4050`..`0x405E` `0x50`..`0x5E` `0x80`; `0x0E`.. `0x40`..`0x4E` `0x800E`..) |
+| XXXX `spinb.c`, `inder.c` | Spinball (bushido, mach2, jolypark, vrnwrld, gunshot) and Inder (lapbylap to metalman) | the byte the game writes to the sound latch, once, when the latch changes to a value with bit 7 set (`00` releases it); Lap By Lap's NMI board: each write |
 
-All seven apply together (`git am`, no conflict) and the result builds as `libpinmame`.
+All eight apply together (`git am`, no conflict) and the result builds as `libpinmame`.
 
 ## Measured in VPinball 10.8.1-6577 (Docker bench, table script driving the game)
 
@@ -42,5 +43,15 @@ All seven apply together (`git am`, no conflict) and the result builds as `libpi
   missed in either; before, no row ever matched. Beyond the game sessions, the tool's sweep with the
   patched PinMAME logs, for each of the 16 and 24 sounds it records (DIP off), exactly that sound's
   pack id.
+
+- **Spinball and Inder** (patch XXXX; table shells with `cGameName` set, a test pack with a row
+  for every id `0000`..`01FF`, trough, three coins, Start, then the other switches; the
+  emulation runs about ten times slower than real time in the container, so each press is
+  held for seconds): before, 0 lookups in 200 s with coins pressed (`jolypark`, `metalman`,
+  `lapbylap`). After: `jolypark` 132 of 132 found (`85` coin x3, `8C` attract music, `DE`,
+  127 `C4` volume steps), `bushidoa` 3 of 3 (`85`), `metalman` 3 of 3 (`85`), `ind250cc` 7 of 7
+  (`85` x3, `8F` x4), `lapbylap` 5 of 5 (`09`, `0A`, `0C` x3). No game started (Start never took,
+  natively or in VPinball), so a game in play was not seen. Brave Team and Canasta '86 are not
+  covered (the game's own code makes their sounds; see `docs/families/other-makers.md`).
 
 Not checked: the audio itself (the bench has no listening path), the ids no game session reached.
