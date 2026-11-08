@@ -37,6 +37,14 @@
   Brave Team and Canasta '86 (the game's own code makes the sounds, ids are ROM addresses of
   its routines) have no patch: judged infeasible for now, documented in the family notes.
   `docs/vpx_playback.json`: `SPINB` keeps its own reason, rewritten to say what plays.
+- **Tecnoplay Scramble (TECHNO): one PinMAME patch, measured in VPinball.** The game writes each
+  sound command as a pair of bytes (`28 A8`, or `FE BE` for a TMS7000 sample) and `3F BF` between
+  commands, and PinMAME logged every write: AltSound looked a command up twice, in two forms, plus
+  ids with no row. Patch `0011` (`zac.c`, not upstream) logs a pair once, as its first byte, and
+  nothing for the idle pair. The pack is unchanged (it already has a row for each byte). Measured in
+  VPinball 10.8.1-6577 on `scram_tp`: 43 lookups, 34 found, 9 missed before; 20 of 20 found after.
+  `docs/vpx_playback.json`: `TECHNO` is `raw` (it plays only with the patch), and the unused
+  `partial` reason is gone.
 - **World Cup and Disco Fever (System 3): one PinMAME patch for both, measured in VPinball.**
   Both boards start their sound program on a rising edge of CB1, from the data lines or from
   the control line (solenoid 7 on World Cup raises it with no data write at all), and decide

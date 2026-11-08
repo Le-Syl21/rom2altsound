@@ -291,9 +291,9 @@ Vocalizer (the speech goes through the unlogged `sndbrd_ctrl_w`) and Hankin (eve
 logged, measured on empsback in 10.8.1-6577) and Zaccaria 1311 (the game raises four tone lines
 as solenoids and PinMAME logs no command at all, measured on futurwld and hod in 10.8.1-6577); in part only on
 System 3's Disco Fever and World Cup boards.
-Tabart's second board (Sahara Love) plays on its plain rows (its lines are logged without the sound DIPs, measured in a script-driven table in 10.8.1-6577). Taito's Sintetizador (a command logged with and without bit 7) and
-Tecnoplay's Scramble (each command logged twice) play: both rows exist, the second one
-restarts the sound (played on `shock` and `scram_tp` in 10.8.1-6577). Each family's section says which.
+Tabart's second board (Sahara Love) plays on its plain rows (its lines are logged without the sound DIPs, measured in a script-driven table in 10.8.1-6577). Taito's Sintetizador (a command logged with and without bit 7) plays: both rows exist, the second one
+restarts the sound (played on `shock` in 10.8.1-6577). Tecnoplay's Scramble (each command logged as
+two writes, and an idle pair) plays only with a PinMAME patch. Each family's section says which.
 `docs/vpx_playback.json` holds the result (`"state": "newer"` for the families that play
 from master 3abe805 on). One more difference: where the game rewrites its command on every
 pass (Game Plan, Gottlieb 80B, Playmatic, Stern MPU-100, Zaccaria 1125, System 9...), each

@@ -18,6 +18,7 @@ before these families play (see `docs/vpx_playback.json`, which describes the bu
 | 0008 `capcoms.c` | Capcom (CAPCOMS: Airborne, Big Bang Bar, Breakshot, Flipper Football, Kingpin, Pinball Magic) | the sample number of each sound, taken from the game's serial message `DA 04 07 vv nnnn` (`06` loops), one value per sound |
 | 0009 `play.c` | Playmatic Zira (PLAYZ) | the command lines (bits 4-6 of the lamp port) each time they take a non-idle value, as `10` `20` .. `70` (the game's `sndbrd_ctrl_w` was never logged) |
 | 0010 `spinb.c`, `inder.c` | Spinball (bushido, mach2, jolypark, vrnwrld, gunshot) and Inder (lapbylap to metalman) | the byte the game writes to the sound latch, once, when the latch changes to a value with bit 7 set (`00` releases it); Lap By Lap's NMI board: each write |
+| 0011 `zac.c` | Tecnoplay Scramble (TECHNO) | each command once, as the first byte of the pair of writes the game sends (`28 A8` -> `28`, `FE BE` -> `FE`), and nothing for the idle pair `3F BF` |
 
 All eight apply together (`git am`, no conflict) and the result builds as `libpinmame`.
 
@@ -70,5 +71,13 @@ All eight apply together (`git am`, no conflict) and the result builds as `libpi
   (`85` x3, `8F` x4), `lapbylap` 5 of 5 (`09`, `0A`, `0C` x3). No game started (Start never took,
   natively or in VPinball), so a game in play was not seen. Brave Team and Canasta '86 are not
   covered (the game's own code makes their sounds; see `docs/families/other-makers.md`).
+- **Tecnoplay Scramble** (`scram_tp`, patch 0011; table script closing the switches 9 to 64 once, plus
+  coin, start, plunger and flippers): before, every command was looked up as its two writes in two
+  forms (`0028` `00A8` `0028` `00A8` for a command the game sends twice, `00FE` `00BE`) plus the idle
+  pair `003F` `00BF`: 43 lookups, 34 found, 9 missed (the idle ids, which have no row). After: 20
+  lookups, 20 found, none missed, ids `0028` `002D` `00FE` `0027` `001D` `0036` `0038` `0031` `002C`
+  `0029` (a command the game sends twice is two lookups, as the board takes it twice). The pack
+  needed no change: it already has a row for each byte, and the first byte of a pair has the row of
+  the sound the board plays (`FE` is the TMS7000 sample).
 
 Not checked: the audio itself (the bench has no listening path), the ids no game session reached.
