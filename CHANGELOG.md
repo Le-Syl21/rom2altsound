@@ -18,6 +18,12 @@
   from switches alone. `docs/vpx_playback.json`: `CAPCOMS` is `raw` (plays only with the patch).
   Not verified: the audio itself. The family notes also record that a table script's coin and
   start are switches `1` and `7`, not `91`/`97`.
+- **Playmatic Zira (PLAYZ): logged in PinMAME, measured in VPinball.** The game drives the
+  board's three command lines through `sndbrd_ctrl_w`, which never reached AltSound. Patch
+  `0009` (`play.c`, not upstream) logs each new non-idle value of the lines (`10`..`70`), the
+  pack's ids; the board still gets every write. Measured in 10.8.1-6577 with `zira`: 0 lookups
+  before, 301 found (`30` `40` `60`) after, the 343 misses being `10` `20` `50`, which the pack
+  has no row for. `docs/vpx_playback.json`: `PLAYZ` is now `raw`.
 - **World Cup and Disco Fever (System 3): one PinMAME patch for both, measured in VPinball.**
   Both boards start their sound program on a rising edge of CB1, from the data lines or from
   the control line (solenoid 7 on World Cup raises it with no data write at all), and decide

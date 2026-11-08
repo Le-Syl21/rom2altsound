@@ -193,9 +193,14 @@ Zira (`zira`)
 - **Limits and what is missing**: no stop (a board reset after each sound); the program
   is not read, so whether the three silent values are commands of their own (or need a
   sequence) is not known.
-- **In VPinball**: **the pack cannot play**: the game's commands go through
-  `sndbrd_ctrl_w`, which does not call `snd_cmd_log`, so AltSound receives nothing (zira:
-  no command in 45 s of attract mode with a coin and start).
+- **In VPinball**: needs PinMAME patch `docs/pinmame-patches/0009` (not upstream). The game's
+  commands go through `sndbrd_ctrl_w`, which does not call `snd_cmd_log`, so AltSound received
+  nothing (zira: no command in 150 s with a coin and start). The patch logs, in `play.c` (`out2_n`),
+  bits 4-6 of the lamp port each time they take a non-idle value: `10` `20` .. `70`, the pack's
+  ids (the pack has rows `30` `40` `60` `70`; `10` `20` `50` are silent values, looked up and
+  not found). Measured in VPinball 10.8.1-6577 (table script plus a switch sweep, 330 s): 301
+  lookups found (`30` `40` `60`), 343 for `10` `20` `50` (no row), `70` not reached. Not
+  checked: the audio itself.
 
 ## <a name="sndbrd_zsu"></a>SNDBRD_ZSU
 

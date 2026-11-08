@@ -16,6 +16,7 @@ before these families play (see `docs/vpx_playback.json`, which describes the bu
 | 0006 `zac.c` | Zaccaria 1311 (ZAC1311) | the set of the four tone lines (solenoids 21-24) that are on, as one byte, `00` = all off |
 | 0007 `wmssnd.c` | Williams System 3 World Cup (S3WCS) and Disco Fever (S3DFS) | the id of the sound the board's program starts at each CB1 edge, from the data lines or the control line, following its flag and Sound Dip 2 (`0x10` `0x4050`..`0x405E` `0x50`..`0x5E` `0x80`; `0x0E`.. `0x40`..`0x4E` `0x800E`..) |
 | 0008 `capcoms.c` | Capcom (CAPCOMS: Airborne, Big Bang Bar, Breakshot, Flipper Football, Kingpin, Pinball Magic) | the sample number of each sound, taken from the game's serial message `DA 04 07 vv nnnn` (`06` loops), one value per sound |
+| 0009 `play.c` | Playmatic Zira (PLAYZ) | the command lines (bits 4-6 of the lamp port) each time they take a non-idle value, as `10` `20` .. `70` (the game's `sndbrd_ctrl_w` was never logged) |
 
 All eight apply together (`git am`, no conflict) and the result builds as `libpinmame`.
 
@@ -55,5 +56,9 @@ All eight apply together (`git am`, no conflict) and the result builds as `libpi
   ids, up to `0212`), all found, none failed. Kingpin (`kpb105`) got 1 lookup (`0007`) from switches alone; the game does not get far (a headless run showed `DA 04 07 29 00 75`, logged as `0075`). The ids are the sample numbers
   the pack's rows are keyed on (`0000`..`03FF`). The cabinet switches are `1`-`8` (coin `1`-`4`, start
   `7`), not the `91`-`98` of the core's numbering, which the keyboard port overwrites.
+- **Playmatic Zira** (`zira`, patch 0009; the table's own script plus a switch sweep, 330 s): before,
+  0 lookups in 150 s (coin, start, flippers); after, 644 lookups, 301 found (`0030` 3, `0040` 291,
+  `0060` 7) and 343 missed, all of them ids the pack has no row for (`0010` 23, `0020` 315, `0050` 5:
+  the three values the generated pack leaves out as silent); `0070` was not reached.
 
 Not checked: the audio itself (the bench has no listening path), the ids no game session reached.
