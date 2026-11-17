@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Catalog: a Stern SAM Colored MOD takes its base set's loudness.** A SAM entry is one set, so
+  the eight Colored MODs (`avs_170hc`, `mtl_180c`, `smanve_100c`, `st_162c`, `st_162hc`, `twd_156c`,
+  `twd_160c`, `xmn_151c`) had no figure although the mod only recolours the DMD. They now carry the
+  base set's figures, with a `caveat` saying they are borrowed; a set extracted itself keeps its own.
+
 - **Pinball 2000: the packs get their tracks, with one PinMAME patch (0015, not upstream).** The game's
   PC writes its requests straight to the DCS2 host port, outside the sound command log. Patch 0015
   frames the words (after `ACE1`: track, `FF7F`, channel; the `55xx` commands take one word) and

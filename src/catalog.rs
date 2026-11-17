@@ -1053,6 +1053,38 @@ pub fn apply_runs(
     }
 }
 
+/// Stern SAM "Colored MOD" sets: the mod recolours the DMD, the sounds are the base set's.
+/// A SAM entry is one set (there is no sound ROM id to group the sets by), so such a set
+/// would stay empty although its base set is measured: it takes the base set's figures,
+/// marked in `caveat` as borrowed. A set that was measured itself keeps its own.
+pub fn inherit_colored_mods(entries: &mut [Entry]) {
+    let base: HashMap<String, Loudness> = entries
+        .iter()
+        .filter(|e| e.label == "NONE (Stern SAM)")
+        .filter_map(|e| e.loudness.as_ref().map(|l| (e, l)))
+        .flat_map(|(e, l)| e.sets.iter().map(move |s| (s.name.clone(), l.clone())))
+        .collect();
+    for e in entries.iter_mut() {
+        if e.loudness.is_some() || e.label != "NONE (Stern SAM)" {
+            continue;
+        }
+        let Some(set) = e.sets.first() else { continue };
+        if !set.description.contains("Colored MOD") {
+            continue;
+        }
+        let Some(parent) = set.parent.as_deref() else {
+            continue;
+        };
+        let Some(b) = base.get(parent) else { continue };
+        let mut l = b.clone();
+        l.caveat = Some(format!(
+            "the figures of {parent}, not of this set: a Colored MOD recolours the DMD and plays the base set's sounds. {}",
+            b.caveat.as_deref().unwrap_or("")
+        ).trim().to_owned());
+        e.loudness = Some(l);
+    }
+}
+
 /// The set lists of a whole-catalog run (`--plan`).
 #[derive(Debug, Default, PartialEq)]
 pub struct Plan {
@@ -1365,6 +1397,7 @@ pub fn cli(args: Vec<String>) -> i32 {
         }
         eprintln!("{} run folder(s) read", runs.len());
         apply_runs(&mut entries, &runs, &current_measurement());
+        inherit_colored_mods(&mut entries);
     }
     let docs = family_docs(std::fs::read_to_string(&cli.family_docs).ok().as_deref());
     if docs.is_empty() {
@@ -1716,6 +1749,56 @@ mod tests {
                 "median_file_lufs": lufs - 2.0,
             },
         })
+    }
+
+    #[test]
+    fn a_colored_mod_takes_its_base_set_loudness() {
+        let current = current_measurement();
+        let sam = |name: &str, parent: Option<&str>, desc: &str| {
+            let mut s = set_row(name, parent);
+            s.description = desc.into();
+            Entry {
+                id: None,
+                key: format!("set:{name}"),
+                family: "SNDBRD_NONE".into(),
+                label: "NONE (Stern SAM)".into(),
+                support: Support::Works,
+                title: name.into(),
+                manufacturer: String::new(),
+                year: String::new(),
+                sets: vec![s],
+                roms: Vec::new(),
+                sounds: None,
+                names: 0,
+                not_applicable: None,
+                loudness: None,
+                coverage: None,
+            }
+        };
+        let m = serde_json::json!({"sam": {"calls": 3}, "factory_volume": {"attenuation": {"left": "E8", "right": "E8"}},
+            "loudness": {"all": {"files": 3, "seconds": 9.0, "lufs": -12.0, "true_peak_dbtp": -1.0},
+                         "excluding_loops": {"files": 3, "seconds": 9.0, "lufs": -12.0}, "median_file_lufs": -13.0}});
+        let mut base = sam("acd_168h", None, "AC/DC (V1.68)");
+        base.loudness = Some(loudness_of("acd_168h", &m, &current));
+        let mut entries = vec![
+            base,
+            sam("acd_168hc", Some("acd_168h"), "AC/DC (V1.68) (Colored MOD)"),
+            sam("acd_other", Some("acd_168h"), "AC/DC (another version)"),
+            sam("nobase_c", Some("nobase"), "Nothing (Colored MOD)"),
+        ];
+        inherit_colored_mods(&mut entries);
+        let l = entries[1].loudness.as_ref().unwrap();
+        assert_eq!(l.set, "acd_168h");
+        assert_eq!(l.static_decode.as_ref().unwrap().lufs, Some(-12.0));
+        assert!(
+            l.caveat
+                .as_ref()
+                .unwrap()
+                .contains("the figures of acd_168h")
+        );
+        // not a Colored MOD, or no measured base set: left empty
+        assert!(entries[2].loudness.is_none());
+        assert!(entries[3].loudness.is_none());
     }
 
     #[test]

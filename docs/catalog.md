@@ -86,6 +86,9 @@ dB below its file ([Stern SAM](families/stern-sam.md#sndbrd_none_sam), "In a gam
 SAM entry has `source` `static`, **`lufs` null** (and the other levels), its figures under
 `static_decode` (`lufs`, `lufs_excluding_loops`, `median_file_lufs`, `true_peak_dbtp`),
 and a `caveat`: not measured in a game. The site shows them in italics.
+A Stern SAM *Colored MOD* set (`avs_170hc`, `mtl_180c`...) recolours the DMD and plays the
+base set's sounds: its entry takes the base set's figures, with a `caveat` that says so
+(`set` is the base set), unless the set was extracted itself.
 
 ## Coverage
 
