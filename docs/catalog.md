@@ -89,6 +89,10 @@ and a `caveat`: not measured in a game. The site shows them in italics.
 A Stern SAM *Colored MOD* set (`avs_170hc`, `mtl_180c`...) recolours the DMD and plays the
 base set's sounds: its entry takes the base set's figures, with a `caveat` that says so
 (`set` is the base set), unless the set was extracted itself.
+A Pinball 2000 group whose own sound flash image is not in the collection (a mod, a prototype)
+takes the figures of another revision of the same version of the same game (`rfm_210r3` from the
+group of `rfm_210r4`), with a `caveat` that starts with "approximate": the two can ship different sound
+flashes, so sounds added by one are not counted.
 
 ## Coverage
 

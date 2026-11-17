@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 (2026-11-17)
+
+- **Catalog: a Pinball 2000 group with no sound flash image of its own takes another revision's
+  figures.** The RFM 2.10 r1 to r3 group (`pin2000_50070_0210_sf.rom` not in the collection) is
+  given the figures of `rfm_210r4`, the same version, with an "approximate" caveat: the two ship
+  different sound flash images.
 
 - **Catalog: a Stern SAM Colored MOD takes its base set's loudness.** A SAM entry is one set, so
   the eight Colored MODs (`avs_170hc`, `mtl_180c`, `smanve_100c`, `st_162c`, `st_162hc`, `twd_156c`,

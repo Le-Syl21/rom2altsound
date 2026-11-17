@@ -1085,6 +1085,48 @@ pub fn inherit_colored_mods(entries: &mut [Entry]) {
     }
 }
 
+/// The game and version of a Pinball 2000 set name: `rfm_210r3` is ("rfm", "210"),
+/// `swep1_200m` ("swep1", "200"). None for any other name.
+fn p2k_version(set: &str) -> Option<(&str, &str)> {
+    let (game, rest) = set.split_once('_')?;
+    if game != "rfm" && game != "swep1" {
+        return None;
+    }
+    let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    (digits > 0).then(|| (game, &rest[..digits]))
+}
+
+/// Pinball 2000 groups with no measure of their own (a mod or a prototype whose sound
+/// flash image is not in the collection) take the figures of another revision of the same
+/// version of the same game, marked in `caveat` as approximate: the two revisions can ship
+/// different sound flashes, so sounds added by one are not in the figure.
+pub fn inherit_same_version_revision(entries: &mut [Entry]) {
+    let measured: Vec<(String, Loudness)> = entries
+        .iter()
+        .filter(|e| e.label == "DCSP2K")
+        .filter_map(|e| e.loudness.as_ref().map(|l| (e, l)))
+        .flat_map(|(e, l)| e.sets.iter().map(move |s| (s.name.clone(), l.clone())))
+        .collect();
+    for e in entries.iter_mut() {
+        if e.loudness.is_some() || e.label != "DCSP2K" {
+            continue;
+        }
+        let own: Vec<(&str, &str)> = e.sets.iter().filter_map(|s| p2k_version(&s.name)).collect();
+        let found = measured.iter().find(|(name, _)| {
+            p2k_version(name).is_some_and(|v| own.contains(&v))
+                && !e.sets.iter().any(|s| &s.name == name)
+        });
+        let Some((name, base)) = found else { continue };
+        let mut l = base.clone();
+        l.caveat = Some(format!(
+            "approximate: the figures of {}, measured on the group of {name}, another revision of the same version. This group's own sound flash image is not in the collection, and the two can differ (sounds added by a mod are not counted). {}",
+            base.set,
+            base.caveat.as_deref().unwrap_or("")
+        ).trim().to_owned());
+        e.loudness = Some(l);
+    }
+}
+
 /// The set lists of a whole-catalog run (`--plan`).
 #[derive(Debug, Default, PartialEq)]
 pub struct Plan {
@@ -1398,6 +1440,7 @@ pub fn cli(args: Vec<String>) -> i32 {
         eprintln!("{} run folder(s) read", runs.len());
         apply_runs(&mut entries, &runs, &current_measurement());
         inherit_colored_mods(&mut entries);
+        inherit_same_version_revision(&mut entries);
     }
     let docs = family_docs(std::fs::read_to_string(&cli.family_docs).ok().as_deref());
     if docs.is_empty() {
@@ -1799,6 +1842,50 @@ mod tests {
         // not a Colored MOD, or no measured base set: left empty
         assert!(entries[2].loudness.is_none());
         assert!(entries[3].loudness.is_none());
+    }
+
+    #[test]
+    fn a_group_without_a_measure_takes_another_revision_of_its_version() {
+        let current = current_measurement();
+        let p2k = |sets: &[&str]| Entry {
+            id: Some(sets[0].into()),
+            key: sets[0].into(),
+            family: "SNDBRD_DCSP2K".into(),
+            label: "DCSP2K".into(),
+            support: Support::Works,
+            title: sets[0].into(),
+            manufacturer: String::new(),
+            year: String::new(),
+            sets: sets.iter().map(|n| set_row(n, None)).collect(),
+            roms: Vec::new(),
+            sounds: None,
+            names: 0,
+            not_applicable: None,
+            loudness: None,
+            coverage: None,
+        };
+        let mut done = p2k(&["rfm_210r4", "rfm_220"]);
+        done.loudness = Some(loudness_of(
+            "rfm_210r4",
+            &manifest("rfm_210r4", "55AA6798", 12, -20.0, &current),
+            &current,
+        ));
+        let mut entries = vec![
+            done,
+            p2k(&["rfm_210r3", "rfm_210r2", "rfm_210r1"]),
+            p2k(&["rfm_087"]),
+            p2k(&["swep1_210"]),
+        ];
+        inherit_same_version_revision(&mut entries);
+        let l = entries[1].loudness.as_ref().unwrap();
+        assert_eq!((l.set.as_str(), l.lufs), ("rfm_210r4", Some(-20.0)));
+        assert!(l.caveat.as_ref().unwrap().contains("approximate"));
+        // another version, or another game: left empty
+        assert!(entries[2].loudness.is_none());
+        assert!(entries[3].loudness.is_none());
+        assert_eq!(p2k_version("rfm_210r3"), Some(("rfm", "210")));
+        assert_eq!(p2k_version("swep1_200m"), Some(("swep1", "200")));
+        assert_eq!(p2k_version("godz_090"), None);
     }
 
     #[test]

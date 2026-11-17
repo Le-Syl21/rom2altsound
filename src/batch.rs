@@ -719,11 +719,18 @@ pub fn line(o: &Outcome) -> String {
     }
     let detail = m.map_or_else(String::new, |m| {
         let c = &m["counts"];
+        // `loops` counts every sound the loop test did not see end; some of them are
+        // only still playing when the cap is reached (`loops_unresolved`), not loops
+        let all = c["loops"].as_u64().unwrap_or(0);
+        let unresolved = c["loops_unresolved"].as_u64().unwrap_or(0).min(all);
         let mut d = format!(
             ": {} sound(s), {} loop(s)",
             c["written"].as_u64().unwrap_or(0),
-            c["loops"].as_u64().unwrap_or(0)
+            all - unresolved
         );
+        if unresolved > 0 {
+            d.push_str(&format!(", {unresolved} still playing at the cap"));
+        }
         if let Some(t) = m["altsound"]["twins"].as_u64() {
             d.push_str(&format!(", {t} twin(s)"));
         }
