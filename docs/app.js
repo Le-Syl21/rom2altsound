@@ -162,9 +162,10 @@
       case "family": x = boardName(a.label).toLowerCase(); y = boardName(b.label).toLowerCase(); break;
       case "support": x = SUPPORT_ORDER.indexOf(a.support); y = SUPPORT_ORDER.indexOf(b.support); break;
       case "sets": x = a.sets.length; y = b.sets.length; break;
-      case "sounds": x = soundCount(a); y = soundCount(b); break;
+      // an entry with no value goes last whichever way the column is sorted
+      case "sounds": if ((a.sounds == null) !== (b.sounds == null)) return a.sounds == null ? 1 : -1; x = soundCount(a); y = soundCount(b); break;
       case "names": x = a.names; y = b.names; break;
-      case "lufs": x = lufs(a) == null ? -999 : lufs(a); y = lufs(b) == null ? -999 : lufs(b); break;
+      case "lufs": if ((lufs(a) == null) !== (lufs(b) == null)) return lufs(a) == null ? 1 : -1; x = lufs(a); y = lufs(b); break;
       case "id": x = a.id || "~"; y = b.id || "~"; break;
       default: x = a.title.toLowerCase(); y = b.title.toLowerCase();
     }
