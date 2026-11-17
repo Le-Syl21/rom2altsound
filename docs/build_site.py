@@ -79,8 +79,9 @@ tracks of the DCS (and Pinball 2000) track catalog, the records of a Stern SAM c
 the other boards: their commands are only found by playing them.</li>
 <li><strong>LUFS</strong>: the average loudness of the entry's sounds as rom2altsound wrote them, at the game's
 factory volume, as PinMAME plays them in VPinball: the EBU R128 integrated loudness of every file played
-back to back (<code>catalog.json</code> <code>loudness.lufs</code>). In italics: Stern SAM, decoded from the image
-at full bus level, not the level of a game. Empty: not measured yet. A <em>clips</em> badge: some of the files
+back to back (<code>catalog.json</code> <code>loudness.lufs</code>). In italics: not the level of a game. Stern SAM, decoded from the image
+at full bus level; a game whose factory volume could not be measured, left at the reference volume;
+and an approximation borrowed from another set (hover for the reason). Empty: not measured yet. A <em>clips</em> badge: some of the files
 clipped in emulation (samples at full scale); its tooltip lists the worst ones (<code>loudness.clipping</code>), and
 the pack's <code>manifest.json</code> has every file's figures.</li>
 </ul>
@@ -159,8 +160,9 @@ pistes remplies du catalogue DCS (et Pinball 2000), les entrées de la table d'a
 pour les autres cartes : leurs commandes ne se trouvent qu'en les jouant.</li>
 <li><strong>LUFS</strong> : le volume sonore moyen des sons de l'entrée tels que rom2altsound les écrit, au volume
 d'usine du jeu, tels que PinMAME les joue dans VPinball : le volume intégré EBU R128 de tous les fichiers mis
-bout à bout (<code>loudness.lufs</code> de <code>catalog.json</code>). En italique : Stern SAM, décodé depuis l'image
-au niveau plein de chaque bus, pas le niveau d'une partie. Vide : pas encore mesuré. Un badge <em>écrête</em> :
+bout à bout (<code>loudness.lufs</code> de <code>catalog.json</code>). En italique : pas le niveau d'une partie. Stern SAM, décodé depuis l'image
+au niveau plein de chaque bus ; un jeu dont le volume d'usine n'a pas pu être mesuré, laissé au volume de
+référence ; et une approximation empruntée à un autre jeu (survolez pour la raison). Vide : pas encore mesuré. Un badge <em>écrête</em> :
 certains fichiers ont écrêté en émulation (échantillons à pleine échelle) ; son infobulle liste les pires
 (<code>loudness.clipping</code>), et le <code>manifest.json</code> du pack a les chiffres de chaque fichier.</li>
 </ul>

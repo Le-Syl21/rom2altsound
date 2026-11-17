@@ -2,6 +2,13 @@
 
 ## 0.6.0 (2026-11-17)
 
+- **Site: the six games at the reference volume show their level, and sorting puts empty cells last.**
+  Godzilla (0.90 prototype), High Roller Casino, Jolly Park, The Lord of the Rings (both) and
+  Verne's World were measured but their factory volume could not be, so the catalog keeps their
+  figures under `at_reference_volume`; the page now shows them in italics with the reason as a
+  tooltip, like the Stern SAM ones and the approximate figures borrowed from another set.
+  Sorting by LUFS or by sounds no longer puts the entries without a value first.
+
 - **Catalog: a Pinball 2000 group with no sound flash image of its own takes another revision's
   figures.** The RFM 2.10 r1 to r3 group (`pin2000_50070_0210_sf.rom` not in the collection) is
   given the figures of `rfm_210r4`, the same version, with an "approximate" caveat: the two ship

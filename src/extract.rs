@@ -2249,13 +2249,13 @@ impl Extractor {
     /// within the dither is silent and updates the per-channel idle level.
     fn track_idle_level(&mut self, buf: &[i16], ch: usize) {
         self.idle.resize(ch, 0);
-        for c in 0..ch {
+        for (c, idle) in self.idle.iter_mut().enumerate() {
             let it = || buf.iter().skip(c).step_by(ch).map(|&s| s as i32);
             let (Some(min), Some(max)) = (it().min(), it().max()) else {
                 continue;
             };
             if max - min <= 2 * SILENCE as i32 {
-                self.idle[c] = (min + max) / 2;
+                *idle = (min + max) / 2;
             }
         }
     }

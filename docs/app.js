@@ -99,7 +99,9 @@
     var l = e.loudness;
     if (!l) return null;
     if (l.lufs != null) return l.lufs;
-    return l.static_decode && l.static_decode.lufs != null ? l.static_decode.lufs : null;
+    if (l.static_decode && l.static_decode.lufs != null) return l.static_decode.lufs;
+    // a game whose factory volume could not be measured: its files stayed at the reference volume
+    return l.at_reference_volume && l.at_reference_volume.lufs != null ? l.at_reference_volume.lufs : null;
   }
   function foundCount(e) { return e.sets.filter(function (s) { return s.found !== "absent"; }).length; }
 
@@ -205,7 +207,11 @@
     var t = v.toFixed(1);
     var c = e.loudness.clipping;
     var clip = c ? ' <span class="badge b-clip" title="' + esc(T.clipTip(c)) + '">' + esc(T.clip) + "</span>" : "";
-    return (e.loudness.source === "static" ? '<em title="' + esc(e.loudness.caveat || "") + '">' + t + "</em>" : t) + clip;
+    // in italics: not the level of a game (Stern SAM, a game left at the reference volume) or an
+    // approximation borrowed from another set; the tooltip says which
+    var l = e.loudness, caveat = l.caveat || "";
+    var rough = l.source === "static" || (l.lufs == null && l.at_reference_volume) || caveat.indexOf("approximate") === 0;
+    return (rough ? '<em title="' + esc(caveat) + '">' + t + "</em>" : t) + clip;
   }
 
   function row(e) {
