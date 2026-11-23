@@ -23,7 +23,7 @@ env:
 jobs:
   lint:
     if: github.event_name != 'workflow_dispatch' || inputs.release_tag == ''
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
@@ -69,10 +69,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             label: linux-x86_64
-          - os: ubuntu-22.04-arm
+          - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             label: linux-aarch64
           # The oldest macOS each binary runs on: 11.0 Big Sur is the first macOS for
@@ -385,7 +385,7 @@ jobs:
   sign-windows:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     environment: signing
     steps:
       - name: Install ssign (prebuilt binary from the latest release)
@@ -473,9 +473,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             label: linux-x86_64
-          - os: ubuntu-22.04-arm
+          - os: ubuntu-24.04-arm
             label: linux-aarch64
           - os: windows-latest
             label: windows-x86_64
@@ -716,7 +716,7 @@ jobs:
   release:
     needs: [build, sign-windows, sign-apple, verify]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
 
