@@ -484,7 +484,7 @@ jobs:
             macos_min: '11.0'
           # A real Intel Mac: the x86_64 binary is cross-built on arm64, where it would
           # only run under Rosetta.
-          - os: macos-15-intel
+          - os: macos-26-intel
             label: macos-x86_64
             macos_min: '10.15'
     runs-on: ${{ matrix.os }}
