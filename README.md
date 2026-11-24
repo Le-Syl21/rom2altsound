@@ -100,6 +100,33 @@ The window follows the system language (English or French) and has a switch for 
 It runs the very same extraction as the command line (each ROM in a process of its
 own); given arguments, `rom2altsound-gui` *is* the command line.
 
+### As a library
+
+The extraction engine is the [`rom2altsound`](https://crates.io/crates/rom2altsound) crate
+(the programs stay here). Building it compiles PinMAME from the sources shipped in the
+crate: a C and C++ compiler and CMake are needed.
+
+```rust
+fn main() -> Result<(), String> {
+    // PinMAME runs one machine per process: the extraction runs in copies of this
+    // program, so this check comes first in main.
+    if rom2altsound::run_worker_if_requested() {
+        return Ok(());
+    }
+    let pack = rom2altsound::extract("afm_113b.zip", "packs".as_ref(), &Default::default())?;
+    for s in &pack.sounds {
+        let pcm = s.samples()?; // interleaved 16-bit samples, rate, channels
+        println!("{} {} {:.1} s loop {:?}", s.id, s.name, s.duration, s.loop_points);
+    }
+    Ok(())
+}
+```
+
+The pack folder is the same as the command line's (an AltSound pack). The audio tagger
+that names and types the sounds nobody named is not in the crate (its model is too large
+for crates.io): install one with `rom2altsound::tags::set_tagger`, or the types come from
+the sounds' names alone. `examples/pack.rs` is a complete program.
+
 ### Usage
 
 ```
@@ -897,6 +924,34 @@ La fenêtre suit la langue du système (français ou anglais) et a un sélecteur
 changer. Elle lance exactement la même extraction que la ligne de commande (chaque ROM
 dans un processus à elle) ; avec des arguments, `rom2altsound-gui` *est* la ligne de
 commande.
+
+### Comme bibliothèque
+
+Le moteur d'extraction est la crate [`rom2altsound`](https://crates.io/crates/rom2altsound)
+(les programmes restent ici). Sa compilation construit PinMAME depuis les sources livrées
+dans la crate : il faut un compilateur C et C++ et CMake.
+
+```rust
+fn main() -> Result<(), String> {
+    // PinMAME ne fait tourner qu'une machine par processus : l'extraction tourne dans des
+    // copies de ce programme, ce test vient donc en premier dans main.
+    if rom2altsound::run_worker_if_requested() {
+        return Ok(());
+    }
+    let pack = rom2altsound::extract("afm_113b.zip", "packs".as_ref(), &Default::default())?;
+    for s in &pack.sounds {
+        let pcm = s.samples()?; // échantillons 16 bits entrelacés, fréquence, canaux
+        println!("{} {} {:.1} s boucle {:?}", s.id, s.name, s.duration, s.loop_points);
+    }
+    Ok(())
+}
+```
+
+Le dossier du pack est le même que celui de la ligne de commande (un pack AltSound). Le
+tagger audio qui nomme et classe les sons que personne n'a nommés n'est pas dans la crate
+(son modèle est trop gros pour crates.io) : installez-en un avec
+`rom2altsound::tags::set_tagger`, sinon les types viennent des seuls noms des sons.
+`examples/pack.rs` est un programme complet.
 
 ### Utilisation
 

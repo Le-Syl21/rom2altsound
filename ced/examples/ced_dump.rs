@@ -10,7 +10,7 @@ fn main() {
             .collect();
         files.sort();
         for f in files {
-            let t = rom2altsound::ced::tag(Path::new(&f));
+            let t = rom2altsound_ced::tag(Path::new(&f));
             let name = f.file_name().unwrap().to_string_lossy().into_owned();
             match t {
                 Some(t) => println!(

@@ -611,7 +611,9 @@ pub fn zip_rom(zip: &Path) -> Option<String> {
 /// [`apply_zip`], then the listening page written again; returns the summary line.
 pub fn apply_zip_and_page(dir: &Path, zip: &Path) -> Result<String, String> {
     let r = apply_zip(dir, zip)?;
-    crate::listen::write_page(dir)?;
+    if cfg!(feature = "page") {
+        crate::listen::write_page(dir)?;
+    }
     Ok(summary(&r))
 }
 
@@ -737,7 +739,7 @@ pub fn cli(args: Vec<String>) -> i32 {
                 };
                 println!("  {}  {what}  GAIN {}", id_str(e.id), e.gain);
             }
-            if !cli.no_html {
+            if cfg!(feature = "page") && !cli.no_html {
                 match crate::listen::write_page(&cli.folder) {
                     Ok(p) => println!("page: {}", p.display()),
                     Err(e) => {

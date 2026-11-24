@@ -1,16 +1,40 @@
-//! rom2altsound: extract a pinball ROM's sounds by running PinMAME in-process and
-//! driving its sound board directly (no keyboard, no patch to PinMAME).
+//! Extract a pinball ROM's sounds into an AltSound pack by running PinMAME in-process and
+//! driving its sound board directly (no keyboard, no patch to PinMAME's emulation).
 //!
-//! The library behind both programs: `rom2altsound` (the command line, [`cli_main`]) and
-//! `rom2altsound-gui` (the window, the `gui/` package), which drives the same batch
-//! engine ([`batch`]) and the same ROM check ([`inventory`]).
+//! Every sound command of the ROM is played on the emulated sound board and recorded at the
+//! volume the game sets from its factory settings; music loops are cut to their intro plus
+//! one exact cycle. The pack is the folder VPinball's AltSound plugin reads.
+//!
+//! ```no_run
+//! fn main() -> Result<(), String> {
+//!     // PinMAME runs one machine per process: the extraction runs in copies of this program.
+//!     if rom2altsound::run_worker_if_requested() {
+//!         return Ok(());
+//!     }
+//!     let pack = rom2altsound::extract("afm_113b.zip", "packs".as_ref(), &Default::default())?;
+//!     for s in &pack.sounds {
+//!         println!("{} {} {:.1} s loop {:?}", s.id, s.name, s.duration, s.loop_points);
+//!     }
+//!     Ok(())
+//! }
+//! ```
+//!
+//! Supported boards: Williams/Bally DCS and Pinball 2000, WPC (WPC89/WPCS), System 11, Data
+//! East and Sega/Stern Whitestar (BSMT2000), Bally Cheap Squeak / Turbo Cheap Squeak and the
+//! early Bally boards; Stern SAM is read statically from its ROM image. Building needs a C
+//! and C++ compiler and CMake (PinMAME is compiled from the sources shipped in the crate).
+//!
+//! An audio tagger names and types the sounds nobody named: see [`tags`]. The `page` feature
+//! adds the listening page of the command line.
+//!
+//! The rest of the public items are the engine of the `rom2altsound` command line and
+//! window programs ([`cli_main`], [`batch`], [`inventory`]...).
 
 mod altsound;
 pub mod batch;
 pub mod borrow;
 mod bsmtfw;
 mod catalog;
-pub mod ced;
 mod dcsrom;
 mod drivers;
 mod ducking;
@@ -19,10 +43,33 @@ mod ffi;
 mod gamesound;
 pub mod inventory;
 pub mod lines;
+#[cfg(feature = "page")]
 mod listen;
+/// Without the `page` feature: no listening page (the callers check `cfg!(feature = "page")`
+/// first, so these are never reached).
+#[cfg(not(feature = "page"))]
+mod listen {
+    use std::path::{Path, PathBuf};
+
+    pub const PAGE: &str = "index.html";
+
+    pub fn write_page(_: &Path) -> Result<PathBuf, String> {
+        Err("built without the listening page (feature `page`)".into())
+    }
+
+    pub fn page_cli(_: Vec<String>) {
+        eprintln!("error: built without the listening page (feature `page`)");
+        std::process::exit(2);
+    }
+
+    pub fn write_index(_: &Path) -> Result<Option<PathBuf>, String> {
+        Ok(None)
+    }
+}
 mod looping;
 mod loudness;
 mod names;
+pub mod pack;
 pub mod progress;
 pub mod replace;
 mod romcheck;
@@ -34,6 +81,7 @@ mod seqstate;
 mod sha1;
 mod soundsdat;
 mod soundsdat_gen;
+pub mod tags;
 mod volume;
 mod zipread;
 
@@ -44,6 +92,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use clap::Parser;
+
+pub use pack::{LoopPoints, Pack, Samples, Sound, extract};
 
 use extract::{Extractor, Options, VolumeInit};
 
@@ -438,6 +488,25 @@ where
 }
 
 /// The command line program: reads its arguments, runs, and exits with its code.
+/// Set on every process an extraction starts (see [`run_worker_if_requested`]).
+pub const WORKER_ENV: &str = "ROM2ALTSOUND_WORKER";
+
+/// The worker entry point of a program that embeds the library.
+///
+/// PinMAME runs one machine per process, so an extraction starts copies of the running
+/// program (`std::env::current_exe()`) with arguments of its own and [`WORKER_ENV`] set. A
+/// program that calls [`extract`] (or the [`batch`] engine) calls this first thing in
+/// `main`, before reading its own arguments: in such a copy it does the work and returns
+/// true (the program then exits), elsewhere it returns false at once. Install the audio
+/// tagger ([`tags::set_tagger`]) before it, if any.
+pub fn run_worker_if_requested() -> bool {
+    if std::env::var_os(WORKER_ENV).is_none() {
+        return false;
+    }
+    cli_main();
+    true
+}
+
 pub fn cli_main() {
     // Diagnostic: `rom2altsound loop-scan [--hint SECS | --hint-frames F] <wav>...` runs the loop detector on
     // existing recordings.
@@ -561,7 +630,7 @@ pub fn cli_main() {
                 }
             }
         }
-        if !cli.no_html && !cli.cold_boot_only && !cli.boot_only {
+        if cfg!(feature = "page") && !cli.no_html && !cli.cold_boot_only && !cli.boot_only {
             match listen::write_page(&job.out) {
                 Ok(p) => println!("  page: {}", p.display()),
                 Err(e) => eprintln!("cannot write the listening page: {e}"),
@@ -1049,6 +1118,7 @@ fn cold_boot(cli: &Cli, job: &Job, vpm: &Path) -> Result<serde_json::Value, Stri
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut child = std::process::Command::new(exe);
     child
+        .env(WORKER_ENV, "1")
         .arg(rom)
         .arg("--roms")
         .arg(&job.roms)

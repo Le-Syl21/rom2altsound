@@ -1,0 +1,16 @@
+[package]
+name = "rom2altsound-cli"
+version.workspace = true
+edition = "2024"
+description = "The rom2altsound command line: turn a pinball ROM's sound board into an AltSound pack"
+license = "BSD-3-Clause"
+repository = "https://github.com/Le-Syl21/rom2altsound"
+publish = false
+
+[[bin]]
+name = "rom2altsound"
+path = "src/main.rs"
+
+[dependencies]
+rom2altsound = { path = "..", features = ["page"] }
+rom2altsound-ced = { path = "../ced" }

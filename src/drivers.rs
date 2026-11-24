@@ -335,6 +335,7 @@ pub fn boards(exe: &Path) -> Result<HashMap<String, Board>, String> {
     let mut restarts = 0;
     while start < n {
         let mut child = Command::new(exe)
+            .env(crate::WORKER_ENV, "1")
             .arg("__driver-boards")
             .arg(start.to_string())
             .stdin(Stdio::null())

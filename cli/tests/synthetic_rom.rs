@@ -21,7 +21,8 @@ fn synthetic_rom_extracts() {
         eprintln!("skipped: no Python interpreter (python3 or python) to run check_pack.py");
         return;
     };
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    // the repository root (this test belongs to the cli/ package)
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let work = Path::new(env!("CARGO_TARGET_TMPDIR")).join("synthetic_rom");
     let _ = std::fs::remove_dir_all(&work);
     let status = Command::new(python)

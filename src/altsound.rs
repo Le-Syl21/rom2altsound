@@ -1224,7 +1224,7 @@ pub fn write_pack(
     let mut rows = Vec::new();
     // The sound (index in `sounds`) of each row, and the file it plays with the reason.
     let mut row_sound = Vec::new();
-    let mut row_file: Vec<(FileKind, String, Option<crate::ced::Tags>)> = Vec::new();
+    let mut row_file: Vec<(FileKind, String, Option<crate::tags::Tags>)> = Vec::new();
     let mut referenced = std::collections::BTreeSet::new();
     for (i, s) in sounds.iter().enumerate() {
         let Some(file) = &s.file else { continue };
@@ -1282,7 +1282,7 @@ pub fn write_pack(
         referenced.insert(fname.clone());
         // What the audio tagger hears: it names a sound nobody named and types the sounds
         // whose names (if any) say nothing about it.
-        let tags = crate::ced::tag(&out_dir.join(file));
+        let tags = crate::tags::tag(&out_dir.join(file));
         let playing = looped || continuous;
         // A sound that keeps playing is music, whatever it is called (every "music" sample
         // of g-sound.csv loops).
@@ -1560,7 +1560,7 @@ fn annotate_manifest(
     twins: &[Twin],
     rows: &[Row],
     row_sound: &[usize],
-    row_file: &[(FileKind, String, Option<crate::ced::Tags>)],
+    row_file: &[(FileKind, String, Option<crate::tags::Tags>)],
     report: &PackReport,
 ) -> Result<(), String> {
     let path = out_dir.join("manifest.json");

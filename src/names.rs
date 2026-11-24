@@ -534,7 +534,7 @@ pub fn cli(args: Vec<String>) -> i32 {
                 eprintln!("warning: {w}");
             }
             println!("{}", summary(&report));
-            if !cli.no_html {
+            if cfg!(feature = "page") && !cli.no_html {
                 match crate::listen::write_page(&cli.folder) {
                     Ok(p) => println!("page: {}", p.display()),
                     Err(e) => {

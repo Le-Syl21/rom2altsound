@@ -14,6 +14,7 @@ mod options;
 mod platform;
 
 fn main() {
+    rom2altsound::tags::set_tagger(Box::new(rom2altsound_ced::tag));
     // macOS (older versions) hands an app started from the Finder a "-psn_..." argument.
     let args: Vec<_> = std::env::args_os()
         .skip(1)

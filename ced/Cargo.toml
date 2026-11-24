@@ -1,0 +1,13 @@
+[package]
+name = "rom2altsound-ced"
+version.workspace = true
+edition = "2024"
+description = "The audio tagger of the rom2altsound programs: CED-tiny run with tract, names and types the sounds nobody named"
+license = "BSD-3-Clause"
+repository = "https://github.com/Le-Syl21/rom2altsound"
+publish = false
+
+[dependencies]
+rom2altsound = { path = ".." }
+hound = "3.5"
+tract-onnx = "0.23"

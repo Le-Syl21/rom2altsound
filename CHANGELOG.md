@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0 (unreleased)
+
+- **The extraction engine is a library on crates.io.** `rom2altsound::extract` makes the
+  pack of one ROM and returns its sounds (id, name, file, duration, loop points, 16-bit
+  samples on demand); a program that embeds it calls `rom2altsound::run_worker_if_requested`
+  first thing in `main`, since each extraction runs in copies of the program (PinMAME runs
+  one machine per process; the copies carry `ROM2ALTSOUND_WORKER`). The crate ships the
+  PinMAME sources it builds. The command line (`cli/`), the window (`gui/`) and the audio
+  tagger (`ced/`, its model is too large for crates.io; a library user installs a tagger with
+  `rom2altsound::tags::set_tagger`) stay in the repository, and the listening page is the
+  `page` feature. The programs, their options and their packs do not change.
+
 ## 0.6.0 (2026-11-17)
 
 - **Site: the six games at the reference volume show their level, and sorting puts empty cells last.**

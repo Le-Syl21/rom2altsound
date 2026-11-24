@@ -5,7 +5,6 @@ edition = "2024"
 description = "rom2altsound in a window: pick ROM zips, see what they hold, make their AltSound packs"
 license = "BSD-3-Clause"
 repository = "https://github.com/Le-Syl21/rom2altsound"
-homepage = "https://github.com/Le-Syl21/rom2altsound"
 publish = false
 
 [features]
@@ -17,7 +16,9 @@ inspection = ["eframe/inspection"]
 
 [dependencies]
 # The extraction engine, the ROM check and the command line's own option definitions.
-rom2altsound = { path = ".." }
+rom2altsound = { path = "..", features = ["page"] }
+# The audio tagger the extraction workers (copies of this program) use.
+rom2altsound-ced = { path = "../ced" }
 clap = "4.6"
 # Render with glow (OpenGL), not the default wgpu: half the dependencies, as in the
 # other egui apps of the project's author.

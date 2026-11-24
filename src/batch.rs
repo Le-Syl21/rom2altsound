@@ -664,6 +664,7 @@ fn spawn(
 ) -> Result<Child, String> {
     std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
     let mut cmd = Command::new(exe);
+    cmd.env(crate::WORKER_ENV, "1");
     cmd.args(child_args(cli, rom, out));
     if !live {
         let log = out.join(LOG);

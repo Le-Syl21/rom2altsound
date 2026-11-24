@@ -2921,7 +2921,7 @@ dependencies = [
 
 [[package]]
 name = "rom2altsound"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "cc",
  "clap",
@@ -2932,17 +2932,34 @@ dependencies = [
  "miniz_oxide 0.8.9",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rom2altsound-ced"
+version = "0.7.0"
+dependencies = [
+ "hound",
+ "rom2altsound",
  "tract-onnx",
 ]
 
 [[package]]
+name = "rom2altsound-cli"
+version = "0.7.0"
+dependencies = [
+ "rom2altsound",
+ "rom2altsound-ced",
+]
+
+[[package]]
 name = "rom2altsound-gui"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "clap",
  "eframe",
  "rfd",
  "rom2altsound",
+ "rom2altsound-ced",
  "sys-locale",
 ]
 
