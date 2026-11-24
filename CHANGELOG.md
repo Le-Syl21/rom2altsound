@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 (unreleased)
+## 0.7.0 (2026-11-24)
 
 - **The extraction engine is a library on crates.io.** `rom2altsound::extract` makes the
   pack of one ROM and returns its sounds (id, name, file, duration, loop points, 16-bit
